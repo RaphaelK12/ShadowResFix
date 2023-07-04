@@ -52,6 +52,7 @@ int nFullScreenRefreshRateInHz;
 bool EnableProxyLibrary;
 bool InitProxyFunctions;
 char ProxyLibrary[MAX_PATH] = { 0 };
+extern float ShadowResMultiplier;
 
 class FrameLimiter
 {
@@ -526,7 +527,7 @@ bool WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved){
 
     switch (dwReason)    {
         case DLL_PROCESS_ATTACH:        {
-            //MessageBox(0, TEXT("ASI Loader works correctly."), TEXT("ASI Loader Test Plugin"), MB_ICONWARNING);
+            //MessageBox(0, TEXT("ShadowResFix loaded!"), TEXT("ASI Loader"), MB_ICONWARNING);
 
             // Load dll
             char path[MAX_PATH];
@@ -540,13 +541,30 @@ bool WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved){
             fFPSLimit = static_cast<float>(GetPrivateProfileInt("MAIN", "FPSLimit", 0, path));
             nFullScreenRefreshRateInHz = GetPrivateProfileInt("MAIN", "FullScreenRefreshRateInHz", 0, path);
             bDisplayFPSCounter = GetPrivateProfileInt("MAIN", "DisplayFPSCounter", 0, path);
+            
             bUsePrimaryMonitor = GetPrivateProfileInt("FORCEWINDOWED", "UsePrimaryMonitor", 0, path) != 0;
             bCenterWindow = GetPrivateProfileInt("FORCEWINDOWED", "CenterWindow", 1, path) != 0;
             bBorderlessFullscreen = GetPrivateProfileInt("FORCEWINDOWED", "BorderlessFullscreen", 0, path) != 0;
             bAlwaysOnTop = GetPrivateProfileInt("FORCEWINDOWED", "AlwaysOnTop", 0, path) != 0;
             bDoNotNotifyOnTaskSwitch = GetPrivateProfileInt("FORCEWINDOWED", "DoNotNotifyOnTaskSwitch", 0, path) != 0;
+           
             EnableProxyLibrary = GetPrivateProfileInt("PROXY", "EnableProxyLibrary", 0, path) != 0;
             GetPrivateProfileString("PROXY", "ProxyLibrary", "d3d9.dll", ProxyLibrary, MAX_PATH, path);
+
+            int tmp = 0;
+            tmp = GetPrivateProfileInt("SHADOWRESFIX", "ShadowResMultiplier", 2, path);
+
+            if(tmp > 16)
+                ShadowResMultiplier = 16.f;
+            else if(tmp > 0)
+                ShadowResMultiplier = tmp;
+            else if(tmp <= 0) {
+                tmp < -16 ? -16 : tmp;
+                ShadowResMultiplier = 1.f / (abs(tmp) + 1);
+            }
+            ShadowResMultiplier = ShadowResMultiplier < 0.0625 ? 0.0625 : 
+                ShadowResMultiplier > 16.f ? 16.f : ShadowResMultiplier;
+            //ShadowResMultiplier = 16;
 
             if(EnableProxyLibrary) {
                 d3d9dll = LoadLibraryA(ProxyLibrary);

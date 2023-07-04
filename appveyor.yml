@@ -1,0 +1,39 @@
+version: 1.{build}
+skip_tags: true
+image: Visual Studio 2022
+configuration: Release
+platform:
+- Win32
+- Win64
+install:
+- cmd: premake5.bat
+build:
+  project: build/ShadowResFix.sln
+  verbosity: minimal
+for:
+-
+  matrix:
+    only:
+      - platform: Win32
+  after_build:
+    - cmd: 7z a ShadowResFix.zip %APPVEYOR_BUILD_FOLDER%\data\ShadowResFix.dll %APPVEYOR_BUILD_FOLDER%\data\ShadowResFix.ini
+  artifacts:
+    - path: ShadowResFix.zip
+      name: ShadowResFix
+-
+  matrix:
+    only:
+      - platform: Win64
+  after_build:
+    - cmd: 7z a ShadowResFix_x64.zip %APPVEYOR_BUILD_FOLDER%\data\x64\ShadowResFix.dll %APPVEYOR_BUILD_FOLDER%\data\ShadowResFix.ini
+  artifacts:
+    - path: ShadowResFix_x64.zip
+      name: ShadowResFix_x64
+deploy:
+- provider: GitHub
+  release: ShadowResFix v$(appveyor_build_version)
+  # auth_token:
+    # secure: ugbti+bXX/7zqu39OyiPxgRPd2pQn2FEV/12ABees2fHfpZob0tWXzqD/zSYmibJ
+  artifact: ShadowResFix.zip,ShadowResFix_x64.zip
+matrix:
+  fast_finish: true
