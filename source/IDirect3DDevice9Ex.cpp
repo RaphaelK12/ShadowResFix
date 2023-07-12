@@ -20,30 +20,21 @@ UINT xdWidth = 0;
 UINT xdHeight = 0;
 UINT xdWidth2 = 0;
 UINT xdHeight2 = 0;
-float ShadowResMultiplier = 2.f;
-UINT ShadowResLimit = 16384;
 
 HRESULT m_IDirect3DDevice9Ex::CreateTexture(THIS_ UINT Width, UINT Height, UINT Levels, DWORD Usage, D3DFORMAT Format, D3DPOOL Pool, IDirect3DTexture9** ppTexture, HANDLE* pSharedHandle)
 {
 	if(
-		(Format == D3DFORMAT(1515474505u) && Width >= 64 && Width == Height && Levels == 1) //512x512 = 1024x256
+		(Format == D3DFORMAT(1515474505u) && Width >= 256 && Width == Height && Levels == 1) //512x512 = 1024x256
 		) {
- 	//	Width = (1024*4);
-		//Height = (1024*4);
 	}
-	if(Format == D3DFORMAT(D3DFMT_R16F) && Height >= 64 && Width == Height * 4 && Levels == 1) {
+	if(Format == D3DFORMAT(D3DFMT_R16F) && Height >= 256 && Width == Height * 4 && Levels == 1) {
+		// old res
 		xdWidth = Width;
 		xdHeight = Height;
-
-		//Width = (1024*4*4);
-		//Height = (1024*4);
+		// x2
 		Width *= 2;
 		Height *= 2;
-		//if(Width > ShadowResLimit)
-		//	Width = ShadowResLimit;
-		//if(Height > ShadowResLimit)
-		//	Height = ShadowResLimit;
-
+		// new res
 		xdWidth2 = Width;
 		xdHeight2 = Height;
 	}
@@ -58,121 +49,30 @@ HRESULT m_IDirect3DDevice9Ex::CreateTexture(THIS_ UINT Width, UINT Height, UINT 
 	return hr;
 }
 
-//bool foundPX = false;
-//float time[4] = { 0.f, 0.f, 0.f, 0.f };
-//IDirect3DPixelShader9* pShader = 0;
 HRESULT m_IDirect3DDevice9Ex::SetPixelShaderConstantF(THIS_ UINT StartRegister, CONST float* pConstantData, UINT Vector4fCount) {
-	//static int c = 0;
-	//static FILE* f1 = NULL;
-	//static FILE* f2 = NULL;
-	//if(false) {
-	//	//if(pShader) {
-	//	IDirect3DPixelShader9* shader = 0;
-	//	GetPixelShader(&shader);
-	//	if(shader == pShader && StartRegister == 0) {
-	//		if(f1 == NULL)
-	//			f1 = fopen("PixelShaderConstantF0.txt", "w");
-	//		if(f1) {
-	//			fprintf(f1, "[%i] [%i] = {%.10f, %.10f, %.10f, %.10f",
-	//					StartRegister, c, pConstantData[0], pConstantData[1], pConstantData[2], pConstantData[3]);
-	//			for(int i = 4; i < Vector4fCount * 4; i++) {
-	//				fprintf(f1, ", %.10f", pConstantData[i]);
-	//			}
-	//			fprintf(f1, "};\n");
-	//			fflush(f1);
-	//		}
-	//	}
-	//	if(shader == pShader && StartRegister != 0) {
-	//		if(f2 == NULL)
-	//			f2 = fopen("PixelShaderConstantF2.txt", "w");
-	//		if(f2) {
-	//			fprintf(f2, "[%i] [%i] = {%.10f, %.10f, %.10f, %.10f",
-	//					StartRegister, c, pConstantData[0], pConstantData[1], pConstantData[2], pConstantData[3]);
-	//			for(int i = 4; i < Vector4fCount * 4; i++) {
-	//				fprintf(f2, ", %.10f", pConstantData[i]);
-	//			}
-	//			fprintf(f2, "};\n");
-	//			fflush(f2);
-	//		}
-	//	}
-	//	c++;
-	//}
-
-	//if(foundPX) {
-	//	IDirect3DPixelShader9* shader = 0;
-	//	GetPixelShader(&shader);
-	//	if(shader == pShader ) {
-	//		time[0] += 0.016f;
-	//		time[1] += 0.001f;
-	//		time[2] = sinf(time[1]);
-	//		time[3] = cosf(time[1]);
-	//		time[0] = fmodf(time[2], 3.14159265358979323f * 1000.f);
-	//		time[1] = fmodf(time[3], 3.14159265358979323f * 1000.f);
-	//		ProxyInterface->SetPixelShaderConstantF(106, time, 1);
-	//	}
-	//}
-
 	if(StartRegister == 53 && Vector4fCount == 1 && xdWidth != 0 && xdHeight != 0 && pConstantData[0] != 0.f) {
 		if(pConstantData[0] == 1.f / xdWidth && pConstantData[1] == 1.f / xdHeight) {
-			//if(foundPX == false) {
-				//foundPX = true;
-				//GetPixelShader(&pShader);
-			//}
 			float vec[16] = { 0.f };
-			//vec[0] = 1.f/pConstantData[0];
-			//vec[1] = 1.f/pConstantData[1];
-			//vec[2] = 1.f/pConstantData[2];
-			//vec[3] = pConstantData[3];
 			vec[0] = 1.f / xdWidth2;
 			vec[1] = 1.f / xdHeight2;
 			vec[2] = 1.f / xdHeight2;
 			vec[3] = pConstantData[3];
+			// set pixel size to pixel shader
 			return ProxyInterface->SetPixelShaderConstantF(StartRegister, vec, Vector4fCount);
 		};
 	};
 	return ProxyInterface->SetPixelShaderConstantF(StartRegister, pConstantData, Vector4fCount);
 }
 
-struct cf {
-	float v[4];
-	void* pv;
-	void* s;
-	cf(void* _s, float* _v) {
-		s = _s;
-		pv = _v;
-		v[0] = _v[0];
-		v[1] = _v[1];
-		v[2] = _v[2];
-		v[3] = _v[3];
-	}
-};
-
-//std::vector<cf*> vcf;
-
 HRESULT m_IDirect3DDevice9Ex::SetVertexShaderConstantF(THIS_ UINT StartRegister, CONST float* pConstantData, UINT Vector4fCount) {
-	static bool bSave = false;		// save log?
-	static int cnt = 0;				// used in logs
 	static float sVec[4] = { 0 };	// time saved values ​​for wind sway
 	static float vec[4] = { 0.f };	// temp vec4, util for debug, pConstantData does not show values
-	static FILE* f = NULL;			// log
-	static IDirect3DVertexShader9* vShader = 0; // active shader
+	// Force leaves to wind sway
 	if(StartRegister == 51 && Vector4fCount == 1) {
-		//GetVertexShader(&vShader);
 		vec[0] = pConstantData[0];
 		vec[1] = pConstantData[1];
 		vec[2] = pConstantData[2];
 		vec[3] = pConstantData[3];
-		//if(bSave) {
-		//	vcf.push_back(new cf(vShader, (float*) (void*) pConstantData));
-		//	if(f == NULL)
-		//		f = fopen("tVertexShaderConstantF_51.1.txt", "w");
-		//	if(f) {
-		//		fprintf(f, "[%i] 0x%x 0x%x = {%.10f, %.10f, %.10f, %.10f};\n", 
-		//				cnt, (unsigned int) (void*) vShader, (unsigned int) (void*) pConstantData, vec[0], vec[1], vec[2], vec[3]);
-		//		fflush(f);
-		//		cnt++;
-		//	}
-		//}
 		if(vec[3] > 7.f) {	// the maximum value found that isn't time is 7, 
 							// so if time is a value that increases, 
 							// any value above 7 is the time I'm looking for.
