@@ -55,6 +55,8 @@ char ProxyLibrary[MAX_PATH] = { 0 };
 
 extern UINT gWindowWidth;
 extern UINT gWindowHeight; 
+extern UINT gWindowDivisor;
+
 extern IDirect3DTexture9* pHDRTexQuarter;
 
 BOOL gTreeLeavesSwayInTheWind = 0;
@@ -570,6 +572,16 @@ bool WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved){
             gTreeLeavesSwayInTheWind = GetPrivateProfileInt("SHADOWRESFIX", "TreeLeavesSwayInTheWind", 0, path) != 0;
             gFixCascadedShadowMapResolution = GetPrivateProfileInt("SHADOWRESFIX", "FixCascadedShadowMapResolution", 0, path) != 0;
             gFixRainDrops = GetPrivateProfileInt("SHADOWRESFIX", "FixRainDrops", 0, path) != 0;
+            gWindowDivisor = GetPrivateProfileInt("SHADOWRESFIX", "RainDropsBlur", 2, path);
+            if(gWindowDivisor < 1 ) {
+                gWindowDivisor = 1;
+            }
+            if(gWindowDivisor > 4) {
+                gWindowDivisor = 4;
+            }
+            if(gWindowDivisor != 1 && gWindowDivisor != 2 && gWindowDivisor != 4) {
+                gWindowDivisor = 2;
+            }
 
             if(EnableProxyLibrary) {
                 d3d9dll = LoadLibraryA(ProxyLibrary);

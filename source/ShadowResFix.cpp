@@ -23,6 +23,7 @@ IDirect3DTexture9* pHDRTexQuarter = 0;
 
 UINT gWindowWidth = 1366; // see dllmain.cpp-> CreateDevice/Reset
 UINT gWindowHeight = 768;
+UINT gWindowDivisor = 1;
 // gTreeLeavesSwayInTheWind
 extern BOOL gTreeLeavesSwayInTheWind;
 extern BOOL gFixCascadedShadowMapResolution;
@@ -76,9 +77,7 @@ HRESULT m_IDirect3DDevice9Ex::CreateTexture(THIS_ UINT Width, UINT Height, UINT 
 	}
 
 	//if(gFixRainDrops)
-	if(
-		(Format == D3DFMT_A16B16G16R16F && Width == gWindowWidth / 4 && Height == gWindowHeight / 4 && ppTexture != 0 && (*ppTexture) != 0)
-		) {
+	if(Format == D3DFMT_A16B16G16R16F && Width == gWindowWidth / gWindowDivisor && Height == gWindowHeight / gWindowDivisor && ppTexture != 0 && (*ppTexture) != 0) {
 		pHDRTexQuarter = (*ppTexture);
 	}
 
