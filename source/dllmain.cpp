@@ -53,6 +53,16 @@ bool EnableProxyLibrary;
 bool InitProxyFunctions;
 char ProxyLibrary[MAX_PATH] = { 0 };
 
+extern UINT gWindowWidth;
+extern UINT gWindowHeight; 
+extern IDirect3DTexture9* pHDRTexQuarter;
+
+BOOL gTreeLeavesSwayInTheWind = 0;
+BOOL gFixCascadedShadowMapResolution = 0;
+BOOL gFixRainDrops = 0;
+
+
+
 class FrameLimiter
 {
 private:
@@ -359,6 +369,9 @@ HRESULT m_IDirect3D9Ex::CreateDevice(UINT Adapter, D3DDEVTYPE DeviceType, HWND h
     }
 
     HRESULT hr = ProxyInterface->CreateDevice(Adapter, DeviceType, hFocusWindow, BehaviorFlags, pPresentationParameters, ppReturnedDeviceInterface);
+    gWindowWidth = pPresentationParameters->BackBufferWidth;
+    gWindowHeight = pPresentationParameters->BackBufferHeight;
+    pHDRTexQuarter = 0;
 
     if (SUCCEEDED(hr) && ppReturnedDeviceInterface)
     {
@@ -385,7 +398,11 @@ HRESULT m_IDirect3DDevice9Ex::Reset(D3DPRESENT_PARAMETERS* pPresentationParamete
     }
 
     auto hRet = ProxyInterface->Reset(pPresentationParameters);
-    
+    gWindowWidth = pPresentationParameters->BackBufferWidth;
+    gWindowHeight = pPresentationParameters->BackBufferHeight;
+    pHDRTexQuarter = 0;
+
+
     if (bDisplayFPSCounter)
     {
         if (SUCCEEDED(hRet))
@@ -526,7 +543,7 @@ bool WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved){
 
     switch (dwReason)    {
         case DLL_PROCESS_ATTACH:        {
-            //MessageBox(0, TEXT("ShadowResFix loaded!"), TEXT("ASI Loader"), MB_ICONWARNING);
+            MessageBox(0, TEXT("ShadowResFix loaded!"), TEXT("ASI Loader"), MB_ICONWARNING);
 
             // Load dll
             char path[MAX_PATH];
@@ -549,6 +566,10 @@ bool WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved){
            
             EnableProxyLibrary = GetPrivateProfileInt("PROXY", "EnableProxyLibrary", 0, path) != 0;
             GetPrivateProfileString("PROXY", "ProxyLibrary", "d3d9.dll", ProxyLibrary, MAX_PATH, path);
+
+            gTreeLeavesSwayInTheWind = GetPrivateProfileInt("SHADOWRESFIX", "TreeLeavesSwayInTheWind", 0, path) != 0;
+            gFixCascadedShadowMapResolution = GetPrivateProfileInt("SHADOWRESFIX", "FixCascadedShadowMapResolution", 0, path) != 0;
+            gFixRainDrops = GetPrivateProfileInt("SHADOWRESFIX", "FixRainDrops", 0, path) != 0;
 
             if(EnableProxyLibrary) {
                 d3d9dll = LoadLibraryA(ProxyLibrary);
