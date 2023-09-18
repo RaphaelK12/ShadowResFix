@@ -26,36 +26,86 @@ UINT gWindowHeight = 768;
 UINT gWindowDivisor = 1;
 // gTreeLeavesSwayInTheWind
 extern BOOL gTreeLeavesSwayInTheWind;
+extern BOOL gNearFarPlane;
 extern BOOL gFixCascadedShadowMapResolution;
 extern BOOL gFixRainDrops;
+extern UINT gFixEmissiveTransparency;
+extern UINT ReflectionResMult;
 
 struct stTextue {
-
+	UINT Cnt;
+	UINT Width;
+	UINT Height;
+	UINT Levels;
+	DWORD Usage;
+	D3DFORMAT Format;
+	D3DPOOL Pool;
+	IDirect3DTexture9* pTexture;
 };
 
 struct stPixelShader {
+	IDirect3DPixelShader9* pShader;
+	UINT len;
+	DWORD* pFunction;
 
+	IDirect3DPixelShader9* pNewShader;
+	UINT Newlen;
+	DWORD* pNewFunction;
+	std::string Source;
 };
 
 struct stVertexShader {
+	IDirect3DVertexShader9* pShader;
+	UINT len;
+	DWORD* pFunction;
 
+	IDirect3DVertexShader9* pNewShader;
+	UINT Newlen;
+	DWORD* pNewFunction;
+	std::string Source;
 };
 
 struct stSurface {
 
 };
 
-
 std::vector<stTextue*> textureList;
 std::vector<stPixelShader*> psList;
 std::vector<stVertexShader*> vsList;
 std::vector<stSurface*> surfaceList;
 
+std::vector<uint8_t> pattern = {
+	0x5F, 0x46, 0x75, 0x63, 0x6B, 0x59, 0x6F, 0x75, 0x5A, 0x6F, 0x6C, 0x69, 0x6B, 0x61, 0x5F, 0x01
+};
+
+std::list<IDirect3DPixelShader9*> ps;
+
+
 HRESULT m_IDirect3DDevice9Ex::CreateTexture(THIS_ UINT Width, UINT Height, UINT Levels, DWORD Usage, D3DFORMAT Format, D3DPOOL Pool, IDirect3DTexture9** ppTexture, HANDLE* pSharedHandle) {
-	if(
-		(Format == D3DFORMAT(1515474505u) && Width >= 256 && Width == Height && Levels == 1) //512x512 = 1024x256
-		) {
+	if(ReflectionResMult > 1 && ReflectionResMult <= 16) {
+		if(Format == D3DFMT_A16B16G16R16F && Width == Height && Width >= 128 && Width <= 1024 && Levels == 4 && Usage == 1) {
+			Width *= ReflectionResMult;
+			Height *= ReflectionResMult;
+		}
+		if(Format == D3DFORMAT(1515474505u) && Width == Height && Width >= 128 && Width <= 1024 && Levels == 4 && Usage == 2) {
+			Width *= ReflectionResMult;
+			Height *= ReflectionResMult;
+		}
 	}
+
+	
+	//if(
+	//	(Format == D3DFORMAT(1515474505u) && Width >= 256 && Width == Height && Levels == 1) //512x512 = 1024x256
+	//	) {
+	//}
+	//if(Format == D3DFMT_DXT1 && Width == 32 && Height == 32 && Levels == 1) {
+		//Width == 64;
+		//Height == 64;
+	//}
+	//if(Format == D3DFMT_L8 && Width == 32 && Height == 32 && Levels == 1) {
+		//Width == 64;
+		//Height == 64;
+	//}
 	if(gFixCascadedShadowMapResolution) {
 		if(Format == D3DFORMAT(D3DFMT_R16F) && Height >= 256 && Width == Height * 4 && Levels == 1) {
 			// old res
@@ -76,7 +126,7 @@ HRESULT m_IDirect3DDevice9Ex::CreateTexture(THIS_ UINT Width, UINT Height, UINT 
 		*ppTexture = new m_IDirect3DTexture9(*ppTexture, this);
 	}
 
-	//if(gFixRainDrops)
+	//if(gFixRainDrops) // from AssaultKifle47
 	if(Format == D3DFMT_A16B16G16R16F && Width == gWindowWidth / gWindowDivisor && Height == gWindowHeight / gWindowDivisor && ppTexture != 0 && (*ppTexture) != 0) {
 		pHDRTexQuarter = (*ppTexture);
 	}
@@ -84,6 +134,8 @@ HRESULT m_IDirect3DDevice9Ex::CreateTexture(THIS_ UINT Width, UINT Height, UINT 
 	return hr;
 }
 
+extern float NearFarPlane[4];
+static BOOL bNFfound = false;
 HRESULT m_IDirect3DDevice9Ex::SetPixelShaderConstantF(THIS_ UINT StartRegister, CONST float* pConstantData, UINT Vector4fCount) {
 	if(gFixCascadedShadowMapResolution) {
 		if(StartRegister == 53 && Vector4fCount == 1 && oldCascadesWidth != 0 && oldCascadesHeight != 0 &&
@@ -97,8 +149,25 @@ HRESULT m_IDirect3DDevice9Ex::SetPixelShaderConstantF(THIS_ UINT StartRegister, 
 			return ProxyInterface->SetPixelShaderConstantF(StartRegister, vec, Vector4fCount);
 		};
 	}
-	return ProxyInterface->SetPixelShaderConstantF(StartRegister, pConstantData, Vector4fCount);
-}
+	if(gNearFarPlane) {
+		if(StartRegister == 128 && Vector4fCount == 1 && pConstantData[0] <= 1.f && pConstantData[1] >= 5.f && pConstantData[1] <= 15000.f) {
+			NearFarPlane[0] = pConstantData[0];
+			NearFarPlane[1] = pConstantData[1];
+			NearFarPlane[2] = pConstantData[2];
+			NearFarPlane[3] = pConstantData[3];
+			bNFfound = true;
+		}
+	}
+	HRESULT hr = 0;
+	if(bNFfound && gNearFarPlane) {
+		ProxyInterface->SetPixelShaderConstantF(128, NearFarPlane, 1);
+	}
+	if(bNFfound && gNearFarPlane && StartRegister == 128 && Vector4fCount == 1)
+		hr = ProxyInterface->SetPixelShaderConstantF(StartRegister, NearFarPlane, Vector4fCount);
+	else
+		hr = ProxyInterface->SetPixelShaderConstantF(StartRegister, pConstantData, Vector4fCount);
+	return hr;
+}	
 
 static float sVec[4] = { 0 };	// time saved values ​​for wind sway
 static float vec[4] = { 0.f };	// temp vec4, util for debug, pConstantData does not show values
@@ -129,10 +198,28 @@ HRESULT m_IDirect3DDevice9Ex::SetVertexShaderConstantF(THIS_ UINT StartRegister,
 			return ProxyInterface->SetVertexShaderConstantF(StartRegister, vec, Vector4fCount);
 		}
 	}
-	return ProxyInterface->SetVertexShaderConstantF(StartRegister, pConstantData, Vector4fCount);
+	if(gNearFarPlane) {
+		if(StartRegister == 128 && Vector4fCount == 1 && pConstantData[0] <= 1.f && pConstantData[1] >= 500.f && pConstantData[1] <= 15000.f) {
+			NearFarPlane[0] = pConstantData[0];
+			NearFarPlane[1] = pConstantData[1];
+			NearFarPlane[2] = pConstantData[2];
+			NearFarPlane[3] = pConstantData[3];
+			bNFfound = true;
+		}
+	}
+	HRESULT hr = 0;
+	if(bNFfound && gNearFarPlane) {
+		ProxyInterface->SetVertexShaderConstantF(128, NearFarPlane, 1);
+	}
+	if(bNFfound && gNearFarPlane && StartRegister == 128 && Vector4fCount == 1)
+		hr = ProxyInterface->SetVertexShaderConstantF(StartRegister, NearFarPlane, Vector4fCount);
+	else
+		hr = ProxyInterface->SetVertexShaderConstantF(StartRegister, pConstantData, Vector4fCount);
+	return hr;
 }
 
 HRESULT m_IDirect3DDevice9Ex::SetTexture(DWORD Stage, IDirect3DBaseTexture9* pTexture) {
+	// from AssaultKifle47
 	if(gFixRainDrops && Stage == 1 && pTexture == 0 && pHDRTexQuarter) {
 		pTexture = pHDRTexQuarter;
 	}
@@ -153,3 +240,202 @@ HRESULT m_IDirect3DDevice9Ex::SetTexture(DWORD Stage, IDirect3DBaseTexture9* pTe
 	}
 	return ProxyInterface->SetTexture(Stage, pTexture);
 }
+
+HRESULT m_IDirect3DDevice9Ex::CreatePixelShader(THIS_ CONST DWORD* pFunction, IDirect3DPixelShader9** ppShader) {
+	HRESULT hr = ProxyInterface->CreatePixelShader(pFunction, ppShader);
+
+	if(SUCCEEDED(hr) && ppShader) {
+		*ppShader = new m_IDirect3DPixelShader9(*ppShader, this);
+
+		{
+			IDirect3DPixelShader9* pShader = (*ppShader);
+			static std::vector<uint8_t> pbFunc;
+			UINT len;
+			pShader->GetFunction(nullptr, &len);
+			if(pbFunc.size() < len) {
+				pbFunc.resize(len + len % 4);
+			}
+			pShader->GetFunction(pbFunc.data(), &len);
+			int cnt = 0;
+			for(int i = 0; i < pbFunc.size(); i++) {
+				for(int j = 0; j < pattern.size() - 1; j++) {
+					if(pbFunc[i + j] == pattern[j]) {
+						cnt = j;
+						continue;
+					}
+					else {
+						cnt = 0;
+						break;
+					}
+				}
+				if(cnt >= pattern.size() - 2) {
+					cnt = i;
+					break;
+				}
+			}
+			int c = 0;
+			if(cnt > 0) {
+				c = int(pbFunc[cnt + pattern.size() - 1]);
+				ps.push_back(pShader);
+				//uint8_t* str = &pbFunc.data()[cnt];
+				//printf("%i, %i\n", int(pbFunc[cnt + pattern.size() - 1]), int(pbFunc[cnt + pattern.size() - 2]));
+			}
+		}
+	}
+	return hr;
+}
+
+DWORD last = 0;
+BOOL useing = 0;
+
+HRESULT m_IDirect3DDevice9Ex::SetPixelShader(THIS_ IDirect3DPixelShader9* pShader) {
+	auto it = std::find(ps.begin(), ps.end(), pShader);
+	if(pShader) {
+		pShader = static_cast<m_IDirect3DPixelShader9*>(pShader)->GetProxyInterface();
+	}
+	if(it != ps.end() && gFixEmissiveTransparency == 1) {
+		if(!useing) {
+			ProxyInterface->GetRenderState(D3DRS_ZWRITEENABLE, &last);
+			ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE, 0);
+		}
+		useing = 1;
+	}
+	else if(gFixEmissiveTransparency == 1) {
+		if(useing) {
+			useing = 0;
+			ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE, last);
+		}
+	}
+	return ProxyInterface->SetPixelShader(pShader);
+}
+
+HRESULT m_IDirect3DDevice9Ex::SetRenderState(D3DRENDERSTATETYPE State, DWORD Value) {
+	// from AssaultKifle47
+	if(State == D3DRS_ADAPTIVETESS_X) {
+		Value = 0;
+	}
+
+	IDirect3DPixelShader9* pShader = 0;
+	GetPixelShader(&pShader);
+	auto it = std::find(ps.begin(), ps.end(), pShader);
+
+	//if(State == D3DRS_ZWRITEENABLE && gFixEmissiveTransparency == 1) {
+	//	last = Value;
+	//}
+
+	if(State == D3DRS_ZWRITEENABLE && /*it != ps.end() &&*/ useing == 1 && gFixEmissiveTransparency == 1) {
+		last = Value;
+		Value = 0;
+		//ProxyInterface->SetRenderState(D3DRS_ALPHABLENDENABLE, 1);
+	}
+	if(State == D3DRS_ZWRITEENABLE && it != ps.end() && gFixEmissiveTransparency == 2) {
+		Value = 0;
+		//ProxyInterface->SetRenderState(D3DRS_ALPHABLENDENABLE, 1);
+	}
+	//if(State == D3DRS_ZWRITEENABLE && it != ps.end() && gFixEmissiveTransparency == 3) {
+	//	Value = 0;
+	//}
+	//if(State == D3DRS_ZWRITEENABLE && it != ps.end() && gFixEmissiveTransparency == 4) {
+	//	ProxyInterface->SetRenderState(D3DRS_ALPHABLENDENABLE, 1);
+	//}
+
+	return ProxyInterface->SetRenderState(State, Value);
+}
+
+
+HRESULT m_IDirect3DDevice9Ex::DrawIndexedPrimitive(THIS_ D3DPRIMITIVETYPE Type, INT BaseVertexIndex, UINT MinVertexIndex, UINT NumVertices, UINT startIndex, UINT primCount) {
+	//if(gFixEmissiveTransparency == 1) {
+	//	IDirect3DPixelShader9* pShader = 0;
+	//	GetPixelShader(&pShader);
+	//	auto it = std::find(ps.begin(), ps.end(), pShader);
+	//	if(it != ps.end() && gFixEmissiveTransparency == 1) {
+	//		ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE, 0);
+	//	}
+	//	else {
+	//		ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE, last);
+	//	}
+	//}
+	return ProxyInterface->DrawIndexedPrimitive(Type, BaseVertexIndex, MinVertexIndex, NumVertices, startIndex, primCount);
+}
+
+HRESULT m_IDirect3DDevice9Ex::DrawIndexedPrimitiveUP(D3DPRIMITIVETYPE PrimitiveType, UINT MinIndex, UINT NumVertices, UINT PrimitiveCount, CONST void* pIndexData, D3DFORMAT IndexDataFormat, CONST void* pVertexStreamZeroData, UINT VertexStreamZeroStride) {
+	//if(gFixEmissiveTransparency == 1) {
+	//	IDirect3DPixelShader9* pShader = 0;
+	//	GetPixelShader(&pShader);
+	//	auto it = std::find(ps.begin(), ps.end(), pShader);
+	//	if(it != ps.end() && gFixEmissiveTransparency == 1) {
+	//		ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE, 0);
+	//	}
+	//	else {
+	//		ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE, last);
+	//	}
+	//}
+	return ProxyInterface->DrawIndexedPrimitiveUP(PrimitiveType, MinIndex, NumVertices, PrimitiveCount, pIndexData, IndexDataFormat, pVertexStreamZeroData, VertexStreamZeroStride);
+}
+
+HRESULT m_IDirect3DDevice9Ex::DrawPrimitive(D3DPRIMITIVETYPE PrimitiveType, UINT StartVertex, UINT PrimitiveCount) {
+	//if(gFixEmissiveTransparency == 1) {
+	//	IDirect3DPixelShader9* pShader = 0;
+	//	GetPixelShader(&pShader);
+	//	auto it = std::find(ps.begin(), ps.end(), pShader);
+	//	if(it != ps.end() && gFixEmissiveTransparency == 1) {
+	//		ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE, 0);
+	//	}
+	//	else {
+	//		ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE, last);
+	//	}
+	//}
+	return ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+}
+
+HRESULT m_IDirect3DDevice9Ex::DrawPrimitiveUP(D3DPRIMITIVETYPE PrimitiveType, UINT PrimitiveCount, CONST void* pVertexStreamZeroData, UINT VertexStreamZeroStride) {
+	//if(gFixEmissiveTransparency == 1) {
+	//	IDirect3DPixelShader9* pShader = 0;
+	//	GetPixelShader(&pShader);
+	//	auto it = std::find(ps.begin(), ps.end(), pShader);
+	//	if(it != ps.end() && gFixEmissiveTransparency == 1) {
+	//		ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE, 0);
+	//	}
+	//	else {
+	//		ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE, last);
+	//	}
+	//}
+	return ProxyInterface->DrawPrimitiveUP(PrimitiveType, PrimitiveCount, pVertexStreamZeroData, VertexStreamZeroStride);
+}
+
+HRESULT m_IDirect3DDevice9Ex::DrawRectPatch(UINT Handle, CONST float* pNumSegs, CONST D3DRECTPATCH_INFO* pRectPatchInfo) {
+	//if(gFixEmissiveTransparency == 1) {
+	//	IDirect3DPixelShader9* pShader = 0;
+	//	GetPixelShader(&pShader);
+	//	auto it = std::find(ps.begin(), ps.end(), pShader);
+	//	if(it != ps.end() && gFixEmissiveTransparency == 1) {
+	//		ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE, 0);
+	//	}
+	//	else {
+	//		ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE, last);
+	//	}
+	//}
+	return ProxyInterface->DrawRectPatch(Handle, pNumSegs, pRectPatchInfo);
+}
+
+HRESULT m_IDirect3DDevice9Ex::DrawTriPatch(UINT Handle, CONST float* pNumSegs, CONST D3DTRIPATCH_INFO* pTriPatchInfo) {
+	//if(gFixEmissiveTransparency == 1) {
+	//	IDirect3DPixelShader9* pShader = 0;
+	//	GetPixelShader(&pShader);
+	//	auto it = std::find(ps.begin(), ps.end(), pShader);
+	//	if(it != ps.end() && gFixEmissiveTransparency == 1) {
+	//		ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE, 0);
+	//	}
+	//	else {
+	//		ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE, last);
+	//	}
+	//}
+	return ProxyInterface->DrawTriPatch(Handle, pNumSegs, pTriPatchInfo);
+}
+
+
+
+
+
+
+

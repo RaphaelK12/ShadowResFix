@@ -84,10 +84,10 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LinkIncremental>false</LinkIncremental>
-    <OutDir>..\data\</OutDir>
+    <OutDir>..\data</OutDir>
     <IntDir>obj\Win32\Release\</IntDir>
-    <TargetName>ShadowResFix</TargetName>
-    <TargetExt>.asi</TargetExt>
+    <TargetName>d3d9</TargetName>
+    <TargetExt>.dll</TargetExt>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release Win64|x64'">
     <LinkIncremental>false</LinkIncremental>
@@ -98,10 +98,10 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <LinkIncremental>true</LinkIncremental>
-    <OutDir>F:\SteamLibrary\steamapps\common\Grand Theft Auto IV\GTAIV\plugins</OutDir>
+    <OutDir>F:\SteamLibrary\steamapps\common\Grand Theft Auto IV\GTAIV\</OutDir>
     <IntDir>obj\Win32\Debug\</IntDir>
-    <TargetName>ShadowResFix</TargetName>
-    <TargetExt>.asi</TargetExt>
+    <TargetName>d3d9</TargetName>
+    <TargetExt>.dll</TargetExt>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug Win64|x64'">
     <LinkIncremental>true</LinkIncremental>
@@ -264,6 +264,7 @@
     <ClCompile Include="..\source\ShadowResFix.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="..\data\shadowresfix.ini" />
     <None Include="..\source\d3d9.def" />
   </ItemGroup>
   <ItemGroup>

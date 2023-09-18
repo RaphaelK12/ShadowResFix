@@ -16,7 +16,6 @@
 
 #include "d3d9.h"
 
-
 HRESULT m_IDirect3DDevice9Ex::QueryInterface(REFIID riid, void** ppvObj)
 {
 	if ((riid == IID_IUnknown || riid == WrapperID) && ppvObj)
@@ -64,6 +63,131 @@ ULONG m_IDirect3DDevice9Ex::Release()
 //{
 //	return ProxyInterface->EndScene();
 //}
+
+
+
+
+HRESULT m_IDirect3DDevice9Ex::CreateVertexShader(THIS_ CONST DWORD* pFunction, IDirect3DVertexShader9** ppShader) {
+	HRESULT hr = ProxyInterface->CreateVertexShader(pFunction, ppShader);
+
+	if(SUCCEEDED(hr) && ppShader) {
+		*ppShader = new m_IDirect3DVertexShader9(*ppShader, this);
+	}
+
+	return hr;
+}
+
+HRESULT m_IDirect3DDevice9Ex::GetVertexShader(THIS_ IDirect3DVertexShader9** ppShader) {
+	HRESULT hr = ProxyInterface->GetVertexShader(ppShader);
+
+	if(SUCCEEDED(hr) && ppShader) {
+		*ppShader = ProxyAddressLookupTable->FindAddress<m_IDirect3DVertexShader9>(*ppShader);
+	}
+
+	return hr;
+}
+
+HRESULT m_IDirect3DDevice9Ex::SetVertexShader(THIS_ IDirect3DVertexShader9* pShader) {
+	if(pShader) {
+		pShader = static_cast<m_IDirect3DVertexShader9*>(pShader)->GetProxyInterface();
+	}
+	return ProxyInterface->SetVertexShader(pShader);
+}
+
+HRESULT m_IDirect3DDevice9Ex::GetPixelShader(THIS_ IDirect3DPixelShader9** ppShader) {
+	HRESULT hr = ProxyInterface->GetPixelShader(ppShader);
+
+	if(SUCCEEDED(hr) && ppShader) {
+		*ppShader = ProxyAddressLookupTable->FindAddress<m_IDirect3DPixelShader9>(*ppShader);
+	}
+
+	return hr;
+}
+
+
+
+HRESULT m_IDirect3DDevice9Ex::SetPixelShaderConstantB(THIS_ UINT StartRegister, CONST BOOL* pConstantData, UINT  BoolCount) {
+	return ProxyInterface->SetPixelShaderConstantB(StartRegister, pConstantData, BoolCount);
+}
+
+HRESULT m_IDirect3DDevice9Ex::GetPixelShaderConstantB(THIS_ UINT StartRegister, BOOL* pConstantData, UINT BoolCount) {
+	return ProxyInterface->GetPixelShaderConstantB(StartRegister, pConstantData, BoolCount);
+}
+
+HRESULT m_IDirect3DDevice9Ex::SetPixelShaderConstantI(THIS_ UINT StartRegister, CONST int* pConstantData, UINT Vector4iCount) {
+	return ProxyInterface->SetPixelShaderConstantI(StartRegister, pConstantData, Vector4iCount);
+}
+
+HRESULT m_IDirect3DDevice9Ex::GetPixelShaderConstantI(THIS_ UINT StartRegister, int* pConstantData, UINT Vector4iCount) {
+	return ProxyInterface->GetPixelShaderConstantI(StartRegister, pConstantData, Vector4iCount);
+}
+
+HRESULT m_IDirect3DDevice9Ex::GetPixelShaderConstantF(THIS_ UINT StartRegister, float* pConstantData, UINT Vector4fCount) {
+	return ProxyInterface->GetPixelShaderConstantF(StartRegister, pConstantData, Vector4fCount);
+}
+
+HRESULT m_IDirect3DDevice9Ex::SetVertexShaderConstantB(THIS_ UINT StartRegister, CONST BOOL* pConstantData, UINT  BoolCount) {
+	return ProxyInterface->SetVertexShaderConstantB(StartRegister, pConstantData, BoolCount);
+}
+
+HRESULT m_IDirect3DDevice9Ex::GetVertexShaderConstantB(THIS_ UINT StartRegister, BOOL* pConstantData, UINT BoolCount) {
+	return ProxyInterface->GetVertexShaderConstantB(StartRegister, pConstantData, BoolCount);
+}
+
+HRESULT m_IDirect3DDevice9Ex::GetVertexShaderConstantF(THIS_ UINT StartRegister, float* pConstantData, UINT Vector4fCount) {
+	return ProxyInterface->GetVertexShaderConstantF(StartRegister, pConstantData, Vector4fCount);
+}
+
+HRESULT m_IDirect3DDevice9Ex::SetVertexShaderConstantI(THIS_ UINT StartRegister, CONST int* pConstantData, UINT Vector4iCount) {
+	return ProxyInterface->SetVertexShaderConstantI(StartRegister, pConstantData, Vector4iCount);
+}
+
+HRESULT m_IDirect3DDevice9Ex::GetVertexShaderConstantI(THIS_ UINT StartRegister, int* pConstantData, UINT Vector4iCount) {
+	return ProxyInterface->GetVertexShaderConstantI(StartRegister, pConstantData, Vector4iCount);
+}
+
+
+HRESULT m_IDirect3DDevice9Ex::SetStreamSourceFreq(THIS_ UINT StreamNumber, UINT Divider) {
+	return ProxyInterface->SetStreamSourceFreq(StreamNumber, Divider);
+}
+
+HRESULT m_IDirect3DDevice9Ex::GetStreamSourceFreq(THIS_ UINT StreamNumber, UINT* Divider) {
+	return ProxyInterface->GetStreamSourceFreq(StreamNumber, Divider);
+}
+
+
+
+HRESULT m_IDirect3DDevice9Ex::CreateVertexDeclaration(THIS_ CONST D3DVERTEXELEMENT9* pVertexElements, IDirect3DVertexDeclaration9** ppDecl) {
+	HRESULT hr = ProxyInterface->CreateVertexDeclaration(pVertexElements, ppDecl);
+
+	if(SUCCEEDED(hr) && ppDecl) {
+		*ppDecl = new m_IDirect3DVertexDeclaration9(*ppDecl, this);
+	}
+
+	return hr;
+}
+
+HRESULT m_IDirect3DDevice9Ex::SetVertexDeclaration(THIS_ IDirect3DVertexDeclaration9* pDecl) {
+	if(pDecl) {
+		pDecl = static_cast<m_IDirect3DVertexDeclaration9*>(pDecl)->GetProxyInterface();
+	}
+
+	return ProxyInterface->SetVertexDeclaration(pDecl);
+}
+
+HRESULT m_IDirect3DDevice9Ex::GetVertexDeclaration(THIS_ IDirect3DVertexDeclaration9** ppDecl) {
+	HRESULT hr = ProxyInterface->GetVertexDeclaration(ppDecl);
+
+	if(SUCCEEDED(hr) && ppDecl) {
+		*ppDecl = ProxyAddressLookupTable->FindAddress<m_IDirect3DVertexDeclaration9>(*ppDecl);
+	}
+
+	return hr;
+}
+
+
+
+
 
 void m_IDirect3DDevice9Ex::SetCursorPosition(int X, int Y, DWORD Flags)
 {
@@ -235,11 +359,6 @@ HRESULT m_IDirect3DDevice9Ex::SetClipStatus(CONST D3DCLIPSTATUS9 *pClipStatus)
 	return ProxyInterface->SetClipStatus(pClipStatus);
 }
 
-HRESULT m_IDirect3DDevice9Ex::SetRenderState(D3DRENDERSTATETYPE State, DWORD Value)
-{
-	return ProxyInterface->SetRenderState(State, Value);
-}
-
 HRESULT m_IDirect3DDevice9Ex::SetRenderTarget(THIS_ DWORD RenderTargetIndex, IDirect3DSurface9* pRenderTarget)
 {
 	if (pRenderTarget)
@@ -268,16 +387,6 @@ void m_IDirect3DDevice9Ex::SetGammaRamp(THIS_ UINT iSwapChain, DWORD Flags, CONS
 HRESULT m_IDirect3DDevice9Ex::DeletePatch(UINT Handle)
 {
 	return ProxyInterface->DeletePatch(Handle);
-}
-
-HRESULT m_IDirect3DDevice9Ex::DrawRectPatch(UINT Handle, CONST float *pNumSegs, CONST D3DRECTPATCH_INFO *pRectPatchInfo)
-{
-	return ProxyInterface->DrawRectPatch(Handle, pNumSegs, pRectPatchInfo);
-}
-
-HRESULT m_IDirect3DDevice9Ex::DrawTriPatch(UINT Handle, CONST float *pNumSegs, CONST D3DTRIPATCH_INFO *pTriPatchInfo)
-{
-	return ProxyInterface->DrawTriPatch(Handle, pNumSegs, pTriPatchInfo);
 }
 
 HRESULT m_IDirect3DDevice9Ex::GetIndices(THIS_ IDirect3DIndexBuffer9** ppIndexData)
@@ -411,64 +520,10 @@ HRESULT m_IDirect3DDevice9Ex::SetPaletteEntries(UINT PaletteNumber, CONST PALETT
 	return ProxyInterface->SetPaletteEntries(PaletteNumber, pEntries);
 }
 
-HRESULT m_IDirect3DDevice9Ex::CreatePixelShader(THIS_ CONST DWORD* pFunction, IDirect3DPixelShader9** ppShader)
-{
-	HRESULT hr = ProxyInterface->CreatePixelShader(pFunction, ppShader);
-
-	if (SUCCEEDED(hr) && ppShader)
-	{
-		*ppShader = new m_IDirect3DPixelShader9(*ppShader, this);
-	}
-
-	return hr;
-}
-
-HRESULT m_IDirect3DDevice9Ex::GetPixelShader(THIS_ IDirect3DPixelShader9** ppShader)
-{
-	HRESULT hr = ProxyInterface->GetPixelShader(ppShader);
-
-	if (SUCCEEDED(hr) && ppShader)
-	{
-		*ppShader = ProxyAddressLookupTable->FindAddress<m_IDirect3DPixelShader9>(*ppShader);
-	}
-
-	return hr;
-}
-
-HRESULT m_IDirect3DDevice9Ex::SetPixelShader(THIS_ IDirect3DPixelShader9* pShader)
-{
-	if (pShader)
-	{
-		pShader = static_cast<m_IDirect3DPixelShader9 *>(pShader)->GetProxyInterface();
-	}
-
-	return ProxyInterface->SetPixelShader(pShader);
-}
-
 //HRESULT m_IDirect3DDevice9Ex::Present(CONST RECT *pSourceRect, CONST RECT *pDestRect, HWND hDestWindowOverride, CONST RGNDATA *pDirtyRegion)
 //{
 //	return ProxyInterface->Present(pSourceRect, pDestRect, hDestWindowOverride, pDirtyRegion);
 //}
-
-HRESULT m_IDirect3DDevice9Ex::DrawIndexedPrimitive(THIS_ D3DPRIMITIVETYPE Type, INT BaseVertexIndex, UINT MinVertexIndex, UINT NumVertices, UINT startIndex, UINT primCount)
-{
-	return ProxyInterface->DrawIndexedPrimitive(Type, BaseVertexIndex, MinVertexIndex, NumVertices, startIndex, primCount);
-}
-
-HRESULT m_IDirect3DDevice9Ex::DrawIndexedPrimitiveUP(D3DPRIMITIVETYPE PrimitiveType, UINT MinIndex, UINT NumVertices, UINT PrimitiveCount, CONST void *pIndexData, D3DFORMAT IndexDataFormat, CONST void *pVertexStreamZeroData, UINT VertexStreamZeroStride)
-{
-	return ProxyInterface->DrawIndexedPrimitiveUP(PrimitiveType, MinIndex, NumVertices, PrimitiveCount, pIndexData, IndexDataFormat, pVertexStreamZeroData, VertexStreamZeroStride);
-}
-
-HRESULT m_IDirect3DDevice9Ex::DrawPrimitive(D3DPRIMITIVETYPE PrimitiveType, UINT StartVertex, UINT PrimitiveCount)
-{
-	return ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
-}
-
-HRESULT m_IDirect3DDevice9Ex::DrawPrimitiveUP(D3DPRIMITIVETYPE PrimitiveType, UINT PrimitiveCount, CONST void *pVertexStreamZeroData, UINT VertexStreamZeroStride)
-{
-	return ProxyInterface->DrawPrimitiveUP(PrimitiveType, PrimitiveCount, pVertexStreamZeroData, VertexStreamZeroStride);
-}
 
 HRESULT m_IDirect3DDevice9Ex::BeginScene()
 {
@@ -627,40 +682,6 @@ HRESULT m_IDirect3DDevice9Ex::SetViewport(CONST D3DVIEWPORT9 *pViewport)
 	return ProxyInterface->SetViewport(pViewport);
 }
 
-HRESULT m_IDirect3DDevice9Ex::CreateVertexShader(THIS_ CONST DWORD* pFunction, IDirect3DVertexShader9** ppShader)
-{
-	HRESULT hr = ProxyInterface->CreateVertexShader(pFunction, ppShader);
-
-	if (SUCCEEDED(hr) && ppShader)
-	{
-		*ppShader = new m_IDirect3DVertexShader9(*ppShader, this);
-	}
-
-	return hr;
-}
-
-HRESULT m_IDirect3DDevice9Ex::GetVertexShader(THIS_ IDirect3DVertexShader9** ppShader)
-{
-	HRESULT hr = ProxyInterface->GetVertexShader(ppShader);
-
-	if (SUCCEEDED(hr) && ppShader)
-	{
-		*ppShader = ProxyAddressLookupTable->FindAddress<m_IDirect3DVertexShader9>(*ppShader);
-	}
-
-	return hr;
-}
-
-HRESULT m_IDirect3DDevice9Ex::SetVertexShader(THIS_ IDirect3DVertexShader9* pShader)
-{
-	if (pShader)
-	{
-		pShader = static_cast<m_IDirect3DVertexShader9 *>(pShader)->GetProxyInterface();
-	}
-
-	return ProxyInterface->SetVertexShader(pShader);
-}
-
 HRESULT m_IDirect3DDevice9Ex::CreateQuery(THIS_ D3DQUERYTYPE Type, IDirect3DQuery9** ppQuery)
 {
 	HRESULT hr = ProxyInterface->CreateQuery(Type, ppQuery);
@@ -673,66 +694,6 @@ HRESULT m_IDirect3DDevice9Ex::CreateQuery(THIS_ D3DQUERYTYPE Type, IDirect3DQuer
 	return hr;
 }
 
-HRESULT m_IDirect3DDevice9Ex::SetPixelShaderConstantB(THIS_ UINT StartRegister, CONST BOOL* pConstantData, UINT  BoolCount)
-{
-	return ProxyInterface->SetPixelShaderConstantB(StartRegister, pConstantData, BoolCount);
-}
-
-HRESULT m_IDirect3DDevice9Ex::GetPixelShaderConstantB(THIS_ UINT StartRegister, BOOL* pConstantData, UINT BoolCount)
-{
-	return ProxyInterface->GetPixelShaderConstantB(StartRegister, pConstantData, BoolCount);
-}
-
-HRESULT m_IDirect3DDevice9Ex::SetPixelShaderConstantI(THIS_ UINT StartRegister, CONST int* pConstantData, UINT Vector4iCount)
-{
-	return ProxyInterface->SetPixelShaderConstantI(StartRegister, pConstantData, Vector4iCount);
-}
-
-HRESULT m_IDirect3DDevice9Ex::GetPixelShaderConstantI(THIS_ UINT StartRegister, int* pConstantData, UINT Vector4iCount)
-{
-	return ProxyInterface->GetPixelShaderConstantI(StartRegister, pConstantData, Vector4iCount);
-}
-
-HRESULT m_IDirect3DDevice9Ex::GetPixelShaderConstantF(THIS_ UINT StartRegister, float* pConstantData, UINT Vector4fCount)
-{
-	return ProxyInterface->GetPixelShaderConstantF(StartRegister, pConstantData, Vector4fCount);
-}
-
-HRESULT m_IDirect3DDevice9Ex::SetStreamSourceFreq(THIS_ UINT StreamNumber, UINT Divider)
-{
-	return ProxyInterface->SetStreamSourceFreq(StreamNumber, Divider);
-}
-
-HRESULT m_IDirect3DDevice9Ex::GetStreamSourceFreq(THIS_ UINT StreamNumber, UINT* Divider)
-{
-	return ProxyInterface->GetStreamSourceFreq(StreamNumber, Divider);
-}
-
-HRESULT m_IDirect3DDevice9Ex::SetVertexShaderConstantB(THIS_ UINT StartRegister, CONST BOOL* pConstantData, UINT  BoolCount)
-{
-	return ProxyInterface->SetVertexShaderConstantB(StartRegister, pConstantData, BoolCount);
-}
-
-HRESULT m_IDirect3DDevice9Ex::GetVertexShaderConstantB(THIS_ UINT StartRegister, BOOL* pConstantData, UINT BoolCount)
-{
-	return ProxyInterface->GetVertexShaderConstantB(StartRegister, pConstantData, BoolCount);
-}
-
-HRESULT m_IDirect3DDevice9Ex::GetVertexShaderConstantF(THIS_ UINT StartRegister, float* pConstantData, UINT Vector4fCount)
-{
-	return ProxyInterface->GetVertexShaderConstantF(StartRegister, pConstantData, Vector4fCount);
-}
-
-HRESULT m_IDirect3DDevice9Ex::SetVertexShaderConstantI(THIS_ UINT StartRegister, CONST int* pConstantData, UINT Vector4iCount)
-{
-	return ProxyInterface->SetVertexShaderConstantI(StartRegister, pConstantData, Vector4iCount);
-}
-
-HRESULT m_IDirect3DDevice9Ex::GetVertexShaderConstantI(THIS_ UINT StartRegister, int* pConstantData, UINT Vector4iCount)
-{
-	return ProxyInterface->GetVertexShaderConstantI(StartRegister, pConstantData, Vector4iCount);
-}
-
 HRESULT m_IDirect3DDevice9Ex::SetFVF(THIS_ DWORD FVF)
 {
 	return ProxyInterface->SetFVF(FVF);
@@ -741,40 +702,6 @@ HRESULT m_IDirect3DDevice9Ex::SetFVF(THIS_ DWORD FVF)
 HRESULT m_IDirect3DDevice9Ex::GetFVF(THIS_ DWORD* pFVF)
 {
 	return ProxyInterface->GetFVF(pFVF);
-}
-
-HRESULT m_IDirect3DDevice9Ex::CreateVertexDeclaration(THIS_ CONST D3DVERTEXELEMENT9* pVertexElements, IDirect3DVertexDeclaration9** ppDecl)
-{
-	HRESULT hr = ProxyInterface->CreateVertexDeclaration(pVertexElements, ppDecl);
-
-	if (SUCCEEDED(hr) && ppDecl)
-	{
-		*ppDecl = new m_IDirect3DVertexDeclaration9(*ppDecl, this);
-	}
-
-	return hr;
-}
-
-HRESULT m_IDirect3DDevice9Ex::SetVertexDeclaration(THIS_ IDirect3DVertexDeclaration9* pDecl)
-{
-	if (pDecl)
-	{
-		pDecl = static_cast<m_IDirect3DVertexDeclaration9 *>(pDecl)->GetProxyInterface();
-	}
-
-	return ProxyInterface->SetVertexDeclaration(pDecl);
-}
-
-HRESULT m_IDirect3DDevice9Ex::GetVertexDeclaration(THIS_ IDirect3DVertexDeclaration9** ppDecl)
-{
-	HRESULT hr = ProxyInterface->GetVertexDeclaration(ppDecl);
-
-	if (SUCCEEDED(hr) && ppDecl)
-	{
-		*ppDecl = ProxyAddressLookupTable->FindAddress<m_IDirect3DVertexDeclaration9>(*ppDecl);
-	}
-
-	return hr;
 }
 
 HRESULT m_IDirect3DDevice9Ex::SetNPatchMode(THIS_ float nSegments)

@@ -56,12 +56,16 @@ char ProxyLibrary[MAX_PATH] = { 0 };
 extern UINT gWindowWidth;
 extern UINT gWindowHeight; 
 extern UINT gWindowDivisor;
+extern float NearFarPlane[4] = { 0 };
 
 extern IDirect3DTexture9* pHDRTexQuarter;
 
 BOOL gTreeLeavesSwayInTheWind = 0;
 BOOL gFixCascadedShadowMapResolution = 0;
 BOOL gFixRainDrops = 0;
+BOOL gNearFarPlane = 1;
+UINT gFixEmissiveTransparency = 0;
+UINT ReflectionResMult = 1;
 
 
 
@@ -185,7 +189,7 @@ public:
 
                 va_list oArgs;
                 va_start(oArgs, cString);
-                _vsnprintf((cBuffer + strlen(cBuffer)), (sizeof(cBuffer) - strlen(cBuffer)), cString, oArgs);
+                _vsnprintf((cBuffer + strlen(cBuffer)), (sizeof(cBuffer) - strlen(cBuffer)-1), cString, oArgs);
                 va_end(oArgs);
 
                 RECT Rect[5] =
@@ -208,9 +212,13 @@ public:
 
             static char str_format_fps[] = "%02d";
             static char str_format_time[] = "%.01f ms";
+            static char str_format_nfp[] = "%.03f, %.03f";
             static const D3DXCOLOR YELLOW(D3DCOLOR_XRGB(0xF7, 0xF7, 0));
             DrawTextOutline(pFPSFont, 10, 10, YELLOW, str_format_fps, fps);
             DrawTextOutline(pTimeFont, 10, space, YELLOW, str_format_time, (1.0f / fps) * 1000.0f);
+            DrawTextOutline(pTimeFont, 10, space + 15, YELLOW, str_format_nfp, NearFarPlane[0], NearFarPlane[1]);
+            DrawTextOutline(pTimeFont, 10, space + 30, YELLOW, str_format_fps, gFixEmissiveTransparency);
+
         }
     }
 
@@ -250,6 +258,12 @@ HRESULT m_IDirect3DDevice9Ex::EndScene()
     if (bDisplayFPSCounter)
         FrameLimiter::ShowFPS(ProxyInterface);
     
+    if(GetAsyncKeyState(VK_F3) & 0x01) {
+        gFixEmissiveTransparency++;
+        gFixEmissiveTransparency = gFixEmissiveTransparency % 3;
+    }
+
+
     return ProxyInterface->EndScene();
 }
 
@@ -545,7 +559,7 @@ bool WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved){
 
     switch (dwReason)    {
         case DLL_PROCESS_ATTACH:        {
-            //MessageBox(0, TEXT("ShadowResFix loaded!"), TEXT("ASI Loader"), MB_ICONWARNING);
+            MessageBox(0, TEXT("ShadowResFix loaded!"), TEXT("ASI Loader"), MB_ICONWARNING);
 
             // Load dll
             char path[MAX_PATH];
@@ -573,6 +587,25 @@ bool WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved){
             gFixCascadedShadowMapResolution = GetPrivateProfileInt("SHADOWRESFIX", "FixCascadedShadowMapResolution", 0, path) != 0;
             gFixRainDrops = GetPrivateProfileInt("SHADOWRESFIX", "FixRainDrops", 0, path) != 0;
             gWindowDivisor = GetPrivateProfileInt("SHADOWRESFIX", "RainDropsBlur", 2, path);
+
+            ReflectionResMult = GetPrivateProfileInt("SHADOWRESFIX", "ReflectionResMult", 2, path);
+
+            switch(ReflectionResMult) {
+                case  2:
+                case  4:
+                case  8:
+                case  16:
+                {
+                    break;
+                }
+                default:
+                {
+                    ReflectionResMult = 1;
+                    break;
+                }
+            }
+
+            gNearFarPlane = GetPrivateProfileInt("SHADOWRESFIX", "FixNearFarPlane", 0, path) != 0;
             if(gWindowDivisor < 1 ) {
                 gWindowDivisor = 1;
             }
