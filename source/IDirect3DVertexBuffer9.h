@@ -1,14 +1,12 @@
 #pragma once
 
-class m_IDirect3DVertexBuffer9 : public IDirect3DVertexBuffer9, public AddressLookupTableObject
-{
+class m_IDirect3DVertexBuffer9 : public IDirect3DVertexBuffer9, public AddressLookupTableObject {
 private:
 	LPDIRECT3DVERTEXBUFFER9 ProxyInterface;
 	m_IDirect3DDevice9Ex* m_pDeviceEx = nullptr;
 
 public:
-	m_IDirect3DVertexBuffer9(LPDIRECT3DVERTEXBUFFER9 pBuffer8, m_IDirect3DDevice9Ex* pDevice) : ProxyInterface(pBuffer8), m_pDeviceEx(pDevice)
-	{
+	m_IDirect3DVertexBuffer9(LPDIRECT3DVERTEXBUFFER9 pBuffer8, m_IDirect3DDevice9Ex* pDevice) : ProxyInterface(pBuffer8), m_pDeviceEx(pDevice) {
 		pDevice->ProxyAddressLookupTable->SaveAddress(this, ProxyInterface);
 	}
 	~m_IDirect3DVertexBuffer9() {}
@@ -31,5 +29,5 @@ public:
 	STDMETHOD_(D3DRESOURCETYPE, GetType)(THIS);
 	STDMETHOD(Lock)(THIS_ UINT OffsetToLock, UINT SizeToLock, void** ppbData, DWORD Flags);
 	STDMETHOD(Unlock)(THIS);
-	STDMETHOD(GetDesc)(THIS_ D3DVERTEXBUFFER_DESC *pDesc);
+	STDMETHOD(GetDesc)(THIS_ D3DVERTEXBUFFER_DESC* pDesc);
 };

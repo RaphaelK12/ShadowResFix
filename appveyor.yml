@@ -16,7 +16,7 @@ for:
     only:
       - platform: Win32
   after_build:
-    - cmd: 7z a ShadowResFix.zip %APPVEYOR_BUILD_FOLDER%\data\ShadowResFix.dll %APPVEYOR_BUILD_FOLDER%\data\ShadowResFix.ini
+    - cmd: 7z a ShadowResFix.zip %APPVEYOR_BUILD_FOLDER%\data\ShadowResFix.asi %APPVEYOR_BUILD_FOLDER%\data\ShadowResFix.ini
   artifacts:
     - path: ShadowResFix.zip
       name: ShadowResFix
@@ -25,7 +25,7 @@ for:
     only:
       - platform: Win64
   after_build:
-    - cmd: 7z a ShadowResFix_x64.zip %APPVEYOR_BUILD_FOLDER%\data\x64\ShadowResFix.dll %APPVEYOR_BUILD_FOLDER%\data\ShadowResFix.ini
+    - cmd: 7z a ShadowResFix_x64.zip %APPVEYOR_BUILD_FOLDER%\data\x64\ShadowResFix.asi %APPVEYOR_BUILD_FOLDER%\data\ShadowResFix.ini
   artifacts:
     - path: ShadowResFix_x64.zip
       name: ShadowResFix_x64

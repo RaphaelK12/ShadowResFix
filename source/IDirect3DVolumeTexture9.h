@@ -1,14 +1,12 @@
 #pragma once
 
-class m_IDirect3DVolumeTexture9 : public IDirect3DVolumeTexture9, public AddressLookupTableObject
-{
+class m_IDirect3DVolumeTexture9 : public IDirect3DVolumeTexture9, public AddressLookupTableObject {
 private:
 	LPDIRECT3DVOLUMETEXTURE9 ProxyInterface;
 	m_IDirect3DDevice9Ex* m_pDeviceEx = nullptr;
 
 public:
-	m_IDirect3DVolumeTexture9(LPDIRECT3DVOLUMETEXTURE9 pTexture8, m_IDirect3DDevice9Ex* pDevice) : ProxyInterface(pTexture8), m_pDeviceEx(pDevice)
-	{
+	m_IDirect3DVolumeTexture9(LPDIRECT3DVOLUMETEXTURE9 pTexture8, m_IDirect3DDevice9Ex* pDevice) : ProxyInterface(pTexture8), m_pDeviceEx(pDevice) {
 		pDevice->ProxyAddressLookupTable->SaveAddress(this, ProxyInterface);
 	}
 	~m_IDirect3DVolumeTexture9() {}
@@ -35,7 +33,7 @@ public:
 	STDMETHOD(SetAutoGenFilterType)(THIS_ D3DTEXTUREFILTERTYPE FilterType);
 	STDMETHOD_(D3DTEXTUREFILTERTYPE, GetAutoGenFilterType)(THIS);
 	STDMETHOD_(void, GenerateMipSubLevels)(THIS);
-	STDMETHOD(GetLevelDesc)(THIS_ UINT Level, D3DVOLUME_DESC *pDesc);
+	STDMETHOD(GetLevelDesc)(THIS_ UINT Level, D3DVOLUME_DESC* pDesc);
 	STDMETHOD(GetVolumeLevel)(THIS_ UINT Level, IDirect3DVolume9** ppVolumeLevel);
 	STDMETHOD(LockBox)(THIS_ UINT Level, D3DLOCKED_BOX* pLockedVolume, CONST D3DBOX* pBox, DWORD Flags);
 	STDMETHOD(UnlockBox)(THIS_ UINT Level);

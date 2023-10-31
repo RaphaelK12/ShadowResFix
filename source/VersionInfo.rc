@@ -32,8 +32,8 @@ END
 //
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 1,0,0,3
- PRODUCTVERSION 3,0,0,0
+ FILEVERSION 1,0,0,6
+ PRODUCTVERSION 5,0,0,0
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -48,15 +48,15 @@ BEGIN
     BEGIN
         BLOCK "040004b0"
         BEGIN
-            VALUE "CompanyName", rsc_CompanyName
-            VALUE "FileDescription", rsc_FileDescription
-            VALUE "FileVersion", rsc_FileVersion
-            VALUE "InternalName", rsc_InternalName
-            VALUE "LegalCopyright", rsc_LegalCopyright
-            VALUE "OriginalFilename", rsc_OriginalFilename
-            VALUE "ProductName", rsc_ProductName
-            VALUE "ProductVersion", rsc_ProductVersion
-            VALUE "UpdateUrl", rsc_UpdateUrl
+            VALUE "CompanyName", "FixingIV"
+            VALUE "FileDescription", "https://github.com/RaphaelK12/ShadowResFix"
+            VALUE "FileVersion", "1.0.0.6"
+            VALUE "InternalName", "ShadowResFix"
+            VALUE "LegalCopyright", "MIT License"
+            VALUE "OriginalFilename", "d3d9.dll"
+            VALUE "ProductName", "ShadowResFix"
+            VALUE "ProductVersion", "1.0.0.6"
+            VALUE "UpdateUrl", "https://github.com/RaphaelK12/ShadowResFix"
         END
     END
     BLOCK "VarFileInfo"

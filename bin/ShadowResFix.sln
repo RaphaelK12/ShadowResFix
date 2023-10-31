@@ -1,7 +1,14 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 16
+# Visual Studio Version 17
+VisualStudioVersion = 17.3.32922.545
+MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ShadowResFix", "ShadowResFix.vcxproj", "{5C50596D-48B3-E811-F138-21C8DD7AB494}"
+	ProjectSection(ProjectDependencies) = postProject
+		{F142A341-5EE0-442D-A15F-98AE9B48DBAE} = {F142A341-5EE0-442D-A15F-98AE9B48DBAE}
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MinHook", "..\source\MinHook.vcxproj", "{F142A341-5EE0-442D-A15F-98AE9B48DBAE}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -19,8 +26,19 @@ Global
 		{5C50596D-48B3-E811-F138-21C8DD7AB494}.Release|Win32.Build.0 = Release|Win32
 		{5C50596D-48B3-E811-F138-21C8DD7AB494}.Release|Win64.ActiveCfg = Release Win64|x64
 		{5C50596D-48B3-E811-F138-21C8DD7AB494}.Release|Win64.Build.0 = Release Win64|x64
+		{F142A341-5EE0-442D-A15F-98AE9B48DBAE}.Debug|Win32.ActiveCfg = Release|Win32
+		{F142A341-5EE0-442D-A15F-98AE9B48DBAE}.Debug|Win32.Build.0 = Release|Win32
+		{F142A341-5EE0-442D-A15F-98AE9B48DBAE}.Debug|Win64.ActiveCfg = Release|Win32
+		{F142A341-5EE0-442D-A15F-98AE9B48DBAE}.Debug|Win64.Build.0 = Release|Win32
+		{F142A341-5EE0-442D-A15F-98AE9B48DBAE}.Release|Win32.ActiveCfg = Release|Win32
+		{F142A341-5EE0-442D-A15F-98AE9B48DBAE}.Release|Win32.Build.0 = Release|Win32
+		{F142A341-5EE0-442D-A15F-98AE9B48DBAE}.Release|Win64.ActiveCfg = Release|Win32
+		{F142A341-5EE0-442D-A15F-98AE9B48DBAE}.Release|Win64.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {982CA4E5-AE71-4F0E-9944-149C082276B9}
 	EndGlobalSection
 EndGlobal

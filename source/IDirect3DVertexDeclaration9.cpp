@@ -16,10 +16,8 @@
 
 #include "d3d9.h"
 
-HRESULT m_IDirect3DVertexDeclaration9::QueryInterface(THIS_ REFIID riid, void** ppvObj)
-{
-	if ((riid == IID_IDirect3DVertexDeclaration9 || riid == IID_IUnknown) && ppvObj)
-	{
+HRESULT m_IDirect3DVertexDeclaration9::QueryInterface(THIS_ REFIID riid, void** ppvObj) {
+	if((riid == IID_IDirect3DVertexDeclaration9 || riid == IID_IUnknown) && ppvObj) {
 		AddRef();
 
 		*ppvObj = this;
@@ -29,28 +27,23 @@ HRESULT m_IDirect3DVertexDeclaration9::QueryInterface(THIS_ REFIID riid, void** 
 
 	HRESULT hr = ProxyInterface->QueryInterface(riid, ppvObj);
 
-	if (SUCCEEDED(hr))
-	{
+	if(SUCCEEDED(hr)) {
 		genericQueryInterface(riid, ppvObj, m_pDeviceEx);
 	}
 
 	return hr;
 }
 
-ULONG m_IDirect3DVertexDeclaration9::AddRef(THIS)
-{
+ULONG m_IDirect3DVertexDeclaration9::AddRef(THIS) {
 	return ProxyInterface->AddRef();
 }
 
-ULONG m_IDirect3DVertexDeclaration9::Release(THIS)
-{
+ULONG m_IDirect3DVertexDeclaration9::Release(THIS) {
 	return ProxyInterface->Release();
 }
 
-HRESULT m_IDirect3DVertexDeclaration9::GetDevice(THIS_ IDirect3DDevice9** ppDevice)
-{
-	if (!ppDevice)
-	{
+HRESULT m_IDirect3DVertexDeclaration9::GetDevice(THIS_ IDirect3DDevice9** ppDevice) {
+	if(!ppDevice) {
 		return D3DERR_INVALIDCALL;
 	}
 
@@ -61,7 +54,6 @@ HRESULT m_IDirect3DVertexDeclaration9::GetDevice(THIS_ IDirect3DDevice9** ppDevi
 	return D3D_OK;
 }
 
-HRESULT m_IDirect3DVertexDeclaration9::GetDeclaration(THIS_ D3DVERTEXELEMENT9* pElement, UINT* pNumElements)
-{
+HRESULT m_IDirect3DVertexDeclaration9::GetDeclaration(THIS_ D3DVERTEXELEMENT9* pElement, UINT* pNumElements) {
 	return ProxyInterface->GetDeclaration(pElement, pNumElements);
 }

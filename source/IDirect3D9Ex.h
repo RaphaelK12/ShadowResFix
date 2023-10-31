@@ -1,13 +1,12 @@
 #pragma once
 
-class m_IDirect3D9Ex : public IDirect3D9Ex
-{
+class m_IDirect3D9Ex : public IDirect3D9Ex {
 private:
 	LPDIRECT3D9EX ProxyInterface;
 	REFIID WrapperID;
 
 public:
-	m_IDirect3D9Ex(LPDIRECT3D9EX pDirect3D, REFIID DeviceID) : ProxyInterface(pDirect3D), WrapperID(DeviceID) { }
+	m_IDirect3D9Ex(LPDIRECT3D9EX pDirect3D, REFIID DeviceID) : ProxyInterface(pDirect3D), WrapperID(DeviceID) {}
 
 	/*** IUnknown methods ***/
 	STDMETHOD(QueryInterface)(THIS_ REFIID riid, void** ppvObj);
@@ -33,5 +32,5 @@ public:
 	STDMETHOD(EnumAdapterModesEx)(THIS_ UINT Adapter, CONST D3DDISPLAYMODEFILTER* pFilter, UINT Mode, D3DDISPLAYMODEEX* pMode);
 	STDMETHOD(GetAdapterDisplayModeEx)(THIS_ UINT Adapter, D3DDISPLAYMODEEX* pMode, D3DDISPLAYROTATION* pRotation);
 	STDMETHOD(CreateDeviceEx)(THIS_ UINT Adapter, D3DDEVTYPE DeviceType, HWND hFocusWindow, DWORD BehaviorFlags, D3DPRESENT_PARAMETERS* pPresentationParameters, D3DDISPLAYMODEEX* pFullscreenDisplayMode, IDirect3DDevice9Ex** ppReturnedDeviceInterface);
-	STDMETHOD(GetAdapterLUID)(THIS_ UINT Adapter, LUID * pLUID);
+	STDMETHOD(GetAdapterLUID)(THIS_ UINT Adapter, LUID* pLUID);
 };

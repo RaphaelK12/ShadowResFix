@@ -1,28 +1,27 @@
 #pragma once
 
-class m_IDirect3DDevice9Ex : public IDirect3DDevice9Ex
-{
+class m_IDirect3DDevice9Ex : public IDirect3DDevice9Ex {
 private:
 	LPDIRECT3DDEVICE9EX ProxyInterface;
 	m_IDirect3D9Ex* m_pD3DEx;
 	REFIID WrapperID;
 
 public:
-	m_IDirect3DDevice9Ex(LPDIRECT3DDEVICE9EX pDevice, m_IDirect3D9Ex* pD3D, REFIID DeviceID = IID_IUnknown) : ProxyInterface(pDevice), m_pD3DEx(pD3D), WrapperID(DeviceID)
-	{
+	m_IDirect3DDevice9Ex(LPDIRECT3DDEVICE9EX pDevice, m_IDirect3D9Ex* pD3D, REFIID DeviceID = IID_IUnknown) : ProxyInterface(pDevice), m_pD3DEx(pD3D), WrapperID(DeviceID) {
 		InitDirect3DDevice();
 	}
-	void InitDirect3DDevice()
-	{
+	void InitDirect3DDevice() {
 		ProxyAddressLookupTable = new AddressLookupTable<m_IDirect3DDevice9Ex>(this);
 	}
-	~m_IDirect3DDevice9Ex()
-	{
+	~m_IDirect3DDevice9Ex() {
 		delete ProxyAddressLookupTable;
 	}
 
+	STDMETHOD(CreateVertexShader2)(THIS_ CONST DWORD* pFunction, IDirect3DVertexShader9** ppShader);
+	STDMETHOD(CreatePixelShader2)(THIS_ CONST DWORD* pFunction, IDirect3DPixelShader9** ppShader);
+
 	LPDIRECT3DDEVICE9EX GetProxyInterface() { return ProxyInterface; }
-	AddressLookupTable<m_IDirect3DDevice9Ex> *ProxyAddressLookupTable;
+	AddressLookupTable<m_IDirect3DDevice9Ex>* ProxyAddressLookupTable;
 
 	/*** IUnknown methods ***/
 	STDMETHOD(QueryInterface)(THIS_ REFIID riid, void** ppvObj);
@@ -36,7 +35,7 @@ public:
 	STDMETHOD(GetDirect3D)(THIS_ IDirect3D9** ppD3D9);
 	STDMETHOD(GetDeviceCaps)(THIS_ D3DCAPS9* pCaps);
 	STDMETHOD(GetDisplayMode)(THIS_ UINT iSwapChain, D3DDISPLAYMODE* pMode);
-	STDMETHOD(GetCreationParameters)(THIS_ D3DDEVICE_CREATION_PARAMETERS *pParameters);
+	STDMETHOD(GetCreationParameters)(THIS_ D3DDEVICE_CREATION_PARAMETERS* pParameters);
 	STDMETHOD(SetCursorProperties)(THIS_ UINT XHotSpot, UINT YHotSpot, IDirect3DSurface9* pCursorBitmap);
 	STDMETHOD_(void, SetCursorPosition)(THIS_ int X, int Y, DWORD Flags);
 	STDMETHOD_(BOOL, ShowCursor)(THIS_ BOOL bShow);
@@ -73,7 +72,7 @@ public:
 	STDMETHOD(Clear)(THIS_ DWORD Count, CONST D3DRECT* pRects, DWORD Flags, D3DCOLOR Color, float Z, DWORD Stencil);
 	STDMETHOD(SetTransform)(THIS_ D3DTRANSFORMSTATETYPE State, CONST D3DMATRIX* pMatrix);
 	STDMETHOD(GetTransform)(THIS_ D3DTRANSFORMSTATETYPE State, D3DMATRIX* pMatrix);
-	STDMETHOD(MultiplyTransform)(THIS_ D3DTRANSFORMSTATETYPE State, CONST D3DMATRIX *pMatrix);
+	STDMETHOD(MultiplyTransform)(THIS_ D3DTRANSFORMSTATETYPE State, CONST D3DMATRIX* pMatrix);
 	STDMETHOD(SetViewport)(THIS_ CONST D3DVIEWPORT9* pViewport);
 	STDMETHOD(GetViewport)(THIS_ D3DVIEWPORT9* pViewport);
 	STDMETHOD(SetMaterial)(THIS_ CONST D3DMATERIAL9* pMaterial);
@@ -101,7 +100,7 @@ public:
 	STDMETHOD(SetPaletteEntries)(THIS_ UINT PaletteNumber, CONST PALETTEENTRY* pEntries);
 	STDMETHOD(GetPaletteEntries)(THIS_ UINT PaletteNumber, PALETTEENTRY* pEntries);
 	STDMETHOD(SetCurrentTexturePalette)(THIS_ UINT PaletteNumber);
-	STDMETHOD(GetCurrentTexturePalette)(THIS_ UINT *PaletteNumber);
+	STDMETHOD(GetCurrentTexturePalette)(THIS_ UINT* PaletteNumber);
 	STDMETHOD(SetScissorRect)(THIS_ CONST RECT* pRect);
 	STDMETHOD(GetScissorRect)(THIS_ RECT* pRect);
 	STDMETHOD(SetSoftwareVertexProcessing)(THIS_ BOOL bSoftware);
@@ -159,6 +158,6 @@ public:
 	STDMETHOD(CreateRenderTargetEx)(THIS_ UINT Width, UINT Height, D3DFORMAT Format, D3DMULTISAMPLE_TYPE MultiSample, DWORD MultisampleQuality, BOOL Lockable, IDirect3DSurface9** ppSurface, HANDLE* pSharedHandle, DWORD Usage);
 	STDMETHOD(CreateOffscreenPlainSurfaceEx)(THIS_ UINT Width, UINT Height, D3DFORMAT Format, D3DPOOL Pool, IDirect3DSurface9** ppSurface, HANDLE* pSharedHandle, DWORD Usage);
 	STDMETHOD(CreateDepthStencilSurfaceEx)(THIS_ UINT Width, UINT Height, D3DFORMAT Format, D3DMULTISAMPLE_TYPE MultiSample, DWORD MultisampleQuality, BOOL Discard, IDirect3DSurface9** ppSurface, HANDLE* pSharedHandle, DWORD Usage);
-	STDMETHOD(ResetEx)(THIS_ D3DPRESENT_PARAMETERS* pPresentationParameters, D3DDISPLAYMODEEX *pFullscreenDisplayMode);
+	STDMETHOD(ResetEx)(THIS_ D3DPRESENT_PARAMETERS* pPresentationParameters, D3DDISPLAYMODEEX* pFullscreenDisplayMode);
 	STDMETHOD(GetDisplayModeEx)(THIS_ UINT iSwapChain, D3DDISPLAYMODEEX* pMode, D3DDISPLAYROTATION* pRotation);
 };

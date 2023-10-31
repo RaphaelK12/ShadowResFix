@@ -1,14 +1,12 @@
 #pragma once
 
-class m_IDirect3DStateBlock9 : public IDirect3DStateBlock9, public AddressLookupTableObject
-{
+class m_IDirect3DStateBlock9 : public IDirect3DStateBlock9, public AddressLookupTableObject {
 private:
 	LPDIRECT3DSTATEBLOCK9 ProxyInterface;
 	m_IDirect3DDevice9Ex* m_pDeviceEx = nullptr;
 
 public:
-	m_IDirect3DStateBlock9(LPDIRECT3DSTATEBLOCK9 pBlock9, m_IDirect3DDevice9Ex* pDevice) : ProxyInterface(pBlock9), m_pDeviceEx(pDevice)
-	{
+	m_IDirect3DStateBlock9(LPDIRECT3DSTATEBLOCK9 pBlock9, m_IDirect3DDevice9Ex* pDevice) : ProxyInterface(pBlock9), m_pDeviceEx(pDevice) {
 		pDevice->ProxyAddressLookupTable->SaveAddress(this, ProxyInterface);
 	}
 	~m_IDirect3DStateBlock9() {}

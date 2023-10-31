@@ -1,14 +1,12 @@
 #pragma once
 
-class m_IDirect3DSurface9 : public IDirect3DSurface9, public AddressLookupTableObject
-{
+class m_IDirect3DSurface9 : public IDirect3DSurface9, public AddressLookupTableObject {
 private:
 	LPDIRECT3DSURFACE9 ProxyInterface;
 	m_IDirect3DDevice9Ex* m_pDeviceEx = nullptr;
 
 public:
-	m_IDirect3DSurface9(LPDIRECT3DSURFACE9 pSurface9, m_IDirect3DDevice9Ex* pDevice) : ProxyInterface(pSurface9), m_pDeviceEx(pDevice)
-	{
+	m_IDirect3DSurface9(LPDIRECT3DSURFACE9 pSurface9, m_IDirect3DDevice9Ex* pDevice) : ProxyInterface(pSurface9), m_pDeviceEx(pDevice) {
 		pDevice->ProxyAddressLookupTable->SaveAddress(this, ProxyInterface);
 	}
 	~m_IDirect3DSurface9() {}
@@ -30,9 +28,9 @@ public:
 	STDMETHOD_(void, PreLoad)(THIS);
 	STDMETHOD_(D3DRESOURCETYPE, GetType)(THIS);
 	STDMETHOD(GetContainer)(THIS_ REFIID riid, void** ppContainer);
-	STDMETHOD(GetDesc)(THIS_ D3DSURFACE_DESC *pDesc);
+	STDMETHOD(GetDesc)(THIS_ D3DSURFACE_DESC* pDesc);
 	STDMETHOD(LockRect)(THIS_ D3DLOCKED_RECT* pLockedRect, CONST RECT* pRect, DWORD Flags);
 	STDMETHOD(UnlockRect)(THIS);
-	STDMETHOD(GetDC)(THIS_ HDC *phdc);
+	STDMETHOD(GetDC)(THIS_ HDC* phdc);
 	STDMETHOD(ReleaseDC)(THIS_ HDC hdc);
 };

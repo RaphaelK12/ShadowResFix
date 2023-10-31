@@ -1,14 +1,12 @@
 #pragma once
 
-class m_IDirect3DIndexBuffer9 : public IDirect3DIndexBuffer9, public AddressLookupTableObject
-{
+class m_IDirect3DIndexBuffer9 : public IDirect3DIndexBuffer9, public AddressLookupTableObject {
 private:
 	LPDIRECT3DINDEXBUFFER9 ProxyInterface;
 	m_IDirect3DDevice9Ex* m_pDeviceEx = nullptr;
 
 public:
-	m_IDirect3DIndexBuffer9(LPDIRECT3DINDEXBUFFER9 pBuffer9, m_IDirect3DDevice9Ex* pDevice) : ProxyInterface(pBuffer9), m_pDeviceEx(pDevice)
-	{
+	m_IDirect3DIndexBuffer9(LPDIRECT3DINDEXBUFFER9 pBuffer9, m_IDirect3DDevice9Ex* pDevice) : ProxyInterface(pBuffer9), m_pDeviceEx(pDevice) {
 		pDevice->ProxyAddressLookupTable->SaveAddress(this, ProxyInterface);
 	}
 	~m_IDirect3DIndexBuffer9() {}
@@ -31,5 +29,5 @@ public:
 	STDMETHOD_(D3DRESOURCETYPE, GetType)(THIS);
 	STDMETHOD(Lock)(THIS_ UINT OffsetToLock, UINT SizeToLock, void** ppbData, DWORD Flags);
 	STDMETHOD(Unlock)(THIS);
-	STDMETHOD(GetDesc)(THIS_ D3DINDEXBUFFER_DESC *pDesc);
+	STDMETHOD(GetDesc)(THIS_ D3DINDEXBUFFER_DESC* pDesc);
 };

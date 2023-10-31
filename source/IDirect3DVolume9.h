@@ -1,14 +1,12 @@
 #pragma once
 
-class m_IDirect3DVolume9 : public IDirect3DVolume9, public AddressLookupTableObject
-{
+class m_IDirect3DVolume9 : public IDirect3DVolume9, public AddressLookupTableObject {
 private:
 	LPDIRECT3DVOLUME9 ProxyInterface;
 	m_IDirect3DDevice9Ex* m_pDeviceEx = nullptr;
 
 public:
-	m_IDirect3DVolume9(LPDIRECT3DVOLUME9 pVolume8, m_IDirect3DDevice9Ex* pDevice) : ProxyInterface(pVolume8), m_pDeviceEx(pDevice)
-	{
+	m_IDirect3DVolume9(LPDIRECT3DVOLUME9 pVolume8, m_IDirect3DDevice9Ex* pDevice) : ProxyInterface(pVolume8), m_pDeviceEx(pDevice) {
 		pDevice->ProxyAddressLookupTable->SaveAddress(this, ProxyInterface);
 	}
 	~m_IDirect3DVolume9() {}
@@ -26,7 +24,7 @@ public:
 	STDMETHOD(GetPrivateData)(THIS_ REFGUID refguid, void* pData, DWORD* pSizeOfData);
 	STDMETHOD(FreePrivateData)(THIS_ REFGUID refguid);
 	STDMETHOD(GetContainer)(THIS_ REFIID riid, void** ppContainer);
-	STDMETHOD(GetDesc)(THIS_ D3DVOLUME_DESC *pDesc);
-	STDMETHOD(LockBox)(THIS_ D3DLOCKED_BOX * pLockedVolume, CONST D3DBOX* pBox, DWORD Flags);
+	STDMETHOD(GetDesc)(THIS_ D3DVOLUME_DESC* pDesc);
+	STDMETHOD(LockBox)(THIS_ D3DLOCKED_BOX* pLockedVolume, CONST D3DBOX* pBox, DWORD Flags);
 	STDMETHOD(UnlockBox)(THIS);
 };

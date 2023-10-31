@@ -47,6 +47,7 @@
     <UseDebugLibraries>false</UseDebugLibraries>
     <CharacterSet>MultiByte</CharacterSet>
     <PlatformToolset>v143</PlatformToolset>
+    <SpectreMitigation>false</SpectreMitigation>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release Win64|x64'" Label="Configuration">
     <ConfigurationType>DynamicLibrary</ConfigurationType>
@@ -84,10 +85,10 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LinkIncremental>false</LinkIncremental>
-    <OutDir>..\data\</OutDir>
+    <OutDir>F:\SteamLibrary\steamapps\common\Grand Theft Auto IV\GTAIV\</OutDir>
     <IntDir>obj\Win32\Release\</IntDir>
-    <TargetName>ShadowResFix</TargetName>
-    <TargetExt>.asi</TargetExt>
+    <TargetName>d3d9</TargetName>
+    <TargetExt>.dll</TargetExt>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release Win64|x64'">
     <LinkIncremental>false</LinkIncremental>
@@ -98,10 +99,10 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <LinkIncremental>true</LinkIncremental>
-    <OutDir>F:\SteamLibrary\steamapps\common\Grand Theft Auto IV\GTAIV\plugins</OutDir>
+    <OutDir>E:\Games\GTAIV 1070\</OutDir>
     <IntDir>obj\Win32\Debug\</IntDir>
-    <TargetName>ShadowResFix</TargetName>
-    <TargetExt>.asi</TargetExt>
+    <TargetName>d3d9</TargetName>
+    <TargetExt>.dll</TargetExt>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug Win64|x64'">
     <LinkIncremental>true</LinkIncremental>
@@ -114,27 +115,42 @@
     <ClCompile>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
-      <PreprocessorDefinitions>rsc_CompanyName="FixingIV";rsc_LegalCopyright="MIT License";rsc_FileVersion="1.0.0.3";rsc_ProductVersion="1.0.0.3";rsc_InternalName="ShadowResFix";rsc_ProductName="ShadowResFix";rsc_OriginalFilename="d3d9.dll";rsc_FileDescription="https://github.com/RaphaelK12/ShadowResFix";rsc_UpdateUrl="https://github.com/RaphaelK12/ShadowResFix";NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;rsc_CompanyName="FixingIV";rsc_LegalCopyright="MIT License";rsc_FileVersion="1.0.0.6";rsc_ProductVersion="1.0.0.6";rsc_InternalName="ShadowResFix";rsc_ProductName="ShadowResFix";rsc_OriginalFilename="d3d9.dll";rsc_FileDescription="https://github.com/RaphaelK12/ShadowResFix";rsc_UpdateUrl="https://github.com/RaphaelK12/ShadowResFix";NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>..\source\dxsdk;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <Optimization>Full</Optimization>
-      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>false</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <MinimalRebuild>false</MinimalRebuild>
       <StringPooling>true</StringPooling>
-      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <AdditionalOptions>-std:c++latest %(AdditionalOptions)</AdditionalOptions>
+      <WholeProgramOptimization>true</WholeProgramOptimization>
+      <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <EnableEnhancedInstructionSet>AdvancedVectorExtensions</EnableEnhancedInstructionSet>
+      <DisableSpecificWarnings>4018</DisableSpecificWarnings>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
     </ClCompile>
     <ResourceCompile>
-      <PreprocessorDefinitions>rsc_CompanyName=\"FixingIV\";rsc_LegalCopyright=\"MIT License\";rsc_FileVersion=\"1.0.0.3\";rsc_ProductVersion=\"1.0.0.3\";rsc_InternalName=\"ShadowResFix\";rsc_ProductName=\"ShadowResFix\";rsc_OriginalFilename=\"d3d9.dll\";rsc_FileDescription=\"https://github.com/RaphaelK12/ShadowResFix\";rsc_UpdateUrl=\"https://github.com/RaphaelK12/ShadowResFix\";NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>rsc_CompanyName=\"FixingIV\";rsc_LegalCopyright=\"MIT License\";rsc_FileVersion=\"1.0.0.6\";rsc_ProductVersion=\"1.0.0.6\";rsc_InternalName=\"ShadowResFix\";rsc_ProductName=\"ShadowResFix\";rsc_OriginalFilename=\"d3d9.dll\";rsc_FileDescription=\"https://github.com/RaphaelK12/ShadowResFix\";rsc_UpdateUrl=\"https://github.com/RaphaelK12/ShadowResFix\";NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>..\source\dxsdk;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ResourceCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
-      <EnableCOMDATFolding>true</EnableCOMDATFolding>
-      <OptimizeReferences>true</OptimizeReferences>
+      <EnableCOMDATFolding>
+      </EnableCOMDATFolding>
+      <OptimizeReferences>
+      </OptimizeReferences>
       <AdditionalLibraryDirectories>..\source\dxsdk\lib\x86;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <ImportLibrary>..\data\ShadowResFix.lib</ImportLibrary>
       <ModuleDefinitionFile>../source/d3d9.def</ModuleDefinitionFile>
+      <AdditionalDependencies>dinput8.lib;dxguid.lib;version.lib;$(CoreLibraryDependencies);%(AdditionalDependencies)</AdditionalDependencies>
+      <RandomizedBaseAddress>false</RandomizedBaseAddress>
+      <FixedBaseAddress>true</FixedBaseAddress>
+      <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
+      <IgnoreAllDefaultLibraries>
+      </IgnoreAllDefaultLibraries>
+      <GenerateDebugInformation>DebugFull</GenerateDebugInformation>
     </Link>
     <BuildLog>
       <Path>log\$(ProjectName).log</Path>
@@ -144,7 +160,7 @@
     <ClCompile>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
-      <PreprocessorDefinitions>rsc_CompanyName="FixingIV";rsc_LegalCopyright="MIT License";rsc_FileVersion="1.0.0.3";rsc_ProductVersion="1.0.0.3";rsc_InternalName="ShadowResFix";rsc_ProductName="ShadowResFix";rsc_OriginalFilename="d3d9.dll";rsc_FileDescription="https://github.com/RaphaelK12/ShadowResFix";rsc_UpdateUrl="https://github.com/RaphaelK12/ShadowResFix";NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>rsc_CompanyName="FixingIV";rsc_LegalCopyright="MIT License";rsc_FileVersion="1.0.0.6";rsc_ProductVersion="1.0.0.6";rsc_InternalName="ShadowResFix";rsc_ProductName="ShadowResFix";rsc_OriginalFilename="d3d9.dll";rsc_FileDescription="https://github.com/RaphaelK12/ShadowResFix";rsc_UpdateUrl="https://github.com/RaphaelK12/ShadowResFix";NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>..\source\dxsdk;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <Optimization>Full</Optimization>
       <FunctionLevelLinking>true</FunctionLevelLinking>
@@ -155,7 +171,7 @@
       <AdditionalOptions>-std:c++latest %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <ResourceCompile>
-      <PreprocessorDefinitions>rsc_CompanyName=\"FixingIV\";rsc_LegalCopyright=\"MIT License\";rsc_FileVersion=\"1.0.0.3\";rsc_ProductVersion=\"1.0.0.3\";rsc_InternalName=\"ShadowResFix\";rsc_ProductName=\"ShadowResFix\";rsc_OriginalFilename=\"d3d9.dll\";rsc_FileDescription=\"https://github.com/RaphaelK12/ShadowResFix\";rsc_UpdateUrl=\"https://github.com/RaphaelK12/ShadowResFix\";NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>rsc_CompanyName=\"FixingIV\";rsc_LegalCopyright=\"MIT License\";rsc_FileVersion=\"1.0.0.6\";rsc_ProductVersion=\"1.0.0.6\";rsc_InternalName=\"ShadowResFix\";rsc_ProductName=\"ShadowResFix\";rsc_OriginalFilename=\"d3d9.dll\";rsc_FileDescription=\"https://github.com/RaphaelK12/ShadowResFix\";rsc_UpdateUrl=\"https://github.com/RaphaelK12/ShadowResFix\";NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>..\source\dxsdk;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ResourceCompile>
     <Link>
@@ -174,23 +190,26 @@
     <ClCompile>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
-      <PreprocessorDefinitions>rsc_CompanyName="FixingIV";rsc_LegalCopyright="MIT License";rsc_FileVersion="1.0.0.3";rsc_ProductVersion="1.0.0.3";rsc_InternalName="ShadowResFix";rsc_ProductName="ShadowResFix";rsc_OriginalFilename="d3d9.dll";rsc_FileDescription="https://github.com/RaphaelK12/ShadowResFix";rsc_UpdateUrl="https://github.com/RaphaelK12/ShadowResFix";DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;rsc_CompanyName="FixingIV";rsc_LegalCopyright="MIT License";rsc_FileVersion="1.0.0.6";rsc_ProductVersion="1.0.0.6";rsc_InternalName="ShadowResFix";rsc_ProductName="ShadowResFix";rsc_OriginalFilename="d3d9.dll";rsc_FileDescription="https://github.com/RaphaelK12/ShadowResFix";rsc_UpdateUrl="https://github.com/RaphaelK12/ShadowResFix";DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>..\source\dxsdk;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <DebugInformationFormat>EditAndContinue</DebugInformationFormat>
       <Optimization>Disabled</Optimization>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <AdditionalOptions>-std:c++latest %(AdditionalOptions)</AdditionalOptions>
+      <DisableSpecificWarnings>4018</DisableSpecificWarnings>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
     </ClCompile>
     <ResourceCompile>
-      <PreprocessorDefinitions>rsc_CompanyName=\"FixingIV\";rsc_LegalCopyright=\"MIT License\";rsc_FileVersion=\"1.0.0.3\";rsc_ProductVersion=\"1.0.0.3\";rsc_InternalName=\"ShadowResFix\";rsc_ProductName=\"ShadowResFix\";rsc_OriginalFilename=\"d3d9.dll\";rsc_FileDescription=\"https://github.com/RaphaelK12/ShadowResFix\";rsc_UpdateUrl=\"https://github.com/RaphaelK12/ShadowResFix\";DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>rsc_CompanyName=\"FixingIV\";rsc_LegalCopyright=\"MIT License\";rsc_FileVersion=\"1.0.0.6\";rsc_ProductVersion=\"1.0.0.6\";rsc_InternalName=\"ShadowResFix\";rsc_ProductName=\"ShadowResFix\";rsc_OriginalFilename=\"d3d9.dll\";rsc_FileDescription=\"https://github.com/RaphaelK12/ShadowResFix\";rsc_UpdateUrl=\"https://github.com/RaphaelK12/ShadowResFix\";DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>..\source\dxsdk;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ResourceCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
-      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <GenerateDebugInformation>DebugFastLink</GenerateDebugInformation>
       <AdditionalLibraryDirectories>..\source\dxsdk\lib\x86;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <ImportLibrary>..\data\ShadowResFix.lib</ImportLibrary>
       <ModuleDefinitionFile>../source/d3d9.def</ModuleDefinitionFile>
+      <AdditionalDependencies>dinput8.lib;dxguid.lib;version.lib;$(CoreLibraryDependencies);%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
     <BuildLog>
       <Path>log\$(ProjectName).log</Path>
@@ -200,7 +219,7 @@
     <ClCompile>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
-      <PreprocessorDefinitions>rsc_CompanyName="FixingIV";rsc_LegalCopyright="MIT License";rsc_FileVersion="1.0.0.3";rsc_ProductVersion="1.0.0.3";rsc_InternalName="ShadowResFix";rsc_ProductName="ShadowResFix";rsc_OriginalFilename="d3d9.dll";rsc_FileDescription="https://github.com/RaphaelK12/ShadowResFix";rsc_UpdateUrl="https://github.com/RaphaelK12/ShadowResFix";DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>rsc_CompanyName="FixingIV";rsc_LegalCopyright="MIT License";rsc_FileVersion="1.0.0.6";rsc_ProductVersion="1.0.0.6";rsc_InternalName="ShadowResFix";rsc_ProductName="ShadowResFix";rsc_OriginalFilename="d3d9.dll";rsc_FileDescription="https://github.com/RaphaelK12/ShadowResFix";rsc_UpdateUrl="https://github.com/RaphaelK12/ShadowResFix";DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>..\source\dxsdk;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <DebugInformationFormat>EditAndContinue</DebugInformationFormat>
       <Optimization>Disabled</Optimization>
@@ -208,7 +227,7 @@
       <AdditionalOptions>-std:c++latest %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <ResourceCompile>
-      <PreprocessorDefinitions>rsc_CompanyName=\"FixingIV\";rsc_LegalCopyright=\"MIT License\";rsc_FileVersion=\"1.0.0.3\";rsc_ProductVersion=\"1.0.0.3\";rsc_InternalName=\"ShadowResFix\";rsc_ProductName=\"ShadowResFix\";rsc_OriginalFilename=\"d3d9.dll\";rsc_FileDescription=\"https://github.com/RaphaelK12/ShadowResFix\";rsc_UpdateUrl=\"https://github.com/RaphaelK12/ShadowResFix\";DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>rsc_CompanyName=\"FixingIV\";rsc_LegalCopyright=\"MIT License\";rsc_FileVersion=\"1.0.0.6\";rsc_ProductVersion=\"1.0.0.6\";rsc_InternalName=\"ShadowResFix\";rsc_ProductName=\"ShadowResFix\";rsc_OriginalFilename=\"d3d9.dll\";rsc_FileDescription=\"https://github.com/RaphaelK12/ShadowResFix\";rsc_UpdateUrl=\"https://github.com/RaphaelK12/ShadowResFix\";DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>..\source\dxsdk;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ResourceCompile>
     <Link>
@@ -224,6 +243,8 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="..\source\AddressLookupTable.h" />
+    <ClInclude Include="..\source\BasicShader.h" />
+    <ClInclude Include="..\source\checksum.h" />
     <ClInclude Include="..\source\IDirect3D9Ex.h" />
     <ClInclude Include="..\source\IDirect3DCubeTexture9.h" />
     <ClInclude Include="..\source\IDirect3DDevice9Ex.h" />
@@ -239,14 +260,29 @@
     <ClInclude Include="..\source\IDirect3DVertexShader9.h" />
     <ClInclude Include="..\source\IDirect3DVolume9.h" />
     <ClInclude Include="..\source\IDirect3DVolumeTexture9.h" />
+    <ClInclude Include="..\source\EmbeddedFont.h" />
+    <ClInclude Include="..\source\imgui.h" />
+    <ClInclude Include="..\source\imgui_impl_dx9.h" />
+    <ClInclude Include="..\source\imgui_impl_dx9_shader.h" />
+    <ClInclude Include="..\source\imgui_impl_win32.h" />
+    <ClInclude Include="..\source\imgui_internal.h" />
+    <ClInclude Include="..\source\imstb_rectpack.h" />
+    <ClInclude Include="..\source\imstb_textedit.h" />
+    <ClInclude Include="..\source\imstb_truetype.h" />
+    <ClInclude Include="..\source\Log.h" />
+    <ClInclude Include="..\source\ShadowResFix.h" />
+    <ClInclude Include="..\source\TextEditor.h" />
+    <ClInclude Include="..\source\Utils.h" />
     <ClInclude Include="..\source\VersionInfo.h" />
     <ClInclude Include="..\source\d3d9.h" />
     <ClInclude Include="..\source\iathook.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\source\crc32.cpp" />
     <ClCompile Include="..\source\IDirect3D9Ex.cpp" />
     <ClCompile Include="..\source\IDirect3DCubeTexture9.cpp" />
     <ClCompile Include="..\source\IDirect3DDevice9Ex.cpp" />
+    <ClCompile Include="..\source\IDirect3DDevice9Ex2.cpp" />
     <ClCompile Include="..\source\IDirect3DIndexBuffer9.cpp" />
     <ClCompile Include="..\source\IDirect3DPixelShader9.cpp" />
     <ClCompile Include="..\source\IDirect3DQuery9.cpp" />
@@ -259,12 +295,23 @@
     <ClCompile Include="..\source\IDirect3DVertexShader9.cpp" />
     <ClCompile Include="..\source\IDirect3DVolume9.cpp" />
     <ClCompile Include="..\source\IDirect3DVolumeTexture9.cpp" />
+    <ClCompile Include="..\source\imgui.cpp" />
+    <ClCompile Include="..\source\imgui_demo.cpp" />
+    <ClCompile Include="..\source\imgui_draw.cpp" />
+    <ClCompile Include="..\source\imgui_impl_dx9_shader.cpp" />
+    <ClCompile Include="..\source\imgui_impl_win32.cpp" />
+    <ClCompile Include="..\source\imgui_tables.cpp" />
+    <ClCompile Include="..\source\imgui_widgets.cpp" />
+    <ClCompile Include="..\source\ShadowResFix_Menu.cpp" />
     <ClCompile Include="..\source\InterfaceQuery.cpp" />
     <ClCompile Include="..\source\dllmain.cpp" />
     <ClCompile Include="..\source\ShadowResFix.cpp" />
+    <ClCompile Include="..\source\TextEditor.cpp" />
+    <ClCompile Include="..\source\Vars.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\source\d3d9.def" />
+    <None Include="F:\SteamLibrary\steamapps\common\Grand Theft Auto IV\GTAIV\shadowresfix.ini" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="..\source\VersionInfo.rc" />
