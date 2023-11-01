@@ -1,4 +1,9 @@
 ## ShadowResFix
+
+![Alt text](ScreenShots/ShaderEditor_Textures.png?raw=true "Textures")
+
+![Alt text](ScreenShots/ShaderEditor_shaders.png?raw=true "Shaders")
+
 # Fixes and Realtime Shader Editor for GTA4.
 Originally ShadowResFix was a small plugin used to test modifications and make some fixes in GTA4 (like fixing the shadow map resolution), recently I added some features, the main one being a real-time shader editor, if you are using the shaders from " Parallellines/FusionFix", the shaders will appear with the names used in the .fxc files, otherwise a crc32 hash will be used to identify them.
 The editor uses both shaders that the game loads from .fxc files, and shaders from the "shaders/asm/" and "shaders/hlsl/" folders.
