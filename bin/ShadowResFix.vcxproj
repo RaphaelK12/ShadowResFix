@@ -99,7 +99,7 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <LinkIncremental>true</LinkIncremental>
-    <OutDir>E:\Games\GTAIV 1070\</OutDir>
+    <OutDir>F:\SteamLibrary\steamapps\common\Resident Evil 6\</OutDir>
     <IntDir>obj\Win32\Debug\</IntDir>
     <TargetName>d3d9</TargetName>
     <TargetExt>.dll</TargetExt>

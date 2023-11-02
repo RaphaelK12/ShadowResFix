@@ -763,6 +763,22 @@ HRESULT __stdcall DInput8DeviceAcquireH(IDirectInputDevice8* This) {
 
 //Functions
 
+
+std::vector<HWND> windows;
+BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lParam) {
+    DWORD lpdwProcessId;
+    GetWindowThreadProcessId(hwnd, &lpdwProcessId);
+    if(lpdwProcessId == lParam) {
+        if(IsWindowVisible(hwnd))
+            windows.push_back(hwnd);
+        return FALSE;
+    }
+    return TRUE;
+}
+
+
+
+
 bool Initialize() {
     std::stringstream logStream;
     MH_STATUS mhStatus;
@@ -775,7 +791,7 @@ bool Initialize() {
             return false;
         }
     }
-        if(*gDinpu8Device_vtbl) {
+    if(*gDinpu8Device_vtbl) {
         if(!DInput8DeviceGetDeviceStateO) {
             mhStatus = MH_CreateHook(gDinpu8Device_vtbl[9], &DInput8DeviceGetDeviceStateH, (void**) &DInput8DeviceGetDeviceStateO);
             if(mhStatus != MH_OK) {
@@ -801,8 +817,14 @@ bool Initialize() {
         }
     }
 
+    EnumWindows(EnumWindowsProc, GetCurrentProcessId());
+    if(windows.empty()) {
+        MessageBox(0, "Unable to enumerate windows", "Shader Editor", MB_ICONWARNING);
+        TerminateProcess(GetCurrentProcess(), 0);
+    }
+
     if(!WndProcO) {
-        WndProcO = (WNDPROC) SetWindowLongPtr(FindWindow("grcWindow", "GTAIV"), GWL_WNDPROC, (LONG_PTR) WndProcH);
+        WndProcO = (WNDPROC) SetWindowLongPtr(windows[0] /*FindWindowA("grcWindow", "GTAIV")*/, GWL_WNDPROC, (LONG_PTR) WndProcH);
 
         if(!WndProcO) {
             return false;
@@ -1008,11 +1030,12 @@ bool WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved) {
                 int32_t gameVersion = 0;
 
                 if(!Utils::GetGameVersion(gameVersion)) {
-                    logStream << "Shader Editor only supports patch 4, 8 and CE - " << std::to_string(gameVersion);
+                    logStream << "Shader Editor only supports patch 3, 4, 6, 7, 8 and CE - " << std::to_string(gameVersion);
                     Log::Error(logStream.str());
                 }
+                logStream.clear();
 
-                logStream << "Game Version: " << gameVersion;
+                logStream << "Game Version: " << gameVersion << "\n";
                 Log::Info(logStream.str());
                 logStream.clear();
 

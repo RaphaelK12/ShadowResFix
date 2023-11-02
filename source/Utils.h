@@ -34,8 +34,23 @@ namespace Utils {
                             version |= ((verInfo->dwFileVersionLS >> 0) & 0xffff);
 
                             switch(version) {
+                                case 0x01000300:
+                                    gameVersion = 1030;
+                                    return true;
+                                    break;
+
                                 case 0x01000400:
                                     gameVersion = 1040;
+                                    return true;
+                                    break;
+
+                                case 0x01000600:
+                                    gameVersion = 1060;
+                                    return true;
+                                    break;
+
+                                case 0x01000700:
+                                    gameVersion = 1070;
                                     return true;
                                     break;
 
