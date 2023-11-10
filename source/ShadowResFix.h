@@ -74,7 +74,7 @@ public:
 
     int32_t GameVersion = 0;
 
-    ImGuiKey mOpenWindowKey = ImGuiKey_F10;
+    ImGuiKey mOpenWindowKey = ImGuiKey_F9;
     ImGuiKey mCompileShader = ImGuiKey_F5;
 
     ImVec2 mWindowPos = ImVec2(5.f, 5.f);
@@ -87,6 +87,6 @@ public:
     ImVec2 mLogSize = ImVec2(0.f, 0.f);
 
     float mItemInnerSpacing = 4.f;
-    float mFontScale = 1.f;
+    float mFontScale = 0.9f;
     ImGuiKey mToggleCameraControlKey = ImGuiKey_None;
 };

@@ -107,7 +107,6 @@ int getfxid(int id, std::string oName) {
     return fxid;
 }
 
-
 std::string LoadFX(std::string fxname, std::string shadername) {
     size_t found = shadername.find_last_of(".");
     std::string filename = std::string("shaders\\fx\\") + fxname + "\\" + shadername.substr(0, found) + ".hlsl";
@@ -184,11 +183,13 @@ HRESULT SaveASM(std::string fxname, std::string shadername, std::string source, 
 
 IDirect3DPixelShader9* m_IDirect3DPixelShader9::dummyShader = nullptr;
 
-m_IDirect3DPixelShader9::m_IDirect3DPixelShader9(LPDIRECT3DPIXELSHADER9 pShader9, m_IDirect3DDevice9Ex* pDevice, bool extra) :
+m_IDirect3DPixelShader9::m_IDirect3DPixelShader9(LPDIRECT3DPIXELSHADER9 pShader9, m_IDirect3DDevice9Ex* pDevice, ShaderCreationMode extra) :
     ProxyInterface(pShader9), m_pDeviceEx(pDevice) {
     pDevice->ProxyAddressLookupTable->SaveAddress(this, ProxyInterface);
+    static char buf100[100] = { 0 };
     id = getSignature(this, patternFF);
     crc32 = getCRC32(this);
+    sprintf(buf100, "ps_%x.asm", crc32);
     if(id == -1)
         id = getSignature(this, patternZS);
 
@@ -197,74 +198,78 @@ m_IDirect3DPixelShader9::m_IDirect3DPixelShader9(LPDIRECT3DPIXELSHADER9 pShader9
         Log::Error("illegal ps id: " + std::to_string(id));
     }
     if(id >= 0 && id < (int) shader_names_ps.size()) {
+
         oName = shader_names_ps[id];
         fxid = getfxid(id, oName);
         fxName = shader_names_fxc[fxid];
         oName = oName.substr(oName.find_last_of("/") + 1);
-        loadedFx = LoadFX(fxName, oName);
-        loadedAsm = LoadASM(fxName, oName);
+        if(extra != SC_NEW) {
+            loadedFx = LoadFX(fxName, oName);
+            loadedAsm = LoadASM(fxName, oName);
+        }
         if(fxid<0 || fxid>(int)fx_ps.size()) {
             Log::Error("fxid not found");
         }
-        else if(extra == false) {
+        else if(extra == SC_FXC || extra == SC_GAME  ) {
             fx_ps[fxid].push_back(this);
             ps[id] = this;
         }
         else {
-            ps_2.push_back(this);
-        }
-        for(auto& i : shadowGen) {
-            if(i == oName) {
-                useBias = true;
+            if(extra != SC_NEW) {
+                ps_2.push_back(this);
             }
         }
-        if(loadedAsm.length() > 1) {
-            auto hr = compileShaderSource(loadedAsm, PS_ASM, SU_LASM);
-            if(hr != S_OK) {
-                //Log::Warning("Unable to compile Loaded ASM: " + oName);
-                //Log::Text(oName);
+        //for(auto& i : shadowGen) {
+        //    if(i == oName) {
+        //        useBias = true;
+        //    }
+        //}
+        if(extra != SC_NEW) {
+            if(loadedAsm.length() > 1) {
+                auto hr = compileShaderSource(loadedAsm, PS_ASM, SU_LASM);
+                if(hr != S_OK) {
+                    //Log::Warning("Unable to compile Loaded ASM: " + oName);
+                }
+                else {
+                    //usingShader = SU_LASM;
+                }
             }
-            else {
-                usingShader = SU_LASM;
-                //usingShader = SU_FXC;
+            if(loadedFx.length() > 1) {
+                auto hr = compileShaderSource(loadedFx, PS_FX, SU_LFX);
+                if(hr != S_OK) {
+                    //Log::Warning("Unable to compile Loaded HLSL: " + oName);
+                }
+                else {
+                    //usingShader = SU_LFX;
+                }
             }
         }
-        if(loadedFx.length() > 1) {
-            auto hr = compileShaderSource(loadedFx, PS_FX, SU_LFX);
-            if(hr != S_OK) {
-                //Log::Warning("Unable to compile Loaded HLSL: " + oName);
-                //Log::Text(oName);
-            }
-            else {
-                //usingShader = SU_LASM;
-            }
-        }
-        printf("%i %i %s\n", id, fxid, oName.c_str());
+        //printf("%i %i %s\n", id, fxid, oName.c_str());
     }
     else {
-        static char buf100[100] = { 0 };
-        sprintf(buf100, "%x.asm", crc32);
         fxName = "nonamed";
-        ps_2.push_back(this);
-        if(loadedAsm.length() > 1) {
-            auto hr = compileShaderSource(loadedAsm, PS_ASM, SU_LASM);
-            if(hr != S_OK) {
-                //Log::Warning("Unable to compile Loaded ASM: " + oName);
-                //Log::Text(oName);
+        oName = buf100;
+        if(extra != SC_NEW) {
+            ps_2.push_back(this);
+            loadedFx = LoadFX(fxName, oName);
+            loadedAsm = LoadASM(fxName, oName);
+            if(loadedAsm.length() > 1) {
+                auto hr = compileShaderSource(loadedAsm, PS_ASM, SU_LASM);
+                if(hr != S_OK) {
+                    //Log::Warning("Unable to compile Loaded ASM: " + oName);
+                }
+                else {
+                    //usingShader = SU_LASM;
+                }
             }
-            else {
-                usingShader = SU_LASM;
-                //usingShader = SU_FXC;
-            }
-        }
-        if(loadedFx.length() > 1) {
-            auto hr = compileShaderSource(loadedFx, PS_FX, SU_LFX);
-            if(hr != S_OK) {
-                //Log::Warning("Unable to compile Loaded HLSL: " + oName);
-                //Log::Text(oName);
-            }
-            else {
-                //usingShader = SU_LASM;
+            if(loadedFx.length() > 1) {
+                auto hr = compileShaderSource(loadedFx, PS_FX, SU_LFX);
+                if(hr != S_OK) {
+                    //Log::Warning("Unable to compile Loaded HLSL: " + oName);
+                }
+                else {
+                    //usingShader = SU_LFX;
+                }
             }
         }
     }
@@ -276,9 +281,11 @@ m_IDirect3DPixelShader9::m_IDirect3DPixelShader9(LPDIRECT3DPIXELSHADER9 pShader9
         if(hr1 == S_OK) {
             int sz = bf1->GetBufferSize();
             char* p = (char*) bf1->GetBufferPointer();
-            hr2 = m_pDeviceEx->CreatePixelShader2((DWORD*) p, &dummyShader);
-            if(dummyShader)
+            hr2 = m_pDeviceEx->CreatePixelShader2((DWORD*) p, &dummyShader, SC_NEW);
+            if(dummyShader) {
                 ((m_IDirect3DPixelShader9*) dummyShader)->disable = true;
+                ((m_IDirect3DPixelShader9*) dummyShader)->oName = "dummyps";
+            }
         }
         if(hr1 != S_OK || hr2 != S_OK) {
             Log::Error("Unable to compile Dummy Pixel shader");
@@ -290,9 +297,11 @@ m_IDirect3DPixelShader9::m_IDirect3DPixelShader9(LPDIRECT3DPIXELSHADER9 pShader9
 
 m_IDirect3DPixelShader9::m_IDirect3DPixelShader9(LPDIRECT3DPIXELSHADER9 pShader9, m_IDirect3DDevice9Ex* pDevice) :
     ProxyInterface(pShader9), m_pDeviceEx(pDevice) {
+    static char buf100[100] = { 0 };
     pDevice->ProxyAddressLookupTable->SaveAddress(this, ProxyInterface);
     id = getSignature(this, patternFF);
     crc32 = getCRC32(this);
+    sprintf(buf100, "ps_%x.asm", crc32);
     if(id == -1)
         id = getSignature(this, patternZS);
 
@@ -301,13 +310,14 @@ m_IDirect3DPixelShader9::m_IDirect3DPixelShader9(LPDIRECT3DPIXELSHADER9 pShader9
         Log::Error("illegal ps id: " + std::to_string(id));
     }
     if(id >= 0 && id < (int) shader_names_ps.size()) {
+
         oName = shader_names_ps[id];
         fxid = getfxid(id, oName);
         fxName = shader_names_fxc[fxid];
         oName = oName.substr(oName.find_last_of("/") + 1);
         loadedFx = LoadFX(fxName, oName);
         loadedAsm = LoadASM(fxName, oName);
-        if(fxid < 0 || fxid >(int)fx_ps.size()) {
+        if(fxid < 0 || fxid > (int)fx_ps.size()) {
             Log::Error("fxid not found");
         }
         else {
@@ -322,20 +332,43 @@ m_IDirect3DPixelShader9::m_IDirect3DPixelShader9(LPDIRECT3DPIXELSHADER9 pShader9
         printf("%i %i %s\n", id, fxid, oName.c_str());
     }
     else {
+        fxName = "nonamed";
+        oName = buf100;
         ps_2.push_back(this);
+        loadedFx = LoadFX(fxName, oName);
+        loadedAsm = LoadASM(fxName, oName);
+        if(loadedAsm.length() > 1) {
+            auto hr = compileShaderSource(loadedAsm, PS_ASM, SU_LASM);
+            if(hr != S_OK) {
+                //Log::Warning("Unable to compile Loaded ASM: " + oName);
+            }
+            else {
+                //usingShader = SU_LASM;
+            }
+        }
+        if(loadedFx.length() > 1) {
+            auto hr = compileShaderSource(loadedFx, PS_FX, SU_LFX);
+            if(hr != S_OK) {
+                //Log::Warning("Unable to compile Loaded HLSL: " + oName);
+            }
+            else {
+                //usingShader = SU_LFX;
+            }
+        }
     }
     if(!dummyShader) {
-        HRESULT hr2 = 1;
-
+        HRESULT hr2 = S_FALSE;
         ID3DXBuffer* bf1 = nullptr;
         ID3DXBuffer* bf2 = nullptr;
         HRESULT hr1 = D3DXAssembleShader(shadersrcps, sizeof(shadersrcps), 0, 0, 0, &bf1, &bf2);
         if(hr1 == S_OK) {
             int sz = bf1->GetBufferSize();
             char* p = (char*) bf1->GetBufferPointer();
-            hr2 = m_pDeviceEx->CreatePixelShader2((DWORD*) p, &dummyShader);
-            if(dummyShader)
+            hr2 = m_pDeviceEx->CreatePixelShader2((DWORD*) p, &dummyShader, SC_NEW);
+            if(dummyShader) {
                 ((m_IDirect3DPixelShader9*) dummyShader)->disable = true;
+                ((m_IDirect3DPixelShader9*) dummyShader)->oName = "dummyps";
+            }
         }
         if(hr1 != S_OK || hr2 != S_OK) {
             Log::Error("Unable to compile Dummy Pixel shader");
@@ -346,6 +379,11 @@ m_IDirect3DPixelShader9::m_IDirect3DPixelShader9(LPDIRECT3DPIXELSHADER9 pShader9
 }
 
 m_IDirect3DPixelShader9::~m_IDirect3DPixelShader9() {
+    for(int i = 0; i < (int) ps_2.size(); i++) {
+        if(ps_2[i] == this) {
+            ps_2[i] = 0;
+        }
+    }
     if(id >= 0) {
         ps[id] = nullptr;
     }
@@ -425,6 +463,7 @@ HRESULT m_IDirect3DPixelShader9::setCompiledShaderToUse(ShaderUse s) {
     }
     return S_FALSE;
 }
+
 HRESULT m_IDirect3DPixelShader9::compileShaderSource(std::string source, ShaderType type, ShaderUse use) {
     switch(use) {
         case SU_LASM:
@@ -445,7 +484,7 @@ HRESULT m_IDirect3DPixelShader9::compileShaderSource(std::string source, ShaderT
         {
             HRESULT hr = D3DXAssembleShader(source.c_str(), source.length(), 0, 0, 0, &bf1, &bf4);
             if(hr == S_OK) {
-                HRESULT hr2 = m_pDeviceEx->GetProxyInterface()->CreatePixelShader((DWORD*) bf1->GetBufferPointer(), &shader);
+                HRESULT hr2 = m_pDeviceEx->CreatePixelShader2((DWORD*) bf1->GetBufferPointer(), &shader, SC_NEW);
                 if(hr2 != S_OK || !shader) {
                     Log::Error("Failed to create pixel shader asm: " + oName);
                     SAFE_RELEASE(shader);
@@ -472,7 +511,7 @@ HRESULT m_IDirect3DPixelShader9::compileShaderSource(std::string source, ShaderT
             HRESULT hr2 = S_FALSE;
             IDirect3DPixelShader9* shader = nullptr;
             if(hr3 == S_OK) {
-                hr2 = m_pDeviceEx->GetProxyInterface()->CreatePixelShader((DWORD*) bf3->GetBufferPointer(), &shader);
+                hr2 = m_pDeviceEx->CreatePixelShader2((DWORD*) bf3->GetBufferPointer(), &shader, SC_NEW);
                 if(hr2 != S_OK || !shader) {
                     Log::Error("Failed to create pixel shader hlsl: " + oName);
                     SAFE_RELEASE(shader);
@@ -528,6 +567,18 @@ ULONG m_IDirect3DPixelShader9::AddRef(THIS) {
 }
 
 ULONG m_IDirect3DPixelShader9::Release(THIS) {
+    for(int i = 0; i < (int) ps_2.size(); i++) {
+        if(ps_2[i] == this) {
+            ps_2[i] = 0;
+        }
+    }
+    for(auto& f : fx_ps) {
+        for(int i = 0; i < f.size(); i++) {
+            if(f[i] == this) {
+                f[i] = 0;
+            }
+        }
+    }
     return ProxyInterface->Release();
 }
 

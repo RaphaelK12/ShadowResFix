@@ -1231,9 +1231,11 @@ void ShadowResFix::DrawMainWindow() {
             }
         }
 
+        static char filter[50] = { 0 };
+        ImGui::InputText("Filter PS2", filter, 49);
         for(int i = 0; i < (int) ps_2.size(); i++) {
             m_IDirect3DPixelShader9* pShader2 = static_cast<m_IDirect3DPixelShader9*>(ImGuiPS);
-            if(ps_2[i] && ps_2[i] != m_IDirect3DPixelShader9::dummyShader && ps_2[i] != pShader2 && ((showUnused == false && ps_2[i]->used > 0) || showUnused == true)) {
+            if(ps_2[i] /*&& ps_2[i] != m_IDirect3DPixelShader9::dummyShader && ps_2[i] != pShader2*/ && ((showUnused == false && ps_2[i]->used > 0) || showUnused == true)) {
                 //sprintf(buf100, "Pixel Shader2 %i", i);
                 //if(ImGui::TreeNode(buf100)) {
                 //	//m_IDirect3DPixelShader9* pShader2 = static_cast<m_IDirect3DPixelShader9*>(ImGuiPS);
@@ -1258,211 +1260,214 @@ void ShadowResFix::DrawMainWindow() {
                 //	}
                 //	ImGui::TreePop();
                 //}
-
-                sprintf(buf100, "ps_%x #ps2%i %i", ps_2[i]->crc32, i, ps_2[i]->id);
-                if(ImGui::TreeNode(buf100)) {
-                    sprintf(buf100, "ps_%x.fx", ps_2[i]->crc32);
-                    std::string namefx = buf100;
-                    sprintf(buf100, "ps_%x.asm", ps_2[i]->crc32);
-                    std::string nameasm = buf100;
-                    //ps_2[i]->oName;
-
-                    ImGui::Text("PS ID %i ##%i", ps_2[i]->id, i);
-                    ImGui::Text("Use Counter: %i ##%i_%i", ps_2[i]->used, i, ps_2[i]->id);
-
-                    sprintf(buf100, "Compile PS asm ##%i_%i", i, ps_2[i]->id);
-                    if(ps_2[i]->editedAsm.length() > 3 && ImGui::Button(buf100)) {
-                        for(auto t : lst) {
-                            if(t->bs && t->bs == ps_2[i] && t->name == nameasm) {
-                                t->bs->editedAsm = t->editor->GetText();;
-                                if(t->bs->compileNewASM() == S_OK && ps_2[i]->newShader) {
-                                    t->bs->useNewShader = true;
-                                }
-                            }
-                        }
-                    }
-                    sprintf(buf100, "Compile PS hlsl ##%i_%i", i, ps_2[i]->id);
-                    if(ps_2[i]->editedFx.length() > 3 && ImGui::Button(buf100)) {
-                        for(auto t : lst) {
-                            if(t->bs && t->bs == ps_2[i] && t->name == namefx) {
-                                t->bs->editedFx = t->editor->GetText();;
-                                if(t->bs->compileNewFx() == S_OK && ps_2[i]->newShader) {
-                                    IDirect3DPixelShader9* pShader = ps_2[i]->newShader;
-                                    static std::vector<uint8_t> pbFunc;
-                                    UINT len;
-                                    pShader->GetFunction(nullptr, &len);
-                                    if(pbFunc.size() < len) {
-                                        pbFunc.resize(len + len % 4);
-                                    }
-                                    pShader->GetFunction(pbFunc.data(), &len);
-
-                                    ID3DXBuffer* pShaderAsm = NULL;
-                                    HRESULT hr = D3DXDisassembleShader((DWORD*) pbFunc.data(), FALSE, NULL, &pShaderAsm);
-                                    if(SUCCEEDED(hr) && pShaderAsm) {
-                                        t->bs->editedAsm = (char*) pShaderAsm->GetBufferPointer();
-                                    }
-
-                                    t->bs->useNewShader = true;
-                                }
-                            }
-                        }
-                    }
-                    sprintf(buf100, "Reset PS ##%i_%i", i, ps_2[i]->id);
-                    if(ImGui::Button(buf100)) {
-                        for(auto t : lst) {
-                            if(t->bs && t->bs == ps_2[i]) {
-                                t->bs->editedAsm = "";
-                                t->bs->editedFx = "";
-                                if(ps_2[i]->newShader)
-                                    ps_2[i]->newShader->Release();
-                                ps_2[i]->newShader = 0;
-                                lst.remove(t);
-                                break;
-                            }
-                        }
-                        for(auto t : lst) {
-                            if(t->bs && t->bs == ps_2[i]) {
-                                t->bs->editedAsm = "";
-                                t->bs->editedFx = "";
-                                if(ps_2[i]->newShader)
-                                    ps_2[i]->newShader->Release();
-                                ps_2[i]->newShader = 0;
-                                lst.remove(t);
-                                break;
-                            }
-                        }
-                    }
-
-                    sprintf(buf100, "Edit PS FXC asm ##%i_%i", i, ps_2[i]->id);
-                    if(ImGui::Button(buf100)) {
-                        bool isInEditor = false;
-                        sprintf(buf100, "%s#FXCASM##%i_%i", nameasm.c_str(), i, ps_2[i]->id);
-                        std::string name = buf100;
-                        for(auto t : lst) {
-                            basicShader* bs = static_cast<basicShader*> (ps_2[i]);
-                            if(bs && t->bs == bs && t->name == name) {
-                                isInEditor = true;
-                                t->show = true;
-                            }
-                        }
-                        if(isInEditor == false) {
-                            //if(ps_2[i]->editedAsm.length() < 3) {
-                            //	ps_2[i]->editedAsm = ps_2[i]->GetAsm();
-                            //}
-                            stShaderEditor* s = new stShaderEditor(name, PS_ASM, new TextEditor(), ps_2[i]);
-                            s->editor->SetShowWhitespaces(0);
-                            s->editor->SetText(s->bs->GetAsm());
-                            lst.push_back(s);
-                        }
-                    }
-                    sprintf(buf100, "Edit PS Loaded asm ##%i_%i", i, ps_2[i]->id);
-                    if(ps_2[i]->loadedAsm.length() > 0 && ImGui::Button(buf100)) {
-                        bool isInEditor = false;
-                        sprintf(buf100, "%s#LASM##%i_%i", nameasm.c_str(), i, ps_2[i]->id);
-                        std::string name = buf100;
-                        for(auto t : lst) {
-                            basicShader* bs = static_cast<basicShader*> (ps_2[i]);
-                            if(bs && t->bs == bs && t->name == name) {
-                                isInEditor = true;
-                                t->show = true;
-                            }
-                        }
-                        if(isInEditor == false) {
-                            //if(ps_2[i]->editedAsm.length() < 3) {
-                            //	ps_2[i]->editedAsm = ps_2[i]->loadedAsm;
-                            //}
-                            stShaderEditor* s = new stShaderEditor(name, PS_ASM, new TextEditor(), ps_2[i]);
-                            s->editor->SetShowWhitespaces(0);
-                            s->editor->SetText(s->bs->loadedAsm);
-                            lst.push_back(s);
-                        }
-                    }
-                    sprintf(buf100, "Edit PS Loaded hlsl ##%i_%i", i, ps_2[i]->id);
-                    if(ps_2[i]->loadedFx.length() > 0 && ImGui::Button(buf100)) {
-                        bool isInEditor = false;
-                        sprintf(buf100, "%s#LFX##%i_%i", nameasm.c_str(), i, ps_2[i]->id);
-                        std::string name = buf100;
-                        for(auto t : lst) {
-                            basicShader* bs = static_cast<basicShader*> (ps_2[i]);
-                            if(bs && t->bs == bs && t->name == name) {
-                                isInEditor = true;
-                                t->show = true;
-                            }
-                        }
-                        if(isInEditor == false) {
-                            //if(ps_2[i]->editedFx.length() < 3) {
-                            //	ps_2[i]->editedFx = ps_2[i]->loadedFx;
-                            //}
-                            stShaderEditor* s = new stShaderEditor(name, PS_FX, new TextEditor(), ps_2[i]);
-                            s->editor->SetShowWhitespaces(0);
-                            s->editor->SetText(s->bs->loadedFx);
-                            lst.push_back(s);
-                        }
-                    }
-                    sprintf(buf100, "Edit PS Edited hlsl ##%i_%i", i, ps_2[i]->id);
-                    if(ps_2[i]->editedFx.length() > 0 && ImGui::Button(buf100)) {
-                        bool isInEditor = false;
-                        sprintf(buf100, "%s#EFX##%i_%i", nameasm.c_str(), i, ps_2[i]->id);
-                        std::string name = buf100;
-                        for(auto t : lst) {
-                            basicShader* bs = static_cast<basicShader*> (ps_2[i]);
-                            if(bs && t->bs == bs && t->name == name) {
-                                isInEditor = true;
-                                t->show = true;
-                            }
-                        }
-                        if(isInEditor == false) {
-                            //if(ps_2[i]->editedFx.length() < 3) {
-                            //	ps_2[i]->editedFx = ps_2[i]->loadedFx;
-                            //}
-                            stShaderEditor* s = new stShaderEditor(name, PS_FX, new TextEditor(), ps_2[i]);
-                            s->editor->SetShowWhitespaces(0);
-                            s->editor->SetText(s->bs->editedFx);
-                            lst.push_back(s);
-                        }
-                    }
-
-                    sprintf(buf100, "Disable PS Shader ##%i_%i", i, ps_2[i]->id);
-                    ImGui::Checkbox(buf100, &ps_2[i]->disable);
-                    if(!ps_2[i]->newShader)
-                        ps_2[i]->useNewShader = false;
-                    else {
-                        sprintf(buf100, "Use New PS Shader ##%i_%i", i, ps_2[i]->id);
-                        ImGui::Checkbox(buf100, &ps_2[i]->useNewShader);
-                    }
-                    static int e = 0;
-                    ImGui::RadioButton("FXC", (int*) &ps_2[i]->usingShader, 0); ImGui::SameLine();
-                    if(ps_2[i]->compiledShaders[SU_LASM]) { ImGui::RadioButton("Loaded ASM", (int*) &ps_2[i]->usingShader, 1); ImGui::SameLine(); }
-                    if(ps_2[i]->compiledShaders[SU_EASM]) { ImGui::RadioButton("Edited ASM", (int*) &ps_2[i]->usingShader, 2); }
-                    if(ps_2[i]->compiledShaders[SU_LFX]) { ImGui::RadioButton("Loaded HLSL", (int*) &ps_2[i]->usingShader, 3); ImGui::SameLine(); }
-                    if(ps_2[i]->compiledShaders[SU_EFX]) { ImGui::RadioButton("Edited HLSL", (int*) &ps_2[i]->usingShader, 4); ImGui::SameLine(); }
-
-                    ImGui::Text("");
-
-                    sprintf(buf100, "Overwrite Depth ##%i_%i", i, ps_2[i]->id);
-                    ImGui::Checkbox(buf100, &ps_2[i]->overwriteDepth);
-                    sprintf(buf100, "Depth write ##%i_%i", i, ps_2[i]->id);
-                    ImGui::Checkbox(buf100, &ps_2[i]->depthWrite);
-
-                    sprintf(buf100, "Original PS ASM ##%i_%i", i, ps_2[i]->id);
-                    if(ps_2[i]->fxcAsm.length() > 1 && ImGui::TreeNode(buf100)) { ImGui::Text(ps_2[i]->fxcAsm.c_str()); ImGui::TreePop(); }
-                    sprintf(buf100, "Loaded PS ASM ##%i_%i", i, ps_2[i]->id);
-                    if(ps_2[i]->editedFx.length() > 1 && ImGui::TreeNode(buf100)) { ImGui::Text(ps_2[i]->loadedAsm.c_str()); ImGui::TreePop(); }
-                    sprintf(buf100, "Edited PS ASM ##%i_%i", i, ps_2[i]->id);
-                    if(ps_2[i]->editedFx.length() > 1 && ImGui::TreeNode(buf100)) { ImGui::Text(ps_2[i]->editedAsm.c_str()); ImGui::TreePop(); }
-                    sprintf(buf100, "Loaded PS HLSL ##%i_%i", i, ps_2[i]->id);
-                    if(ps_2[i]->editedAsm.length() > 1 && ImGui::TreeNode(buf100)) { ImGui::Text(ps_2[i]->loadedFx.c_str()); ImGui::TreePop(); }
-                    sprintf(buf100, "Edited PS HLSL ##%i_%i", i, ps_2[i]->id);
-                    if(ps_2[i]->loadedFx.length() > 1 && ImGui::TreeNode(buf100)) { ImGui::Text(ps_2[i]->editedFx.c_str()); ImGui::TreePop(); }
-
-                    sprintf(buf100, "Last PS Constants ##%i_%i", i, ps_2[i]->id);
+                if((strlen(filter) >0 && ps_2[i]->oName.find(filter) != ps_2[i]->oName.npos) || strlen(filter) == 0) {
+                    //continue;
+                
+                    sprintf(buf100, "%s #ps2%i %i", ps_2[i]->oName.c_str(), i, ps_2[i]->id);
                     if(ImGui::TreeNode(buf100)) {
-                        for(int c = 0; c < 255; c++) {
-                            ImGui::Text("c%i, %f, %f, %f, %f", c, ps_2[i]->constants[c][0], ps_2[i]->constants[c][1], ps_2[i]->constants[c][2], ps_2[i]->constants[c][3]);
+                        sprintf(buf100, "ps_%x.fx", ps_2[i]->crc32);
+                        std::string namefx = buf100;
+                        sprintf(buf100, "ps_%x.asm", ps_2[i]->crc32);
+                        std::string nameasm = buf100;
+                        //ps_2[i]->oName;
+
+                        ImGui::Text("PS ID %i ##%i", ps_2[i]->id, i);
+                        ImGui::Text("Use Counter: %i ##%i_%i", ps_2[i]->used, i, ps_2[i]->id);
+
+                        sprintf(buf100, "Compile PS asm ##%i_%i", i, ps_2[i]->id);
+                        if(ps_2[i]->editedAsm.length() > 3 && ImGui::Button(buf100)) {
+                            for(auto t : lst) {
+                                if(t->bs && t->bs == ps_2[i] && t->name == nameasm) {
+                                    t->bs->editedAsm = t->editor->GetText();;
+                                    if(t->bs->compileNewASM() == S_OK && ps_2[i]->newShader) {
+                                        t->bs->useNewShader = true;
+                                    }
+                                }
+                            }
+                        }
+                        sprintf(buf100, "Compile PS hlsl ##%i_%i", i, ps_2[i]->id);
+                        if(ps_2[i]->editedFx.length() > 3 && ImGui::Button(buf100)) {
+                            for(auto t : lst) {
+                                if(t->bs && t->bs == ps_2[i] && t->name == namefx) {
+                                    t->bs->editedFx = t->editor->GetText();;
+                                    if(t->bs->compileNewFx() == S_OK && ps_2[i]->newShader) {
+                                        IDirect3DPixelShader9* pShader = ps_2[i]->newShader;
+                                        static std::vector<uint8_t> pbFunc;
+                                        UINT len;
+                                        pShader->GetFunction(nullptr, &len);
+                                        if(pbFunc.size() < len) {
+                                            pbFunc.resize(len + len % 4);
+                                        }
+                                        pShader->GetFunction(pbFunc.data(), &len);
+
+                                        ID3DXBuffer* pShaderAsm = NULL;
+                                        HRESULT hr = D3DXDisassembleShader((DWORD*) pbFunc.data(), FALSE, NULL, &pShaderAsm);
+                                        if(SUCCEEDED(hr) && pShaderAsm) {
+                                            t->bs->editedAsm = (char*) pShaderAsm->GetBufferPointer();
+                                        }
+
+                                        t->bs->useNewShader = true;
+                                    }
+                                }
+                            }
+                        }
+                        sprintf(buf100, "Reset PS ##%i_%i", i, ps_2[i]->id);
+                        if(ImGui::Button(buf100)) {
+                            for(auto t : lst) {
+                                if(t->bs && t->bs == ps_2[i]) {
+                                    t->bs->editedAsm = "";
+                                    t->bs->editedFx = "";
+                                    if(ps_2[i]->newShader)
+                                        ps_2[i]->newShader->Release();
+                                    ps_2[i]->newShader = 0;
+                                    lst.remove(t);
+                                    break;
+                                }
+                            }
+                            for(auto t : lst) {
+                                if(t->bs && t->bs == ps_2[i]) {
+                                    t->bs->editedAsm = "";
+                                    t->bs->editedFx = "";
+                                    if(ps_2[i]->newShader)
+                                        ps_2[i]->newShader->Release();
+                                    ps_2[i]->newShader = 0;
+                                    lst.remove(t);
+                                    break;
+                                }
+                            }
+                        }
+
+                        sprintf(buf100, "Edit PS FXC asm ##%i_%i", i, ps_2[i]->id);
+                        if(ImGui::Button(buf100)) {
+                            bool isInEditor = false;
+                            sprintf(buf100, "%s#FXCASM##%i_%i", nameasm.c_str(), i, ps_2[i]->id);
+                            std::string name = buf100;
+                            for(auto t : lst) {
+                                basicShader* bs = static_cast<basicShader*> (ps_2[i]);
+                                if(bs && t->bs == bs && t->name == name) {
+                                    isInEditor = true;
+                                    t->show = true;
+                                }
+                            }
+                            if(isInEditor == false) {
+                                //if(ps_2[i]->editedAsm.length() < 3) {
+                                //	ps_2[i]->editedAsm = ps_2[i]->GetAsm();
+                                //}
+                                stShaderEditor* s = new stShaderEditor(name, PS_ASM, new TextEditor(), ps_2[i]);
+                                s->editor->SetShowWhitespaces(0);
+                                s->editor->SetText(s->bs->GetAsm());
+                                lst.push_back(s);
+                            }
+                        }
+                        sprintf(buf100, "Edit PS Loaded asm ##%i_%i", i, ps_2[i]->id);
+                        if(ps_2[i]->loadedAsm.length() > 0 && ImGui::Button(buf100)) {
+                            bool isInEditor = false;
+                            sprintf(buf100, "%s#LASM##%i_%i", nameasm.c_str(), i, ps_2[i]->id);
+                            std::string name = buf100;
+                            for(auto t : lst) {
+                                basicShader* bs = static_cast<basicShader*> (ps_2[i]);
+                                if(bs && t->bs == bs && t->name == name) {
+                                    isInEditor = true;
+                                    t->show = true;
+                                }
+                            }
+                            if(isInEditor == false) {
+                                //if(ps_2[i]->editedAsm.length() < 3) {
+                                //	ps_2[i]->editedAsm = ps_2[i]->loadedAsm;
+                                //}
+                                stShaderEditor* s = new stShaderEditor(name, PS_ASM, new TextEditor(), ps_2[i]);
+                                s->editor->SetShowWhitespaces(0);
+                                s->editor->SetText(s->bs->loadedAsm);
+                                lst.push_back(s);
+                            }
+                        }
+                        sprintf(buf100, "Edit PS Loaded hlsl ##%i_%i", i, ps_2[i]->id);
+                        if(ps_2[i]->loadedFx.length() > 0 && ImGui::Button(buf100)) {
+                            bool isInEditor = false;
+                            sprintf(buf100, "%s#LFX##%i_%i", nameasm.c_str(), i, ps_2[i]->id);
+                            std::string name = buf100;
+                            for(auto t : lst) {
+                                basicShader* bs = static_cast<basicShader*> (ps_2[i]);
+                                if(bs && t->bs == bs && t->name == name) {
+                                    isInEditor = true;
+                                    t->show = true;
+                                }
+                            }
+                            if(isInEditor == false) {
+                                //if(ps_2[i]->editedFx.length() < 3) {
+                                //	ps_2[i]->editedFx = ps_2[i]->loadedFx;
+                                //}
+                                stShaderEditor* s = new stShaderEditor(name, PS_FX, new TextEditor(), ps_2[i]);
+                                s->editor->SetShowWhitespaces(0);
+                                s->editor->SetText(s->bs->loadedFx);
+                                lst.push_back(s);
+                            }
+                        }
+                        sprintf(buf100, "Edit PS Edited hlsl ##%i_%i", i, ps_2[i]->id);
+                        if(ps_2[i]->editedFx.length() > 0 && ImGui::Button(buf100)) {
+                            bool isInEditor = false;
+                            sprintf(buf100, "%s#EFX##%i_%i", nameasm.c_str(), i, ps_2[i]->id);
+                            std::string name = buf100;
+                            for(auto t : lst) {
+                                basicShader* bs = static_cast<basicShader*> (ps_2[i]);
+                                if(bs && t->bs == bs && t->name == name) {
+                                    isInEditor = true;
+                                    t->show = true;
+                                }
+                            }
+                            if(isInEditor == false) {
+                                //if(ps_2[i]->editedFx.length() < 3) {
+                                //	ps_2[i]->editedFx = ps_2[i]->loadedFx;
+                                //}
+                                stShaderEditor* s = new stShaderEditor(name, PS_FX, new TextEditor(), ps_2[i]);
+                                s->editor->SetShowWhitespaces(0);
+                                s->editor->SetText(s->bs->editedFx);
+                                lst.push_back(s);
+                            }
+                        }
+
+                        sprintf(buf100, "Disable PS Shader ##%i_%i", i, ps_2[i]->id);
+                        ImGui::Checkbox(buf100, &ps_2[i]->disable);
+                        if(!ps_2[i]->newShader)
+                            ps_2[i]->useNewShader = false;
+                        else {
+                            sprintf(buf100, "Use New PS Shader ##%i_%i", i, ps_2[i]->id);
+                            ImGui::Checkbox(buf100, &ps_2[i]->useNewShader);
+                        }
+                        static int e = 0;
+                        ImGui::RadioButton("FXC", (int*) &ps_2[i]->usingShader, 0); ImGui::SameLine();
+                        if(ps_2[i]->compiledShaders[SU_LASM]) { ImGui::RadioButton("Loaded ASM", (int*) &ps_2[i]->usingShader, 1); ImGui::SameLine(); }
+                        if(ps_2[i]->compiledShaders[SU_EASM]) { ImGui::RadioButton("Edited ASM", (int*) &ps_2[i]->usingShader, 2); }
+                        if(ps_2[i]->compiledShaders[SU_LFX]) { ImGui::RadioButton("Loaded HLSL", (int*) &ps_2[i]->usingShader, 3); ImGui::SameLine(); }
+                        if(ps_2[i]->compiledShaders[SU_EFX]) { ImGui::RadioButton("Edited HLSL", (int*) &ps_2[i]->usingShader, 4); ImGui::SameLine(); }
+
+                        ImGui::Text("");
+
+                        sprintf(buf100, "Overwrite Depth ##%i_%i", i, ps_2[i]->id);
+                        ImGui::Checkbox(buf100, &ps_2[i]->overwriteDepth);
+                        sprintf(buf100, "Depth write ##%i_%i", i, ps_2[i]->id);
+                        ImGui::Checkbox(buf100, &ps_2[i]->depthWrite);
+
+                        sprintf(buf100, "Original PS ASM ##%i_%i", i, ps_2[i]->id);
+                        if(ps_2[i]->fxcAsm.length() > 1 && ImGui::TreeNode(buf100)) { ImGui::Text(ps_2[i]->fxcAsm.c_str()); ImGui::TreePop(); }
+                        sprintf(buf100, "Loaded PS ASM ##%i_%i", i, ps_2[i]->id);
+                        if(ps_2[i]->editedFx.length() > 1 && ImGui::TreeNode(buf100)) { ImGui::Text(ps_2[i]->loadedAsm.c_str()); ImGui::TreePop(); }
+                        sprintf(buf100, "Edited PS ASM ##%i_%i", i, ps_2[i]->id);
+                        if(ps_2[i]->editedFx.length() > 1 && ImGui::TreeNode(buf100)) { ImGui::Text(ps_2[i]->editedAsm.c_str()); ImGui::TreePop(); }
+                        sprintf(buf100, "Loaded PS HLSL ##%i_%i", i, ps_2[i]->id);
+                        if(ps_2[i]->editedAsm.length() > 1 && ImGui::TreeNode(buf100)) { ImGui::Text(ps_2[i]->loadedFx.c_str()); ImGui::TreePop(); }
+                        sprintf(buf100, "Edited PS HLSL ##%i_%i", i, ps_2[i]->id);
+                        if(ps_2[i]->loadedFx.length() > 1 && ImGui::TreeNode(buf100)) { ImGui::Text(ps_2[i]->editedFx.c_str()); ImGui::TreePop(); }
+
+                        sprintf(buf100, "Last PS Constants ##%i_%i", i, ps_2[i]->id);
+                        if(ImGui::TreeNode(buf100)) {
+                            for(int c = 0; c < 255; c++) {
+                                ImGui::Text("c%i, %f, %f, %f, %f", c, ps_2[i]->constants[c][0], ps_2[i]->constants[c][1], ps_2[i]->constants[c][2], ps_2[i]->constants[c][3]);
+                            }
+                            ImGui::TreePop();
                         }
                         ImGui::TreePop();
                     }
-                    ImGui::TreePop();
                 }
             }
         }
@@ -1488,9 +1493,12 @@ void ShadowResFix::DrawMainWindow() {
             }
         }
 
+        static char filter[50] = { 0 };
+        ImGui::InputText("Filter VS2", filter, 49);
+
         for(int i = 0; i < (int) vs_2.size(); i++) {
             m_IDirect3DVertexShader9* pShader2 = static_cast<m_IDirect3DVertexShader9*>(ImGuiVS);
-            if(vs_2[i] && vs_2[i] != m_IDirect3DVertexShader9::dummyShader && vs_2[i] != pShader2 && ((showUnused == false && vs_2[i]->used > 0) || showUnused == true)) {
+            if(vs_2[i] /*&& vs_2[i] != m_IDirect3DVertexShader9::dummyShader && vs_2[i] != pShader2*/ && ((showUnused == false && vs_2[i]->used > 0) || showUnused == true)) {
                 //sprintf(buf100, "Vertex Shader2 %i", i);
                 //if(ImGui::TreeNode(buf100)) {
                 //	//m_IDirect3DVertexShader9* pShader2 = static_cast<m_IDirect3DVertexShader9*>(ImGuiVS);
@@ -1515,8 +1523,11 @@ void ShadowResFix::DrawMainWindow() {
                 //	}
                 //	ImGui::TreePop();
                 //}
+                if(strnlen(filter, 50) >0 && !(vs_2[i]->oName.find(filter) != vs_2[i]->oName.npos)) {
+                    continue;
+                }
 
-                sprintf(buf100, "vs_%x #vs2%i %i", vs_2[i]->crc32, i, vs_2[i]->id);
+                sprintf(buf100, "%s #vs2%i %i", vs_2[i]->oName.c_str(), i, vs_2[i]->id);
                 if(ImGui::TreeNode(buf100)) {
                     sprintf(buf100, "vs_%x.fx", vs_2[i]->crc32);
                     std::string namefx = buf100;
@@ -2217,6 +2228,9 @@ void ShadowResFix::DrawMainWindow() {
 
     if(bDisplayFPSCounter && ImGui::CollapsingHeader("address")) {
         ImGui::Checkbox("Show Demo Window", &showDemoWindow);
+        if(GameVersion == 1080 || GameVersion == 1070) {
+            ImGui::SliderFloat("Shadow Distance BA + 0xB3E194 ", (float*) (baseAddress + 0xB3E194), 0, 1000);
+        }
         if(GameVersion == 1200) {
             ImGui::Checkbox("isininterior baseAddress + 0x1320FA8", IsInInterior);
             ImGui::Checkbox("inpausemenu baseAddress + C30B7C", IsGameOnMenu);

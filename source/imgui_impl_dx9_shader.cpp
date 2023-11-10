@@ -414,6 +414,23 @@ bool ImGui_ImplDX9_CreateDeviceObjects() {
 
     bd->ppixelShader = ImGuiPS;
 
+    if(!ImGuiPS) {
+        printf("!");
+        return false;
+    }
+    if(!ImGuiVS) {
+        printf("!");
+        return false;
+    }
+    if(ImGuiPS) {
+        m_IDirect3DPixelShader9* pShader2 = static_cast<m_IDirect3DPixelShader9*>(ImGuiPS);
+        pShader2->oName = "ImGui_PS";
+    }
+    if(ImGuiVS) {
+        m_IDirect3DVertexShader9* pShader2 = static_cast<m_IDirect3DVertexShader9*>(ImGuiVS);
+        pShader2->oName = "ImGui_VS";
+    }
+
     pixel_shader_buffer->Release();
 
     D3DVERTEXELEMENT9 vertexDeclElements[] =

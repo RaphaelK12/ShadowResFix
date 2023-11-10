@@ -90,11 +90,13 @@ uint32_t getCRC32(m_IDirect3DVertexShader9* pShader) {
 
 IDirect3DVertexShader9* m_IDirect3DVertexShader9::dummyShader = nullptr;
 
-m_IDirect3DVertexShader9::m_IDirect3DVertexShader9(LPDIRECT3DVERTEXSHADER9 pShader9, m_IDirect3DDevice9Ex* pDevice, bool extra) :
+m_IDirect3DVertexShader9::m_IDirect3DVertexShader9(LPDIRECT3DVERTEXSHADER9 pShader9, m_IDirect3DDevice9Ex* pDevice, ShaderCreationMode extra) :
     ProxyInterface(pShader9), m_pDeviceEx(pDevice) {
     pDevice->ProxyAddressLookupTable->SaveAddress(this, ProxyInterface);
+    static char buf100[100] = { 0 };
     id = getSignature(this, patternFF);
     crc32 = getCRC32(this);
+    sprintf(buf100, "vs_%x.asm", crc32);
     if(id == -1)
         id = getSignature(this, patternZS);
 
@@ -108,38 +110,75 @@ m_IDirect3DVertexShader9::m_IDirect3DVertexShader9(LPDIRECT3DVERTEXSHADER9 pShad
         fxid = getfxid(id, oName);
         fxName = shader_names_fxc[fxid];
         oName = oName.substr(oName.find_last_of("/") + 1);
-        loadedFx = LoadFX(fxName, oName);
-        loadedAsm = LoadASM(fxName, oName);
+        if(extra != SC_NEW) {
+            loadedFx = LoadFX(fxName, oName);
+            loadedAsm = LoadASM(fxName, oName);
+        }
         if(fxid<0 || fxid>(int)fx_vs.size()) {
             Log::Error("fxid not found");
         }
-        else if(extra == false) {
+        else if(extra == SC_FXC || extra == SC_GAME) {
             fx_vs[fxid].push_back(this);
             vs[id] = this;
         }
         else {
-            vs_2.push_back(this);
-        }
-        for(auto& i : shadowGen) {
-            if(i == oName) {
-                useBias = true;
+            if(extra != SC_NEW) {
+                vs_2.push_back(this);
             }
         }
-        if(loadedAsm.length() > 1) {
-            auto hr = compileShaderSource(loadedAsm, VS_ASM, SU_LASM);
-            if(hr != S_OK) {
-                //Log::Warning("Unable to compile Loaded ASM: " + oName);
-                //Log::Text(oName);
+        //for(auto& i : shadowGen) {
+        //    if(i == oName) {
+        //        useBias = true;
+        //    }
+        //}
+        if(extra != SC_NEW) {
+            if(loadedAsm.length() > 1) {
+                auto hr = compileShaderSource(loadedAsm, VS_ASM, SU_LASM);
+                if(hr != S_OK) {
+                    //Log::Warning("Unable to compile Loaded ASM: " + oName);
+                }
+                else {
+                    //usingShader = SU_LASM;
+                }
             }
-            else {
-                usingShader = SU_LASM;
-                //usingShader = SU_FXC;
+            if(loadedFx.length() > 1) {
+                auto hr = compileShaderSource(loadedFx, VS_FX, SU_LFX);
+                if(hr != S_OK) {
+                    //Log::Warning("Unable to compile Loaded HLSL: " + oName);
+                }
+                else {
+                    //usingShader = SU_LFX;
+                }
             }
         }
-        printf("%i %i %s\n", id, fxid, oName.c_str());
+        //printf("%i %i %s\n", id, fxid, oName.c_str());
     }
     else {
-        vs_2.push_back(this);
+        fxName = "nonamed";
+        oName = buf100;
+        if(extra != SC_NEW){
+            vs_2.push_back(this);
+            loadedFx = LoadFX(fxName, oName);
+            loadedAsm = LoadASM(fxName, oName);
+            if(loadedAsm.length() > 1) {
+                auto hr = compileShaderSource(loadedAsm, VS_ASM, SU_LASM);
+                if(hr != S_OK) {
+                    //Log::Warning("Unable to compile Loaded ASM: " + oName);
+                }
+                else {
+                    //usingShader = SU_LASM;
+                }
+            }
+            if(loadedFx.length() > 1) {
+                auto hr = compileShaderSource(loadedFx, VS_FX, SU_LFX);
+                if(hr != S_OK) {
+                    //Log::Warning("Unable to compile Loaded HLSL: " + oName);
+                }
+                else {
+                    //usingShader = SU_LFX;
+                }
+            }
+        }
     }
     if(!dummyShader) {
         HRESULT hr2 = S_FALSE;
@@ -149,11 +188,14 @@ m_IDirect3DVertexShader9::m_IDirect3DVertexShader9(LPDIRECT3DVERTEXSHADER9 pShad
         if(hr1 == S_OK) {
             int sz = bf1->GetBufferSize();
             char* p = (char*) bf1->GetBufferPointer();
-            hr2 = m_pDeviceEx->CreateVertexShader2((DWORD*) p, &dummyShader);
-            if(dummyShader) ((m_IDirect3DVertexShader9*) dummyShader)->disable = true;
+            hr2 = m_pDeviceEx->CreateVertexShader2((DWORD*) p, &dummyShader, SC_NEW);
+            if(dummyShader) {
+                ((m_IDirect3DVertexShader9*) dummyShader)->disable = true;
+                ((m_IDirect3DVertexShader9*) dummyShader)->oName = "dummyvs";
+            }
         }
         if(hr1 != S_OK || hr2 != S_OK) {
-            Log::Error("Unable to compile Dummy Pixel shader");
+            Log::Error("Unable to compile Dummy Vertex shader");
         }
         SAFE_RELEASE(bf1);
         SAFE_RELEASE(bf2);
@@ -162,10 +204,14 @@ m_IDirect3DVertexShader9::m_IDirect3DVertexShader9(LPDIRECT3DVERTEXSHADER9 pShad
 
 m_IDirect3DVertexShader9::m_IDirect3DVertexShader9(LPDIRECT3DVERTEXSHADER9 pShader9, m_IDirect3DDevice9Ex* pDevice) :
     ProxyInterface(pShader9), m_pDeviceEx(pDevice) {
+    static char buf100[100] = { 0 };
     pDevice->ProxyAddressLookupTable->SaveAddress(this, ProxyInterface);
     id = getSignature(this, patternFF);
+    crc32 = getCRC32(this);
+    sprintf(buf100, "vs_%x.asm", crc32);
     if(id == -1)
         id = getSignature(this, patternZS);
+
     fxcAsm = GetAsm();
     if(id >= 0 && id - 2000 >= (int) shader_names_vs.size()) {
         Log::Error("illegal vs id: " + std::to_string(id));
@@ -178,21 +224,44 @@ m_IDirect3DVertexShader9::m_IDirect3DVertexShader9(LPDIRECT3DVERTEXSHADER9 pShad
         oName = oName.substr(oName.find_last_of("/") + 1);
         loadedFx = LoadFX(fxName, oName);
         loadedAsm = LoadASM(fxName, oName);
-
-        if(fxid<0 || fxid>(int)fx_vs.size()) {
+        if(fxid < 0 || fxid > (int)fx_vs.size()) {
             Log::Error("fxid not found");
         }
         else {
-            for(auto& i : shadowGen) {
-                if(i == oName) {
-                    useBias = true;
-                }
-            }
+            fx_vs[fxid].push_back(this);
+            vs[id] = this;
+            //for(auto& i : shadowGen) {
+            //    if(i == oName) {
+            //        useBias = true;
+            //    }
+            //}
         }
-        printf("%i %i %s\n", id, fxid, oName.c_str());
+        //printf("%i %i %s\n", id, fxid, oName.c_str());
     }
     else {
+        fxName = "nonamed";
+        oName = buf100;
         vs_2.push_back(this);
+        loadedFx = LoadFX(fxName, oName);
+        loadedAsm = LoadASM(fxName, oName);
+        if(loadedAsm.length() > 1) {
+            auto hr = compileShaderSource(loadedAsm, VS_ASM, SU_LASM);
+            if(hr != S_OK) {
+                //Log::Warning("Unable to compile Loaded ASM: " + oName);
+            }
+            else {
+                //usingShader = SU_LASM;
+            }
+        }
+        if(loadedFx.length() > 1) {
+            auto hr = compileShaderSource(loadedFx, VS_FX, SU_LFX);
+            if(hr != S_OK) {
+                //Log::Warning("Unable to compile Loaded HLSL: " + oName);
+            }
+            else {
+                //usingShader = SU_LFX;
+            }
+        }
     }
     if(!dummyShader) {
         HRESULT hr2 = S_FALSE;
@@ -202,12 +271,14 @@ m_IDirect3DVertexShader9::m_IDirect3DVertexShader9(LPDIRECT3DVERTEXSHADER9 pShad
         if(hr1 == S_OK) {
             int sz = bf1->GetBufferSize();
             char* p = (char*) bf1->GetBufferPointer();
-            hr2 = m_pDeviceEx->GetProxyInterface()->CreateVertexShader((DWORD*) p, &dummyShader);
-            if(dummyShader)
+            hr2 = m_pDeviceEx->CreateVertexShader2((DWORD*) p, &dummyShader, SC_NEW);
+            if(dummyShader) {
                 ((m_IDirect3DVertexShader9*) dummyShader)->disable = true;
+                ((m_IDirect3DVertexShader9*) dummyShader)->oName = "dummyvs";
+            }
         }
         if(hr1 != S_OK || hr2 != S_OK) {
-            Log::Error("Unable to compile Dummy Pixel shader");
+            Log::Error("Unable to compile Dummy Vertex shader");
         }
         SAFE_RELEASE(bf1);
         SAFE_RELEASE(bf2);
@@ -315,7 +386,7 @@ HRESULT m_IDirect3DVertexShader9::compileShaderSource(std::string source, Shader
         {
             HRESULT hr = D3DXAssembleShader(source.c_str(), source.length(), 0, 0, 0, &bf1, &bf4);
             if(hr == S_OK) {
-                HRESULT hr2 = m_pDeviceEx->GetProxyInterface()->CreateVertexShader((DWORD*) bf1->GetBufferPointer(), &shader);
+                HRESULT hr2 = m_pDeviceEx->CreateVertexShader2((DWORD*) bf1->GetBufferPointer(), &shader, SC_NEW);
                 if(hr2 != S_OK || !shader) {
                     Log::Error("Failed to create vertex shader asm: " + oName);
                     SAFE_RELEASE(shader);
@@ -338,10 +409,10 @@ HRESULT m_IDirect3DVertexShader9::compileShaderSource(std::string source, Shader
         }
         case VS_FX:
         {
-            HRESULT hr3 = D3DXCompileShader(source.c_str(), source.length(), 0, 0, "main", "ps_3_0", 0, &bf3, &bf4, &ppConstantTable);
+            HRESULT hr3 = D3DXCompileShader(source.c_str(), source.length(), 0, 0, "main", "vs_3_0", 0, &bf3, &bf4, &ppConstantTable);
             HRESULT hr2 = S_FALSE;
             if(hr3 == S_OK) {
-                hr2 = m_pDeviceEx->GetProxyInterface()->CreateVertexShader((DWORD*) bf3->GetBufferPointer(), &shader);
+                hr2 = m_pDeviceEx->CreateVertexShader2((DWORD*) bf3->GetBufferPointer(), &shader, SC_NEW);
                 if(hr2 != S_OK || !shader) {
                     Log::Error("Failed to create vertex shader hlsl: " + oName);
                     SAFE_RELEASE(shader);
@@ -396,6 +467,12 @@ ULONG m_IDirect3DVertexShader9::AddRef(THIS) {
 }
 
 ULONG m_IDirect3DVertexShader9::Release(THIS) {
+    for(int i = 0; i < (int) vs_2.size(); i++) {
+        if(vs_2[i] == this) {
+            vs_2[i] = 0;
+        }
+    }
+
     return ProxyInterface->Release();
 }
 

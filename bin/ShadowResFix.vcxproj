@@ -99,7 +99,7 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <LinkIncremental>true</LinkIncremental>
-    <OutDir>F:\SteamLibrary\steamapps\common\Resident Evil 6\</OutDir>
+    <OutDir>F:\Games\Crysis\Bin32\</OutDir>
     <IntDir>obj\Win32\Debug\</IntDir>
     <TargetName>d3d9</TargetName>
     <TargetExt>.dll</TargetExt>
@@ -118,7 +118,7 @@
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;rsc_CompanyName="FixingIV";rsc_LegalCopyright="MIT License";rsc_FileVersion="1.0.0.6";rsc_ProductVersion="1.0.0.6";rsc_InternalName="ShadowResFix";rsc_ProductName="ShadowResFix";rsc_OriginalFilename="d3d9.dll";rsc_FileDescription="https://github.com/RaphaelK12/ShadowResFix";rsc_UpdateUrl="https://github.com/RaphaelK12/ShadowResFix";NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>..\source\dxsdk;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <Optimization>MaxSpeed</Optimization>
-      <FunctionLevelLinking>false</FunctionLevelLinking>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <MinimalRebuild>false</MinimalRebuild>
       <StringPooling>true</StringPooling>
@@ -127,9 +127,12 @@
       <WholeProgramOptimization>true</WholeProgramOptimization>
       <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
-      <EnableEnhancedInstructionSet>AdvancedVectorExtensions</EnableEnhancedInstructionSet>
       <DisableSpecificWarnings>4018</DisableSpecificWarnings>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <ExceptionHandling>Sync</ExceptionHandling>
+      <BufferSecurityCheck>true</BufferSecurityCheck>
+      <FloatingPointExceptions>false</FloatingPointExceptions>
+      <LanguageStandard>Default</LanguageStandard>
     </ClCompile>
     <ResourceCompile>
       <PreprocessorDefinitions>rsc_CompanyName=\"FixingIV\";rsc_LegalCopyright=\"MIT License\";rsc_FileVersion=\"1.0.0.6\";rsc_ProductVersion=\"1.0.0.6\";rsc_InternalName=\"ShadowResFix\";rsc_ProductName=\"ShadowResFix\";rsc_OriginalFilename=\"d3d9.dll\";rsc_FileDescription=\"https://github.com/RaphaelK12/ShadowResFix\";rsc_UpdateUrl=\"https://github.com/RaphaelK12/ShadowResFix\";NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -145,8 +148,9 @@
       <ImportLibrary>..\data\ShadowResFix.lib</ImportLibrary>
       <ModuleDefinitionFile>../source/d3d9.def</ModuleDefinitionFile>
       <AdditionalDependencies>dinput8.lib;dxguid.lib;version.lib;$(CoreLibraryDependencies);%(AdditionalDependencies)</AdditionalDependencies>
-      <RandomizedBaseAddress>false</RandomizedBaseAddress>
-      <FixedBaseAddress>true</FixedBaseAddress>
+      <RandomizedBaseAddress>true</RandomizedBaseAddress>
+      <FixedBaseAddress>
+      </FixedBaseAddress>
       <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
       <IgnoreAllDefaultLibraries>
       </IgnoreAllDefaultLibraries>

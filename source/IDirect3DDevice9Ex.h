@@ -1,4 +1,5 @@
 #pragma once
+#include "BasicShader.h"
 
 class m_IDirect3DDevice9Ex : public IDirect3DDevice9Ex {
 private:
@@ -17,8 +18,8 @@ public:
 		delete ProxyAddressLookupTable;
 	}
 
-	STDMETHOD(CreateVertexShader2)(THIS_ CONST DWORD* pFunction, IDirect3DVertexShader9** ppShader);
-	STDMETHOD(CreatePixelShader2)(THIS_ CONST DWORD* pFunction, IDirect3DPixelShader9** ppShader);
+	STDMETHOD(CreateVertexShader2)(THIS_ CONST DWORD* pFunction, IDirect3DVertexShader9** ppShader, ShaderCreationMode extra);
+	STDMETHOD(CreatePixelShader2)(THIS_ CONST DWORD* pFunction, IDirect3DPixelShader9** ppShader, ShaderCreationMode extra);
 
 	LPDIRECT3DDEVICE9EX GetProxyInterface() { return ProxyInterface; }
 	AddressLookupTable<m_IDirect3DDevice9Ex>* ProxyAddressLookupTable;

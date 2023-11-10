@@ -20,7 +20,7 @@ public:
     HRESULT compileShaderSource(std::string source, ShaderType type, ShaderUse use);
     LPDIRECT3DPIXELSHADER9 GetProxyInterface() { return ProxyInterface; }
 
-    m_IDirect3DPixelShader9(LPDIRECT3DPIXELSHADER9 pShader9, m_IDirect3DDevice9Ex* pDevice, bool extra);
+    m_IDirect3DPixelShader9(LPDIRECT3DPIXELSHADER9 pShader9, m_IDirect3DDevice9Ex* pDevice, ShaderCreationMode extra);
     m_IDirect3DPixelShader9(LPDIRECT3DPIXELSHADER9 pShader9, m_IDirect3DDevice9Ex* pDevice);
     ~m_IDirect3DPixelShader9();
 

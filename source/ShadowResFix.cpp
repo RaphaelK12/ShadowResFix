@@ -12,6 +12,7 @@
 */
 
 #include "d3d9.h"
+#include "Utils.h"
 
 // cascaded shadows resolution
 extern BOOL gFixCascadedShadowMapResolution;
@@ -256,11 +257,22 @@ HRESULT m_IDirect3DDevice9Ex::CreateTexture(THIS_ UINT Width, UINT Height, UINT 
             name = "Any R";
         }
     }
+    static uint8_t dummyVar = 1;
 
-    uint8_t* ReflexQualityBA0xD612BC = (baseAddress + 0xD612BC);
-    uint8_t* waterQualityBA0xD612C0 = (baseAddress + 0xD612C0);
-    uint8_t* ShadowQualityBA0xD612B8 = (baseAddress + 0xD612B8);
-    uint8_t* NightShadowBA0xD612B4 = (baseAddress + 0xD612B4);
+    uint8_t* ReflexQualityBA0xD612BC = &dummyVar;
+    uint8_t* waterQualityBA0xD612C0  = &dummyVar;
+    uint8_t* ShadowQualityBA0xD612B8 = &dummyVar;
+    uint8_t* NightShadowBA0xD612B4   = &dummyVar;
+
+    int32_t GameVersion = 0;
+    Utils::GetGameVersion(GameVersion);
+
+    if(GameVersion == 1200) {
+        ReflexQualityBA0xD612BC = (baseAddress + 0xD612BC);
+        waterQualityBA0xD612C0 = (baseAddress + 0xD612C0);
+        ShadowQualityBA0xD612B8 = (baseAddress + 0xD612B8);
+        NightShadowBA0xD612B4 = (baseAddress + 0xD612B4);
+    }
 
     int reflexresshift = *ReflexQualityBA0xD612BC > 0 ? *ReflexQualityBA0xD612BC + 2 : 0;
 
@@ -532,84 +544,91 @@ HRESULT m_IDirect3DDevice9Ex::CreatePixelShader(THIS_ CONST DWORD* pFunction, ID
     HRESULT hr = ProxyInterface->CreatePixelShader(pFunction, ppShader);
 
     if(SUCCEEDED(hr) && ppShader) {
-        *ppShader = new m_IDirect3DPixelShader9(*ppShader, this, false);
-        IDirect3DPixelShader9* pShader = (*ppShader);
-
-        {
-            IDirect3DPixelShader9* pShader = (*ppShader);
-            static std::vector<uint8_t> pbFunc;
-            UINT len;
-            pShader->GetFunction(nullptr, &len);
-            if(pbFunc.size() < len) {
-                pbFunc.resize(len + len % 4);
-            }
-            pShader->GetFunction(pbFunc.data(), &len);
-            int cnt = 0;
-            for(int i = 0; i < (int) pbFunc.size(); i++) {
-                for(int j = 0; j < (int) pattern2.size() - 1; j++) {
-                    if(pbFunc[i + j] == pattern2[j]) {
-                        cnt = j;
-                        continue;
-                    }
-                    else {
-                        cnt = 0;
-                        break;
-                    }
-                }
-                if(cnt >= (int) pattern2.size() - 2) {
-                    cnt = i;
-                    break;
-                }
-            }
-            int c = 0;
-            if(cnt > 0) {
-                c = *((int*) &pbFunc[cnt + pattern2.size() - 1]);
-                ps2.push_back(pShader);
-            }
-        }
+        *ppShader = new m_IDirect3DPixelShader9(*ppShader, this, SC_FXC);
+        //IDirect3DPixelShader9* pShader = (*ppShader);
+        //{
+        //    IDirect3DPixelShader9* pShader = (*ppShader);
+        //    static std::vector<uint8_t> pbFunc;
+        //    UINT len;
+        //    pShader->GetFunction(nullptr, &len);
+        //    if(pbFunc.size() < len) {
+        //        pbFunc.resize(len + len % 4);
+        //    }
+        //    pShader->GetFunction(pbFunc.data(), &len);
+        //    int cnt = 0;
+        //    for(int i = 0; i < (int) pbFunc.size(); i++) {
+        //        for(int j = 0; j < (int) pattern2.size() - 1; j++) {
+        //            if(pbFunc[i + j] == pattern2[j]) {
+        //                cnt = j;
+        //                continue;
+        //            }
+        //            else {
+        //                cnt = 0;
+        //                break;
+        //            }
+        //        }
+        //        if(cnt >= (int) pattern2.size() - 2) {
+        //            cnt = i;
+        //            break;
+        //        }
+        //    }
+        //    int c = 0;
+        //    if(cnt > 0) {
+        //        c = *((int*) &pbFunc[cnt + pattern2.size() - 1]);
+        //        ps2.push_back(pShader);
+        //    }
+        //}
     }
+    //if(!ppShader || !(*ppShader)) {
+    //    printf("!");
+    //    return hr;
+    //}
     return hr;
 }
 
-HRESULT m_IDirect3DDevice9Ex::CreatePixelShader2(THIS_ CONST DWORD* pFunction, IDirect3DPixelShader9** ppShader) {
+HRESULT m_IDirect3DDevice9Ex::CreatePixelShader2(THIS_ CONST DWORD* pFunction, IDirect3DPixelShader9** ppShader, ShaderCreationMode extra) {
     HRESULT hr = ProxyInterface->CreatePixelShader(pFunction, ppShader);
 
     if(SUCCEEDED(hr) && ppShader) {
-        *ppShader = new m_IDirect3DPixelShader9(*ppShader, this, true);
-        IDirect3DPixelShader9* pShader = (*ppShader);
-        {
-            IDirect3DPixelShader9* pShader = (*ppShader);
-            static std::vector<uint8_t> pbFunc;
-            UINT len;
-            pShader->GetFunction(nullptr, &len);
-            if(pbFunc.size() < len) {
-                pbFunc.resize(len + len % 4);
-            }
-            pShader->GetFunction(pbFunc.data(), &len);
-            int cnt = 0;
-            for(int i = 0; i < (int) pbFunc.size(); i++) {
-                for(int j = 0; j < (int) pattern2.size() - 1; j++) {
-                    if(pbFunc[i + j] == pattern2[j]) {
-                        cnt = j;
-                        continue;
-                    }
-                    else {
-                        cnt = 0;
-                        break;
-                    }
-                }
-                if(cnt >= (int) pattern2.size() - 2) {
-                    cnt = i;
-                    break;
-                }
-            }
-            int c = 0;
-            if(cnt > 0) {
-                c = *((int*) &pbFunc[cnt + pattern2.size() - 1]);
-                ps2.push_back(pShader);
-            }
-        }
+        *ppShader = new m_IDirect3DPixelShader9(*ppShader, this, extra);
+        //IDirect3DPixelShader9* pShader = (*ppShader);
+        //{
+        //    IDirect3DPixelShader9* pShader = (*ppShader);
+        //    static std::vector<uint8_t> pbFunc;
+        //    UINT len;
+        //    pShader->GetFunction(nullptr, &len);
+        //    if(pbFunc.size() < len) {
+        //        pbFunc.resize(len + len % 4);
+        //    }
+        //    pShader->GetFunction(pbFunc.data(), &len);
+        //    int cnt = 0;
+        //    for(int i = 0; i < (int) pbFunc.size(); i++) {
+        //        for(int j = 0; j < (int) pattern2.size() - 1; j++) {
+        //            if(pbFunc[i + j] == pattern2[j]) {
+        //                cnt = j;
+        //                continue;
+        //            }
+        //            else {
+        //                cnt = 0;
+        //                break;
+        //            }
+        //        }
+        //        if(cnt >= (int) pattern2.size() - 2) {
+        //            cnt = i;
+        //            break;
+        //        }
+        //    }
+        //    int c = 0;
+        //    if(cnt > 0) {
+        //        c = *((int*) &pbFunc[cnt + pattern2.size() - 1]);
+        //        ps2.push_back(pShader);
+        //    }
+        //}
     }
+    //if(!ppShader || !(*ppShader)) {
+    //    printf("!");
+    //    return hr;
+    //}
     return hr;
 }
 
@@ -617,18 +636,26 @@ HRESULT m_IDirect3DDevice9Ex::CreateVertexShader(THIS_ CONST DWORD* pFunction, I
     HRESULT hr = ProxyInterface->CreateVertexShader(pFunction, ppShader);
 
     if(SUCCEEDED(hr) && ppShader) {
-        *ppShader = new m_IDirect3DVertexShader9(*ppShader, this, false);
+        *ppShader = new m_IDirect3DVertexShader9(*ppShader, this, SC_FXC);
     }
+    //if(!ppShader || !(*ppShader)) {
+    //    printf("!");
+    //    return hr;
+    //}
 
     return hr;
 }
 
-HRESULT m_IDirect3DDevice9Ex::CreateVertexShader2(THIS_ CONST DWORD* pFunction, IDirect3DVertexShader9** ppShader) {
+HRESULT m_IDirect3DDevice9Ex::CreateVertexShader2(THIS_ CONST DWORD* pFunction, IDirect3DVertexShader9** ppShader, ShaderCreationMode extra) {
     HRESULT hr = ProxyInterface->CreateVertexShader(pFunction, ppShader);
 
     if(SUCCEEDED(hr) && ppShader) {
-        *ppShader = new m_IDirect3DVertexShader9(*ppShader, this, true);
+        *ppShader = new m_IDirect3DVertexShader9(*ppShader, this, extra);
     }
+    //if(!ppShader || !(*ppShader)) {
+    //    printf("!");
+    //    return hr;
+    //}
 
     return hr;
 }
@@ -643,7 +670,7 @@ HRESULT m_IDirect3DDevice9Ex::SetVertexShader(THIS_ IDirect3DVertexShader9* pSha
                 pShader = static_cast<m_IDirect3DVertexShader9*>(pShader2->dummyShader)->GetProxyInterface();
             }
             else if(pShader2->usingShader != SU_FXC && pShader2->compiledShaders[pShader2->usingShader]) {
-                pShader = pShader2->compiledShaders[pShader2->usingShader];
+                pShader = static_cast<m_IDirect3DVertexShader9*>(pShader2->compiledShaders[pShader2->usingShader])->GetProxyInterface();
             }
             else {
                 pShader = static_cast<m_IDirect3DVertexShader9*>(pShader)->GetProxyInterface();
@@ -668,10 +695,10 @@ HRESULT m_IDirect3DDevice9Ex::SetPixelShader(THIS_ IDirect3DPixelShader9* pShade
                 pShader = static_cast<m_IDirect3DPixelShader9*>(pShader2->dummyShader)->GetProxyInterface();
             }
             else if(pShader2->usingShader != SU_FXC && pShader2->compiledShaders[pShader2->usingShader]) {
-                pShader = pShader2->compiledShaders[pShader2->usingShader];
+                pShader = static_cast<m_IDirect3DPixelShader9*>(pShader2->compiledShaders[pShader2->usingShader])->GetProxyInterface();
             }
             else {
-                pShader = static_cast<m_IDirect3DPixelShader9*>(pShader)->GetProxyInterface();
+                pShader = pShader2->GetProxyInterface();
             }
             if(pShader2->id >= 814 && pShader2->id <= 831) {
                 doPostFx = true;
@@ -684,17 +711,19 @@ HRESULT m_IDirect3DDevice9Ex::SetPixelShader(THIS_ IDirect3DPixelShader9* pShade
 
     HRESULT hr = ProxyInterface->SetPixelShader(pShader);
 
-    if(pShader2) {
-        if(pShader2->overwriteDepth) {
-            ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE, pShader2->depthWrite);
+    if(pShader) {
+        if(pShader2) {
+            if(pShader2->overwriteDepth) {
+                ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE, pShader2->depthWrite);
+            }
+            else {
+                ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE, last);
+            }
+            GetPixelShaderConstantF(0, &pShader2->constants[0][0], 233);
         }
         else {
             ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE, last);
         }
-        GetPixelShaderConstantF(0, &pShader2->constants[0][0], 233);
-    }
-    else {
-        ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE, last);
     }
     return hr;
 }
@@ -711,7 +740,7 @@ HRESULT m_IDirect3DDevice9Ex::SetRenderState(D3DRENDERSTATETYPE State, DWORD Val
     m_IDirect3DPixelShader9* pShader2 = 0;
     GetPixelShader(&pShader);
     pShader2 = static_cast<m_IDirect3DPixelShader9*>(pShader);
-
+    
     if(State == D3DRS_ZWRITEENABLE) {
         last = Value;
     }
@@ -739,19 +768,19 @@ HRESULT m_IDirect3DDevice9Ex::DrawIndexedPrimitiveUP(D3DPRIMITIVETYPE PrimitiveT
 }
 
 HRESULT m_IDirect3DDevice9Ex::DrawPrimitive(D3DPRIMITIVETYPE PrimitiveType, UINT StartVertex, UINT PrimitiveCount) {
-    IDirect3DPixelShader9* pShader = 0;
-    m_IDirect3DPixelShader9* pShader2 = 0;
-    if(doPostFx) {
-        GetPixelShader(&pShader);
-        if(pShader) {
-            pShader2 = static_cast<m_IDirect3DPixelShader9*>(pShader);
-            if(pShader2) {
-                if(pShader2->id >= 814 && pShader2->id <= 831) {
-                    doPostFx = false;
-                }
-            }
-        }
-    }
+    //IDirect3DPixelShader9* pShader = 0;
+    //m_IDirect3DPixelShader9* pShader2 = 0;
+    //if(doPostFx) {
+    //    GetPixelShader(&pShader);
+    //    if(pShader) {
+    //        pShader2 = static_cast<m_IDirect3DPixelShader9*>(pShader);
+    //        if(pShader2) {
+    //            if(pShader2->id >= 814 && pShader2->id <= 831) {
+    //                doPostFx = false;
+    //            }
+    //        }
+    //    }
+    //}
     return ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
 }
 

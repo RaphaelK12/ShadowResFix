@@ -23,6 +23,13 @@ enum ShaderUse {
     SU_EFX      // edited hlsl
 };
 
+enum ShaderCreationMode {
+    SC_FXC=0,   // fxc
+    SC_GAME,    // game asm
+    SC_LOAD,    // loaded asm
+    SC_NEW,     // my asm
+};
+
 extern long long g_id;
 
 extern std::list<std::string> shadowGen;

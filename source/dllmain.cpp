@@ -28,21 +28,6 @@ std::ofstream Log::mLogFile;
 #pragma comment(lib, "d3dx9.lib")
 #pragma comment(lib, "winmm.lib") // needed for timeBeginPeriod()/timeEndPeriod()
 
-Direct3DShaderValidatorCreate9Proc m_pDirect3DShaderValidatorCreate9;
-PSGPErrorProc m_pPSGPError;
-PSGPSampleTextureProc m_pPSGPSampleTexture;
-D3DPERF_BeginEventProc m_pD3DPERF_BeginEvent;
-D3DPERF_EndEventProc m_pD3DPERF_EndEvent;
-D3DPERF_GetStatusProc m_pD3DPERF_GetStatus;
-D3DPERF_QueryRepeatFrameProc m_pD3DPERF_QueryRepeatFrame;
-D3DPERF_SetMarkerProc m_pD3DPERF_SetMarker;
-D3DPERF_SetOptionsProc m_pD3DPERF_SetOptions;
-D3DPERF_SetRegionProc m_pD3DPERF_SetRegion;
-DebugSetLevelProc m_pDebugSetLevel;
-DebugSetMuteProc m_pDebugSetMute;
-Direct3D9EnableMaximizedWindowedModeShimProc m_pDirect3D9EnableMaximizedWindowedModeShim;
-Direct3DCreate9Proc m_pDirect3DCreate9;
-Direct3DCreate9ExProc m_pDirect3DCreate9Ex;
 
 HWND g_hFocusWindow = NULL;
 
@@ -80,6 +65,7 @@ UINT gFixEmissiveTransparency = 0;
 UINT gReflectionResMult = 1;
 UINT gLightResMult = 1;
 
+
 extern std::vector<m_IDirect3DPixelShader9*> ps;
 extern std::vector<m_IDirect3DVertexShader9*> vs;
 extern std::vector<const char*> shader_names_ps;
@@ -87,20 +73,14 @@ extern std::vector<const char*> shader_names_vs;
 extern std::vector<std::vector<m_IDirect3DPixelShader9*>> fx_ps;
 extern std::vector<std::vector<m_IDirect3DVertexShader9*>> fx_vs;
 
-typedef HRESULT(__stdcall DInput8DeviceGetDeviceStateT)(IDirectInputDevice8*, DWORD, LPVOID);
-typedef HRESULT(__stdcall DInput8DeviceAcquireT)(IDirectInputDevice8*);
-
 void* gDinpu8Device_vtbl[32] = {};
-DInput8DeviceGetDeviceStateT* DInput8DeviceGetDeviceStateO = nullptr;
-DInput8DeviceAcquireT* DInput8DeviceAcquireO = nullptr;
 
-WNDPROC WndProcO = nullptr;
-
-ShadowResFix* gShadowResFix;
-
-HANDLE gMainThreadHandle = nullptr;
-
-uint8_t* baseAddress = nullptr;
+struct stModule {
+    std::string name;
+    HMODULE hmodule;
+    std::list<std::string> functions;
+    stModule(std::string _name, HMODULE _hmodule) : name(_name), hmodule(_hmodule) {}
+};
 
 class FrameLimiter {
 private:
@@ -256,7 +236,119 @@ private:
     }
 };
 
+std::list<stModule> hmoduleList;
+
+std::vector<HWND> windows;
+
+BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lParam) {
+    DWORD lpdwProcessId;
+    GetWindowThreadProcessId(hwnd, &lpdwProcessId);
+    if(lpdwProcessId == lParam && hwnd) {
+        if(IsWindowVisible(hwnd))
+            windows.push_back(hwnd);
+        return FALSE;
+    }
+    return TRUE;
+}
+
+void addFunction(std::string name, HMODULE hmodule) {
+    for(auto& i : hmoduleList) {
+        if(i.hmodule == hmodule) {
+            i.functions.push_back(name);
+        }
+    }
+}
+void* get_function_address2(HMODULE module, const char* function_name) {
+    if(module != NULL) {
+        //Get the address of the function
+        return GetProcAddress(module, function_name);
+    }
+    else {
+        return NULL;
+    }
+}
+PCSTR pcwstr_to_pcstr(PCWSTR input) {
+    static char cstrbuffer[1024] = { 0 };
+    // Get the required cstrbuffer size for the conversion
+    int size = WideCharToMultiByte(CP_UTF8, 0, input, -1, NULL, 0, NULL, NULL);
+    if(size == 0) {
+        // Error occurred
+        return NULL;
+    }
+    // Perform the conversion
+    int result = WideCharToMultiByte(CP_UTF8, 0, input, -1, cstrbuffer, size, NULL, NULL);
+    if(result == 0) {
+        // Error occurred
+        return NULL;
+    }
+    // Return the converted string
+    return cstrbuffer;
+}
+
+ShadowResFix* gShadowResFix = nullptr;
+
+HANDLE gMainThreadHandle = nullptr;
+
+uint8_t* baseAddress = nullptr;
+
 FrameLimiter::FPSLimitMode mFPSLimitMode = FrameLimiter::FPSLimitMode::FPS_NONE;
+
+
+
+typedef HRESULT(__stdcall DInput8DeviceGetDeviceStateT)(IDirectInputDevice8*, DWORD, LPVOID);
+typedef HRESULT(__stdcall DInput8DeviceAcquireT)(IDirectInputDevice8*);
+
+typedef ATOM(__stdcall* RegisterClassA_fn)(const WNDCLASSA*);
+typedef ATOM(__stdcall* RegisterClassW_fn)(const WNDCLASSW*);
+typedef ATOM(__stdcall* RegisterClassExA_fn)(const WNDCLASSEXA*);
+typedef ATOM(__stdcall* RegisterClassExW_fn)(const WNDCLASSEXW*);
+
+typedef HRESULT(__stdcall* SHGetFolderPathA_Ptr)(_Reserved_ HWND hwnd, _In_ int csidl, _In_opt_ HANDLE hToken, _In_ DWORD dwFlags, _Out_writes_(MAX_PATH) LPSTR pszPath);
+typedef HRESULT(__stdcall* SHGetFolderPathW_Ptr)(_Reserved_ HWND hwnd, _In_ int csidl, _In_opt_ HANDLE hToken, _In_ DWORD dwFlags, _Out_writes_(MAX_PATH) LPWSTR pszPath);
+
+typedef HMODULE(WINAPI* LoadLibraryA_Ptr)(LPCSTR lpLibFileName);
+typedef HMODULE(WINAPI* LoadLibraryW_Ptr)(LPCWSTR lpLibFileName);
+typedef HMODULE(WINAPI* LoadLibraryExW_Ptr)(LPCWSTR lpLibFileName, HANDLE hFile, DWORD dwFlags);
+typedef HMODULE(WINAPI* LoadLibraryExA_Ptr)(LPCSTR lpLibFileName, HANDLE hFile, DWORD dwFlags);
+typedef FARPROC(WINAPI* GetProcAddress_Ptr)(HMODULE hModule, LPCSTR lpProcName);
+
+Direct3DShaderValidatorCreate9Proc              o_pDirect3DShaderValidatorCreate9;
+PSGPErrorProc                                   o_pPSGPError;
+PSGPSampleTextureProc                           o_pPSGPSampleTexture;
+D3DPERF_BeginEventProc                          o_pD3DPERF_BeginEvent;
+D3DPERF_EndEventProc                            o_pD3DPERF_EndEvent;
+D3DPERF_GetStatusProc                           o_pD3DPERF_GetStatus;
+D3DPERF_QueryRepeatFrameProc                    o_pD3DPERF_QueryRepeatFrame;
+D3DPERF_SetMarkerProc                           o_pD3DPERF_SetMarker;
+D3DPERF_SetOptionsProc                          o_pD3DPERF_SetOptions;
+D3DPERF_SetRegionProc                           o_pD3DPERF_SetRegion;
+DebugSetLevelProc                               o_pDebugSetLevel;
+DebugSetMuteProc                                o_pDebugSetMute;
+Direct3D9EnableMaximizedWindowedModeShimProc    o_pDirect3D9EnableMaximizedWindowedModeShim;
+Direct3DCreate9Proc                             o_pDirect3DCreate9;
+Direct3DCreate9ExProc                           o_pDirect3DCreate9Ex;
+
+
+RegisterClassA_fn o_RegisterClassA = nullptr;
+RegisterClassW_fn o_RegisterClassW = nullptr;
+RegisterClassExA_fn o_RegisterClassExA = nullptr;
+RegisterClassExW_fn o_RegisterClassExW = nullptr;
+
+LoadLibraryA_Ptr	           o_LoadLibraryA   = nullptr;
+LoadLibraryW_Ptr	           o_LoadLibraryW   = nullptr;
+LoadLibraryExW_Ptr	           o_LoadLibraryExW = nullptr;
+LoadLibraryExA_Ptr	           o_LoadLibraryExA = nullptr;
+GetProcAddress_Ptr             o_GetProcAddress = nullptr;
+
+WNDPROC o_WndProc = nullptr;
+WNDPROC WndProc = nullptr;
+
+SHGetFolderPathA_Ptr o_SHGetFolderPathA = nullptr;
+SHGetFolderPathW_Ptr o_SHGetFolderPathW = nullptr;
+
+DInput8DeviceGetDeviceStateT* o_DInput8DeviceGetDeviceState = nullptr;
+DInput8DeviceAcquireT* o_DInput8DeviceAcquire = nullptr;
+
 
 HRESULT m_IDirect3DDevice9Ex::Present(CONST RECT* pSourceRect, CONST RECT* pDestRect, HWND hDestWindowOverride, CONST RGNDATA* pDirtyRegion) {
     if(mFPSLimitMode == FrameLimiter::FPSLimitMode::FPS_REALTIME)
@@ -327,7 +419,7 @@ HRESULT m_IDirect3DDevice9Ex::EndScene() {
         gFixEmissiveTransparency = gFixEmissiveTransparency % 3;
     }
     HRESULT hr = ProxyInterface->EndScene();
-    ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE, 0);
+    ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE, 1);
 
     return hr;
 }
@@ -417,17 +509,7 @@ void ForceFullScreenRefreshRateInHz(D3DPRESENT_PARAMETERS* pPresentationParamete
     }
 }
 
-typedef HRESULT(__stdcall* FusionReset_t)();
-
-FusionReset_t FusionReset_Ptr = nullptr;
-
 HRESULT m_IDirect3D9Ex::CreateDevice(UINT Adapter, D3DDEVTYPE DeviceType, HWND hFocusWindow, DWORD BehaviorFlags, D3DPRESENT_PARAMETERS* pPresentationParameters, IDirect3DDevice9** ppReturnedDeviceInterface) {
-    HMODULE ff = GetModuleHandleA("GTAIV.EFLC.FusionFix.asi");
-    if(ff)
-        FusionReset_Ptr = (FusionReset_t) GetProcAddress(ff, "FusionDeviceReset");
-
-    if(FusionReset_Ptr)
-        Log::Info("FusionDeviceReset found");
     pRainDropsRefractionHDRTex = 0;
     pRainDropsRefractionHDRTex = 0;
     if(bForceWindowedMode) {
@@ -484,8 +566,6 @@ HRESULT m_IDirect3D9Ex::CreateDeviceEx(THIS_ UINT Adapter, D3DDEVTYPE DeviceType
 
 HRESULT m_IDirect3DDevice9Ex::Reset(D3DPRESENT_PARAMETERS* pPresentationParameters) {
     pRainDropsRefractionHDRTex = 0;
-    if(FusionReset_Ptr)
-        FusionReset_Ptr();
 
     if(bForceWindowedMode)
         ForceWindowed(pPresentationParameters);
@@ -519,8 +599,6 @@ HRESULT m_IDirect3DDevice9Ex::Reset(D3DPRESENT_PARAMETERS* pPresentationParamete
 
 HRESULT m_IDirect3DDevice9Ex::ResetEx(THIS_ D3DPRESENT_PARAMETERS* pPresentationParameters, D3DDISPLAYMODEEX* pFullscreenDisplayMode) {
     pRainDropsRefractionHDRTex = 0;
-    if(FusionReset_Ptr)
-        FusionReset_Ptr();
     if(bForceWindowedMode)
         ForceWindowed(pPresentationParameters, pFullscreenDisplayMode);
 
@@ -544,7 +622,6 @@ HRESULT m_IDirect3DDevice9Ex::ResetEx(THIS_ D3DPRESENT_PARAMETERS* pPresentation
     return hRet;
 }
 
-LRESULT(WINAPI* WndProc)(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 LRESULT WINAPI CustomWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     if(uMsg == WM_ACTIVATE || uMsg == WM_NCACTIVATE) {
         WndProc(hWnd, uMsg, wParam, lParam);
@@ -564,54 +641,29 @@ LRESULT WINAPI CustomWndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
     return WndProc(hWnd, uMsg, wParam, lParam);
 }
 
-typedef ATOM(__stdcall* RegisterClassA_fn)(const WNDCLASSA*);
-typedef ATOM(__stdcall* RegisterClassW_fn)(const WNDCLASSW*);
-typedef ATOM(__stdcall* RegisterClassExA_fn)(const WNDCLASSEXA*);
-typedef ATOM(__stdcall* RegisterClassExW_fn)(const WNDCLASSEXW*);
-RegisterClassA_fn oRegisterClassA;
-RegisterClassW_fn oRegisterClassW;
-RegisterClassExA_fn oRegisterClassExA;
-RegisterClassExW_fn oRegisterClassExW;
+// DoNotNotifyOnTaskSwitch 
 ATOM __stdcall hk_RegisterClassA(WNDCLASSA* lpWndClass) {
     WndProc = lpWndClass->lpfnWndProc;
     lpWndClass->lpfnWndProc = CustomWndProc;
-    return oRegisterClassA(lpWndClass);
+    return o_RegisterClassA(lpWndClass);
 }
 ATOM __stdcall hk_RegisterClassW(WNDCLASSW* lpWndClass) {
     WndProc = lpWndClass->lpfnWndProc;
     lpWndClass->lpfnWndProc = CustomWndProc;
-    return oRegisterClassW(lpWndClass);
+    return o_RegisterClassW(lpWndClass);
 }
 ATOM __stdcall hk_RegisterClassExA(WNDCLASSEXA* lpWndClass) {
     WndProc = lpWndClass->lpfnWndProc;
     lpWndClass->lpfnWndProc = CustomWndProc;
-    return oRegisterClassExA(lpWndClass);
+    return o_RegisterClassExA(lpWndClass);
 }
 ATOM __stdcall hk_RegisterClassExW(WNDCLASSEXW* lpWndClass) {
     WndProc = lpWndClass->lpfnWndProc;
     lpWndClass->lpfnWndProc = CustomWndProc;
-    return oRegisterClassExW(lpWndClass);
-}
-//HRESULT m_IDirect3DDevice9Ex::CreateTexture(THIS_ UINT Width, UINT Height, UINT Levels, DWORD Usage, D3DFORMAT Format, D3DPOOL Pool, IDirect3DTexture9** ppTexture, HANDLE* pSharedHandle)
-
-//Function Hooks
-
-void* get_function_address2(HMODULE module, const char* function_name) {
-    if(module != NULL) {
-        //Get the address of the function
-        return GetProcAddress(module, function_name);
-    }
-    else {
-        return NULL;
-    }
+    return o_RegisterClassExW(lpWndClass);
 }
 
-typedef HRESULT(__stdcall* SHGetFolderPathA_Ptr)(_Reserved_ HWND hwnd, _In_ int csidl, _In_opt_ HANDLE hToken, _In_ DWORD dwFlags, _Out_writes_(MAX_PATH) LPSTR pszPath);
-typedef HRESULT(__stdcall* SHGetFolderPathW_Ptr)(_Reserved_ HWND hwnd, _In_ int csidl, _In_opt_ HANDLE hToken, _In_ DWORD dwFlags, _Out_writes_(MAX_PATH) LPWSTR pszPath);
-
-SHGetFolderPathA_Ptr o_SHGetFolderPathA = nullptr;
-SHGetFolderPathW_Ptr o_SHGetFolderPathW = nullptr;
-
+// appdata to game folder
 HRESULT __stdcall hk_SHGetFolderPathA(_Reserved_ HWND hwnd, _In_ int csidl, _In_opt_ HANDLE hToken, _In_ DWORD dwFlags, _Out_writes_(MAX_PATH) LPSTR pszPath) {
     char path[MAX_PATH] = { 0 };
     HMODULE hm = NULL;
@@ -655,79 +707,34 @@ HRESULT __stdcall hk_SHGetFolderPathW(_Reserved_ HWND hwnd, _In_ int csidl, _In_
     return hr;
 }
 
-PCSTR pcwstr_to_pcstr(PCWSTR input) {
-    static char cstrbuffer[1024] = { 0 };
-    // Get the required cstrbuffer size for the conversion
-    int size = WideCharToMultiByte(CP_UTF8, 0, input, -1, NULL, 0, NULL, NULL);
-    if(size == 0) {
-        // Error occurred
-        return NULL;
-    }
-    // Perform the conversion
-    int result = WideCharToMultiByte(CP_UTF8, 0, input, -1, cstrbuffer, size, NULL, NULL);
-    if(result == 0) {
-        // Error occurred
-        return NULL;
-    }
-    // Return the converted string
-    return cstrbuffer;
-}
+// module and function list
+HMODULE WINAPI hk_LoadLibraryA  (LPCSTR lpLibFileName) {
+    HMODULE hr = o_LoadLibraryA(lpLibFileName);
 
-struct stModule {
-    std::string name;
-    HMODULE hmodule;
-    std::list<std::string> functions;
-    stModule(std::string _name, HMODULE _hmodule) : name(_name), hmodule(_hmodule) {}
-};
-
-std::list<stModule> hmoduleList;
-
-void addFunction(std::string name, HMODULE hmodule) {
-    for(auto& i : hmoduleList) {
-        if(i.hmodule == hmodule) {
-            i.functions.push_back(name);
-        }
-    }
-}
-
-typedef HMODULE(WINAPI* LoadLibraryA_Ptr)(LPCSTR lpLibFileName);
-typedef HMODULE(WINAPI* LoadLibraryW_Ptr)(LPCWSTR lpLibFileName);
-typedef HMODULE(WINAPI* LoadLibraryExW_Ptr)(LPCWSTR lpLibFileName, HANDLE hFile, DWORD dwFlags);
-typedef HMODULE(WINAPI* LoadLibraryExA_Ptr)(LPCSTR lpLibFileName, HANDLE hFile, DWORD dwFlags);
-typedef FARPROC(WINAPI* GetProcAddress_Ptr)(HMODULE hModule, LPCSTR lpProcName);
-
-LoadLibraryA_Ptr	           old_LoadLibraryA = NULL;
-LoadLibraryW_Ptr	           old_LoadLibraryW = NULL;
-LoadLibraryExW_Ptr	           old_LoadLibraryExW = NULL;
-LoadLibraryExA_Ptr	           old_LoadLibraryExA = NULL;
-GetProcAddress_Ptr             old_GetProcAddress = NULL;
-
-HMODULE WINAPI hk_LoadLibraryA(LPCSTR lpLibFileName) {
-    HMODULE hr = old_LoadLibraryA(lpLibFileName);
     if(hr)
         hmoduleList.push_back(stModule(lpLibFileName, hr));
     return hr;
 }
-HMODULE WINAPI hk_LoadLibraryW(LPCWSTR lpLibFileName) {
-    HMODULE hr = old_LoadLibraryW(lpLibFileName);
+HMODULE WINAPI hk_LoadLibraryW  (LPCWSTR lpLibFileName) {
+    HMODULE hr = o_LoadLibraryW(lpLibFileName);
     if(hr)
         hmoduleList.push_back(stModule(std::string(pcwstr_to_pcstr(lpLibFileName)), hr));
     return hr;
 }
 HMODULE WINAPI hk_LoadLibraryExW(LPCWSTR lpLibFileName, HANDLE hFile, DWORD dwFlags) {
-    HMODULE hr = old_LoadLibraryExW(lpLibFileName, hFile, dwFlags);
+    HMODULE hr = o_LoadLibraryExW(lpLibFileName, hFile, dwFlags);
     if(hr)
         hmoduleList.push_back(stModule(std::string(pcwstr_to_pcstr(lpLibFileName)), hr));
     return hr;
 }
 HMODULE WINAPI hk_LoadLibraryExA(LPCSTR lpLibFileName, HANDLE hFile, DWORD dwFlags) {
-    HMODULE hr = old_LoadLibraryExA(lpLibFileName, hFile, dwFlags);
+    HMODULE hr = o_LoadLibraryExA(lpLibFileName, hFile, dwFlags);
     if(hr)
         hmoduleList.push_back(stModule(std::string(lpLibFileName), hr));
     return hr;
 }
 FARPROC WINAPI hk_GetProcAddress(HMODULE hModule, LPCSTR lpProcName) {
-    FARPROC hr = old_GetProcAddress(hModule, lpProcName);
+    FARPROC hr = o_GetProcAddress(hModule, lpProcName);
     if(hr)
         addFunction(lpProcName, hModule);
     return hr;
@@ -736,13 +743,13 @@ FARPROC WINAPI hk_GetProcAddress(HMODULE hModule, LPCSTR lpProcName) {
 LRESULT CALLBACK WndProcH(const HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     if(gShadowResFix->OnWndProc(hWnd, uMsg, wParam, lParam))
         return true;
-    return CallWindowProc(WndProcO, hWnd, uMsg, wParam, lParam);
+    return CallWindowProc(o_WndProc, hWnd, uMsg, wParam, lParam);
 }
 
 // maybe not the best way to do this but it works, its simple and doesn't cause any issues with the GtaIV
 // but it doesn't work for other games
 HRESULT __stdcall DInput8DeviceGetDeviceStateH(IDirectInputDevice8* This, DWORD cbData, LPVOID lpvData) {
-    HRESULT hr = DInput8DeviceGetDeviceStateO(This, cbData, lpvData);
+    HRESULT hr = o_DInput8DeviceGetDeviceState(This, cbData, lpvData);
 
     if(gShadowResFix->mDisableMouseControl) {
         if(cbData == sizeof(DIMOUSESTATE) || cbData == sizeof(DIMOUSESTATE2)) {
@@ -758,26 +765,10 @@ HRESULT __stdcall DInput8DeviceAcquireH(IDirectInputDevice8* This) {
         return DI_OK;
     }
 
-    return DInput8DeviceAcquireO(This);
+    return o_DInput8DeviceAcquire(This);
 }
 
-//Functions
-
-
-std::vector<HWND> windows;
-BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lParam) {
-    DWORD lpdwProcessId;
-    GetWindowThreadProcessId(hwnd, &lpdwProcessId);
-    if(lpdwProcessId == lParam) {
-        if(IsWindowVisible(hwnd))
-            windows.push_back(hwnd);
-        return FALSE;
-    }
-    return TRUE;
-}
-
-
-
+int hookWait = 10;
 
 bool Initialize() {
     std::stringstream logStream;
@@ -792,8 +783,8 @@ bool Initialize() {
         }
     }
     if(*gDinpu8Device_vtbl) {
-        if(!DInput8DeviceGetDeviceStateO) {
-            mhStatus = MH_CreateHook(gDinpu8Device_vtbl[9], &DInput8DeviceGetDeviceStateH, (void**) &DInput8DeviceGetDeviceStateO);
+        if(!o_DInput8DeviceGetDeviceState) {
+            mhStatus = MH_CreateHook(gDinpu8Device_vtbl[9], &DInput8DeviceGetDeviceStateH, (void**) &o_DInput8DeviceGetDeviceState);
             if(mhStatus != MH_OK) {
                 logStream << "IDirectInputDevice8::GetDeviceState hook could not be created - " << MH_StatusToString(mhStatus);
                 Log::Error(logStream.str());
@@ -804,8 +795,8 @@ bool Initialize() {
             Log::Info("Created IDirectInputDevice8::GetDeviceState hook");
         }
 
-        if(!DInput8DeviceAcquireO) {
-            mhStatus = MH_CreateHook(gDinpu8Device_vtbl[7], &DInput8DeviceAcquireH, (void**) &DInput8DeviceAcquireO);
+        if(!o_DInput8DeviceAcquire) {
+            mhStatus = MH_CreateHook(gDinpu8Device_vtbl[7], &DInput8DeviceAcquireH, (void**) &o_DInput8DeviceAcquire);
             if(mhStatus != MH_OK) {
                 logStream << "IDirectInputDevice8::Acquire hook could not be created - " << MH_StatusToString(mhStatus);
                 Log::Error(logStream.str());
@@ -819,14 +810,15 @@ bool Initialize() {
 
     EnumWindows(EnumWindowsProc, GetCurrentProcessId());
     if(windows.empty()) {
-        MessageBox(0, "Unable to enumerate windows", "Shader Editor", MB_ICONWARNING);
-        TerminateProcess(GetCurrentProcess(), 0);
+        /*MessageBox(0, "Unable to enumerate windows", "Shader Editor", MB_ICONWARNING);
+        TerminateProcess(GetCurrentProcess(), 0);*/
+        return false;
     }
 
-    if(!WndProcO) {
-        WndProcO = (WNDPROC) SetWindowLongPtr(windows[0] /*FindWindowA("grcWindow", "GTAIV")*/, GWL_WNDPROC, (LONG_PTR) WndProcH);
+    if(!o_WndProc) {
+        o_WndProc = (WNDPROC) SetWindowLongPtr(windows[windows.size()-1] /*FindWindowA("grcWindow", "GTAIV")*/, GWL_WNDPROC, (LONG_PTR) WndProcH);
 
-        if(!WndProcO) {
+        if(!o_WndProc) {
             return false;
         }
     }
@@ -846,7 +838,7 @@ void MainLoop() {
     static bool initialized = false;
 
     while(!initialized) {
-        Sleep(300);
+        Sleep(hookWait);
 
         initialized = Initialize();
     }
@@ -856,16 +848,159 @@ void MainLoop() {
     TerminateThread(gMainThreadHandle, exitCode);
 }
 
+
+
+
+IDirect3D9* WINAPI Direct3DCreate9(UINT SDKVersion) {
+    if(!o_pDirect3DCreate9) {
+        return nullptr;
+    }
+
+    IDirect3D9* pDirect3D9 = o_pDirect3DCreate9(SDKVersion);
+
+    if(pDirect3D9) {
+        m_IDirect3D9Ex* pDirect3D9Ex = new m_IDirect3D9Ex((IDirect3D9Ex*) pDirect3D9, IID_IDirect3D9);
+        if(pDirect3D9Ex)
+            Log::Info("Direct3DCreate9(): " + std::to_string(SDKVersion));
+        return pDirect3D9Ex;
+    }
+
+    return nullptr;
+}
+
+HRESULT WINAPI Direct3DCreate9Ex(UINT SDKVersion, IDirect3D9Ex** ppD3D) {
+    if(!o_pDirect3DCreate9Ex) {
+        return E_FAIL;
+    }
+    HRESULT hr = o_pDirect3DCreate9Ex(SDKVersion, ppD3D);
+
+    if(SUCCEEDED(hr) && ppD3D) {
+        *ppD3D = new m_IDirect3D9Ex(*ppD3D, IID_IDirect3D9Ex);
+        Log::Info("Direct3DCreate9Ex(): " + std::to_string(SDKVersion));
+    }
+
+    return hr;
+}
+
+
+int WINAPI Direct3D9EnableMaximizedWindowedModeShim(BOOL mEnable) {
+    if(!o_pDirect3D9EnableMaximizedWindowedModeShim) {
+        return NULL;
+    }
+
+    return o_pDirect3D9EnableMaximizedWindowedModeShim(mEnable);
+}
+
+HRESULT WINAPI Direct3DShaderValidatorCreate9() {
+    if(!o_pDirect3DShaderValidatorCreate9) {
+        return E_FAIL;
+    }
+
+    return o_pDirect3DShaderValidatorCreate9();
+}
+
+HRESULT WINAPI PSGPSampleTexture() {
+    if(!o_pPSGPSampleTexture) {
+        return E_FAIL;
+    }
+
+    return o_pPSGPSampleTexture();
+}
+
+HRESULT WINAPI DebugSetLevel(DWORD dw1) {
+    if(!o_pDebugSetLevel) {
+        return E_FAIL;
+    }
+
+    return o_pDebugSetLevel(dw1);
+}
+
+void WINAPI DebugSetMute() {
+    if(!o_pDebugSetMute) {
+        return;
+    }
+
+    return o_pDebugSetMute();
+}
+
+HRESULT WINAPI PSGPError() {
+    if(!o_pPSGPError) {
+        return E_FAIL;
+    }
+
+    return o_pPSGPError();
+}
+
+int WINAPI D3DPERF_BeginEvent(D3DCOLOR col, LPCWSTR wszName) {
+    if(!o_pD3DPERF_BeginEvent) {
+        return NULL;
+    }
+
+    return o_pD3DPERF_BeginEvent(col, wszName);
+}
+
+int WINAPI D3DPERF_EndEvent() {
+    if(!o_pD3DPERF_EndEvent) {
+        return NULL;
+    }
+
+    return o_pD3DPERF_EndEvent();
+}
+
+DWORD WINAPI D3DPERF_GetStatus() {
+    if(!o_pD3DPERF_GetStatus) {
+        return NULL;
+    }
+
+    return o_pD3DPERF_GetStatus();
+}
+
+BOOL WINAPI D3DPERF_QueryRepeatFrame() {
+    if(!o_pD3DPERF_QueryRepeatFrame) {
+        return FALSE;
+    }
+
+    return o_pD3DPERF_QueryRepeatFrame();
+}
+
+void WINAPI D3DPERF_SetMarker(D3DCOLOR col, LPCWSTR wszName) {
+    if(!o_pD3DPERF_SetMarker) {
+        return;
+    }
+
+    return o_pD3DPERF_SetMarker(col, wszName);
+}
+
+void WINAPI D3DPERF_SetOptions(DWORD dwOptions) {
+    if(!o_pD3DPERF_SetOptions) {
+        return;
+    }
+
+    return o_pD3DPERF_SetOptions(dwOptions);
+}
+
+void WINAPI D3DPERF_SetRegion(D3DCOLOR col, LPCWSTR wszName) {
+    if(!o_pD3DPERF_SetRegion) {
+        return;
+    }
+
+    return o_pD3DPERF_SetRegion(col, wszName);
+}
+
+
 bool WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved) {
     static HMODULE d3d9dll = nullptr;
     static HMODULE SHELL32_dll = nullptr;
-
+    static HMODULE kernel32_dll = nullptr;
+    //bool isAsi = false;
     switch(dwReason) {
         case DLL_PROCESS_ATTACH:
         {
-        #ifdef DEBUG
-            //MessageBox(0, TEXT("ShadowResFix loaded!"), TEXT("ASI Loader"), MB_ICONWARNING);
-        #endif // DEBUG
+            ps.resize(shader_names_ps.size());
+            vs.resize(shader_names_vs.size());
+            fx_ps.resize(shader_names_fxc.size());
+            fx_vs.resize(shader_names_fxc.size());
+
             gShadowResFix = new ShadowResFix;
             // Load dll
             char path[MAX_PATH];
@@ -874,35 +1009,59 @@ bool WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved) {
 
             GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR) &Direct3DCreate9, &hm);
             GetModuleFileNameA(hm, path, sizeof(path));
+            std::string ext = path;
+            //ext = ext.substr(ext.find_last_of(".") + 1);
+            //if(ext == "asi") {
+            //    isAsi = true;
+            //}
+
             *strrchr(path, '\\') = '\0';
             strcat_s(path, "\\shadowresfix.ini");
 
-            bForceWindowedMode = GetPrivateProfileInt("MAIN", "ForceWindowedMode", 0, path) != 0;
-            fFPSLimit = static_cast<float>(GetPrivateProfileInt("MAIN", "FPSLimit", 0, path));
-            nFullScreenRefreshRateInHz = GetPrivateProfileInt("MAIN", "FullScreenRefreshRateInHz", 0, path);
-            bDisplayFPSCounter = GetPrivateProfileInt("MAIN", "DisplayFPSCounter", 0, path);
+            // read ini
+            {
+                bForceWindowedMode = GetPrivateProfileInt("MAIN", "ForceWindowedMode", 0, path) != 0;
+                fFPSLimit = static_cast<float>(GetPrivateProfileInt("MAIN", "FPSLimit", 0, path));
+                nFullScreenRefreshRateInHz = GetPrivateProfileInt("MAIN", "FullScreenRefreshRateInHz", 0, path);
+                bDisplayFPSCounter = GetPrivateProfileInt("MAIN", "DisplayFPSCounter", 0, path);
 
-            bUsePrimaryMonitor = GetPrivateProfileInt("FORCEWINDOWED", "UsePrimaryMonitor", 0, path) != 0;
-            bCenterWindow = GetPrivateProfileInt("FORCEWINDOWED", "CenterWindow", 1, path) != 0;
-            bBorderlessFullscreen = GetPrivateProfileInt("FORCEWINDOWED", "BorderlessFullscreen", 0, path) != 0;
-            bAlwaysOnTop = GetPrivateProfileInt("FORCEWINDOWED", "AlwaysOnTop", 0, path) != 0;
-            bDoNotNotifyOnTaskSwitch = GetPrivateProfileInt("FORCEWINDOWED", "DoNotNotifyOnTaskSwitch", 0, path) != 0;
+                bUsePrimaryMonitor = GetPrivateProfileInt("FORCEWINDOWED", "UsePrimaryMonitor", 0, path) != 0;
+                bCenterWindow = GetPrivateProfileInt("FORCEWINDOWED", "CenterWindow", 1, path) != 0;
+                bBorderlessFullscreen = GetPrivateProfileInt("FORCEWINDOWED", "BorderlessFullscreen", 0, path) != 0;
+                bAlwaysOnTop = GetPrivateProfileInt("FORCEWINDOWED", "AlwaysOnTop", 0, path) != 0;
+                bDoNotNotifyOnTaskSwitch = GetPrivateProfileInt("FORCEWINDOWED", "DoNotNotifyOnTaskSwitch", 0, path) != 0;
 
-            gEnableProxyLibrary = GetPrivateProfileInt("PROXY", "EnableProxyLibrary", 0, path) != 0;
-            GetPrivateProfileString("PROXY", "ProxyLibrary", "d3d9.dll", ProxyLibrary, MAX_PATH, path);
+                gEnableProxyLibrary = GetPrivateProfileInt("PROXY", "EnableProxyLibrary", 0, path) != 0;
+                GetPrivateProfileString("PROXY", "ProxyLibrary", "d3d9.dll", ProxyLibrary, MAX_PATH, path);
 
-            bHookDirect3DCreate9 = GetPrivateProfileInt("SHADOWRESFIX", "HookDirect3DCreate9", 0, path) != 0;
-            gTreeLeavesSwayInTheWind = GetPrivateProfileInt("SHADOWRESFIX", "TreeLeavesSwayInTheWind", 0, path) != 0;
-            gFixCascadedShadowMapResolution = GetPrivateProfileInt("SHADOWRESFIX", "FixCascadedShadowMapResolution", 0, path) != 0;
-            gFixRainDrops = GetPrivateProfileInt("SHADOWRESFIX", "FixRainDrops", 0, path) != 0;
-            gFixWashedMirror = GetPrivateProfileInt("SHADOWRESFIX", "FixWashedMirror", 0, path) != 0;
-            gWindowDivisor = GetPrivateProfileInt("SHADOWRESFIX", "RainDropsBlur", 4, path);
-            gNearFarPlane = GetPrivateProfileInt("SHADOWRESFIX", "FixNearFarPlane", 0, path) != 0;
-            gReflectionResMult = GetPrivateProfileInt("SHADOWRESFIX", "ReflectionResMult", 2, path);
-            bHook_SHGetFolderPath = GetPrivateProfileInt("SHADOWRESFIX", "ProfileOnGameFolder", 0, path) != 0;
-            gLightResMult = GetPrivateProfileInt("SHADOWRESFIX", "LightResolutionMult", 1, path);
-            bSaveSettingsOnExit = GetPrivateProfileInt("SHADOWRESFIX", "SaveSettingsOnExit", 0, path) != 0;
+                bHookDirect3DCreate9 = GetPrivateProfileInt("SHADOWRESFIX", "HookDirect3DCreate9", 0, path) != 0;
+                gTreeLeavesSwayInTheWind = GetPrivateProfileInt("SHADOWRESFIX", "TreeLeavesSwayInTheWind", 0, path) != 0;
+                gFixCascadedShadowMapResolution = GetPrivateProfileInt("SHADOWRESFIX", "FixCascadedShadowMapResolution", 0, path) != 0;
+                gFixRainDrops = GetPrivateProfileInt("SHADOWRESFIX", "FixRainDrops", 0, path) != 0;
+                gFixWashedMirror = GetPrivateProfileInt("SHADOWRESFIX", "FixWashedMirror", 0, path) != 0;
+                gWindowDivisor = GetPrivateProfileInt("SHADOWRESFIX", "RainDropsBlur", 4, path);
+                gNearFarPlane = GetPrivateProfileInt("SHADOWRESFIX", "FixNearFarPlane", 0, path) != 0;
+                gReflectionResMult = GetPrivateProfileInt("SHADOWRESFIX", "ReflectionResMult", 2, path);
+                bHook_SHGetFolderPath = GetPrivateProfileInt("SHADOWRESFIX", "ProfileOnGameFolder", 0, path) != 0;
+                gLightResMult = GetPrivateProfileInt("SHADOWRESFIX", "LightResolutionMult", 1, path);
+                bSaveSettingsOnExit = GetPrivateProfileInt("SHADOWRESFIX", "SaveSettingsOnExit", 0, path) != 0;
 
+                hookWait = GetPrivateProfileInt("SHADOWRESFIX", "hookDelayMS", 0, path);
+
+                if(fFPSLimit > 0.0f) {
+                    FrameLimiter::FPSLimitMode mode = (GetPrivateProfileInt("MAIN", "FPSLimitMode", 1, path) == 2) ? FrameLimiter::FPSLimitMode::FPS_ACCURATE : FrameLimiter::FPSLimitMode::FPS_REALTIME;
+                    if(mode == FrameLimiter::FPSLimitMode::FPS_ACCURATE)
+                        timeBeginPeriod(1);
+
+                    FrameLimiter::Init(mode);
+                    mFPSLimitMode = mode;
+                }
+                else {
+                    mFPSLimitMode = FrameLimiter::FPSLimitMode::FPS_NONE;
+                }
+            }
+
+            // validate values
             switch(gReflectionResMult) {
                 case  2:
                 case  4:
@@ -946,6 +1105,36 @@ bool WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved) {
                 }
             }
 
+            // profile on game folder
+            if(bHook_SHGetFolderPath) {
+                //SHELL32_dll = LoadLibraryA("SHELL32.dll");
+                SHELL32_dll = GetModuleHandleA("SHELL32.dll");
+                if(SHELL32_dll) {
+                    o_SHGetFolderPathA = (SHGetFolderPathA_Ptr) GetProcAddress(SHELL32_dll, "SHGetFolderPathA");
+                    o_SHGetFolderPathW = (SHGetFolderPathW_Ptr) GetProcAddress(SHELL32_dll, "SHGetFolderPathW");
+                    
+                    /*o_SHGetFolderPathA = (SHGetFolderPathA_Ptr)*/ Iat_hook::detour_iat_ptr("SHGetFolderPathA", (void*) hk_SHGetFolderPathA);
+                    /*o_SHGetFolderPathW = (SHGetFolderPathW_Ptr)*/ Iat_hook::detour_iat_ptr("SHGetFolderPathW", (void*) hk_SHGetFolderPathW);
+                }
+            }
+
+            // window aways on top
+            if(bDoNotNotifyOnTaskSwitch) {
+                HMODULE user32 = GetModuleHandleA("user32.dll");
+                if(user32) {
+                    o_RegisterClassA   = (RegisterClassA_fn)   GetProcAddress(user32, "RegisterClassA"  );
+                    o_RegisterClassW   = (RegisterClassW_fn)   GetProcAddress(user32, "RegisterClassW"  );
+                    o_RegisterClassExA = (RegisterClassExA_fn) GetProcAddress(user32, "RegisterClassExA");
+                    o_RegisterClassExW = (RegisterClassExW_fn) GetProcAddress(user32, "RegisterClassExW");
+
+                    /*o_RegisterClassA   = (RegisterClassA_fn)   */ Iat_hook::detour_iat_ptr("RegisterClassA"  , (void*) hk_RegisterClassA  );
+                    /*o_RegisterClassW   = (RegisterClassW_fn)   */ Iat_hook::detour_iat_ptr("RegisterClassW"  , (void*) hk_RegisterClassW  );
+                    /*o_RegisterClassExA = (RegisterClassExA_fn) */ Iat_hook::detour_iat_ptr("RegisterClassExA", (void*) hk_RegisterClassExA);
+                    /*o_RegisterClassExW = (RegisterClassExW_fn) */ Iat_hook::detour_iat_ptr("RegisterClassExW", (void*) hk_RegisterClassExW);
+                }
+            }
+
+            // function hook for a specific dll such as dxvk
             if(gEnableProxyLibrary) {
                 d3d9dll = LoadLibraryA(ProxyLibrary);
                 if(!d3d9dll) {
@@ -954,7 +1143,8 @@ bool WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved) {
                     MessageBox(0, TEXT(buff), TEXT("Shader Editor"), MB_ICONWARNING);
                 }
             }
-            else {
+            else if(bHookDirect3DCreate9) {
+                // system d3d9
                 GetSystemDirectoryA(path, MAX_PATH);
                 strcat_s(path, "\\d3d9.dll");
                 d3d9dll = LoadLibraryA(path);
@@ -963,64 +1153,64 @@ bool WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved) {
                     sprintf(buff, "Unable to open:\n\"%s\"", path);
                     MessageBox(0, TEXT(buff), TEXT("Shader Editor"), MB_ICONWARNING);
                 }
-            };
-            GetModuleFileNameA(hm, path, sizeof(path));
-            *strrchr(path, '\\') = '\0';
-            strcat_s(path, "\\shadowresfix.ini");
+            }
+            
+            // hook d3d9
+            if(d3d9dll){
+                o_pDirect3DCreate9Ex                        = (Direct3DCreate9ExProc)                           GetProcAddress(d3d9dll, "Direct3DCreate9Ex"                         );
+                o_pDirect3DCreate9                          = (Direct3DCreate9Proc)                             GetProcAddress(d3d9dll, "Direct3DCreate9"                           );
+                
+                o_pDirect3D9EnableMaximizedWindowedModeShim = (Direct3D9EnableMaximizedWindowedModeShimProc)    GetProcAddress(d3d9dll, "Direct3D9EnableMaximizedWindowedModeShim"  );
+                o_pDirect3DShaderValidatorCreate9           = (Direct3DShaderValidatorCreate9Proc)              GetProcAddress(d3d9dll, "Direct3DShaderValidatorCreate9"            );
+                o_pD3DPERF_QueryRepeatFrame                 = (D3DPERF_QueryRepeatFrameProc)                    GetProcAddress(d3d9dll, "D3DPERF_QueryRepeatFrame"                  );
+                o_pD3DPERF_BeginEvent                       = (D3DPERF_BeginEventProc)                          GetProcAddress(d3d9dll, "D3DPERF_BeginEvent"                        );
+                o_pD3DPERF_SetOptions                       = (D3DPERF_SetOptionsProc)                          GetProcAddress(d3d9dll, "D3DPERF_SetOptions"                        );
+                o_pPSGPSampleTexture                        = (PSGPSampleTextureProc)                           GetProcAddress(d3d9dll, "PSGPSampleTexture"                         );
+                o_pD3DPERF_GetStatus                        = (D3DPERF_GetStatusProc)                           GetProcAddress(d3d9dll, "D3DPERF_GetStatus"                         );
+                o_pD3DPERF_SetMarker                        = (D3DPERF_SetMarkerProc)                           GetProcAddress(d3d9dll, "D3DPERF_SetMarker"                         );
+                o_pD3DPERF_SetRegion                        = (D3DPERF_SetRegionProc)                           GetProcAddress(d3d9dll, "D3DPERF_SetRegion"                         );
+                o_pD3DPERF_EndEvent                         = (D3DPERF_EndEventProc)                            GetProcAddress(d3d9dll, "D3DPERF_EndEvent"                          );
+                o_pDebugSetLevel                            = (DebugSetLevelProc)                               GetProcAddress(d3d9dll, "DebugSetLevel"                             );
+                o_pDebugSetMute                             = (DebugSetMuteProc)                                GetProcAddress(d3d9dll, "DebugSetMute"                              );
+                o_pPSGPError                                = (PSGPErrorProc)                                   GetProcAddress(d3d9dll, "PSGPError"                                 );
 
-            ps.resize(shader_names_ps.size());
-            vs.resize(shader_names_vs.size());
-            fx_ps.resize(shader_names_fxc.size());
-            fx_vs.resize(shader_names_fxc.size());
+                Iat_hook::detour_iat_ptr("Direct3DCreate9Ex"                         , (void*) Direct3DCreate9Ex                         );
+                Iat_hook::detour_iat_ptr("Direct3DCreate9"                           , (void*) Direct3DCreate9                           );
 
-            if(bHookDirect3DCreate9) {
-                Direct3DCreate9Proc   om_pDirect3DCreate9 = (Direct3DCreate9Proc) Iat_hook::detour_iat_ptr("Direct3DCreate9", (void*) Direct3DCreate9);
-                Direct3DCreate9ExProc om_pDirect3DCreate9Ex = (Direct3DCreate9ExProc) Iat_hook::detour_iat_ptr("Direct3DCreate9Ex", (void*) Direct3DCreate9Ex);
+                Iat_hook::detour_iat_ptr("Direct3D9EnableMaximizedWindowedModeShim"  , (void*) Direct3D9EnableMaximizedWindowedModeShim  );
+                Iat_hook::detour_iat_ptr("Direct3DShaderValidatorCreate9"            , (void*) Direct3DShaderValidatorCreate9            );
+                Iat_hook::detour_iat_ptr("D3DPERF_QueryRepeatFrame"                  , (void*) D3DPERF_QueryRepeatFrame                  );
+                Iat_hook::detour_iat_ptr("D3DPERF_BeginEvent"                        , (void*) D3DPERF_BeginEvent                        );
+                Iat_hook::detour_iat_ptr("D3DPERF_SetOptions"                        , (void*) D3DPERF_SetOptions                        );
+                Iat_hook::detour_iat_ptr("PSGPSampleTexture"                         , (void*) PSGPSampleTexture                         );
+                Iat_hook::detour_iat_ptr("D3DPERF_GetStatus"                         , (void*) D3DPERF_GetStatus                         );
+                Iat_hook::detour_iat_ptr("D3DPERF_SetMarker"                         , (void*) D3DPERF_SetMarker                         );
+                Iat_hook::detour_iat_ptr("D3DPERF_SetRegion"                         , (void*) D3DPERF_SetRegion                         );
+                Iat_hook::detour_iat_ptr("D3DPERF_EndEvent"                          , (void*) D3DPERF_EndEvent                          );
+                Iat_hook::detour_iat_ptr("DebugSetLevel"                             , (void*) DebugSetLevel                             );
+                Iat_hook::detour_iat_ptr("DebugSetMute"                              , (void*) DebugSetMute                              );
+                Iat_hook::detour_iat_ptr("PSGPError"                                 , (void*) PSGPError                                 );
             }
 
-            if(d3d9dll) {
-                // Get function addresses
-                m_pDirect3DShaderValidatorCreate9 = (Direct3DShaderValidatorCreate9Proc) GetProcAddress(d3d9dll, "Direct3DShaderValidatorCreate9");
-                m_pPSGPError = (PSGPErrorProc) GetProcAddress(d3d9dll, "PSGPError");
-                m_pPSGPSampleTexture = (PSGPSampleTextureProc) GetProcAddress(d3d9dll, "PSGPSampleTexture");
-                m_pD3DPERF_BeginEvent = (D3DPERF_BeginEventProc) GetProcAddress(d3d9dll, "D3DPERF_BeginEvent");
-                m_pD3DPERF_EndEvent = (D3DPERF_EndEventProc) GetProcAddress(d3d9dll, "D3DPERF_EndEvent");
-                m_pD3DPERF_GetStatus = (D3DPERF_GetStatusProc) GetProcAddress(d3d9dll, "D3DPERF_GetStatus");
-                m_pD3DPERF_QueryRepeatFrame = (D3DPERF_QueryRepeatFrameProc) GetProcAddress(d3d9dll, "D3DPERF_QueryRepeatFrame");
-                m_pD3DPERF_SetMarker = (D3DPERF_SetMarkerProc) GetProcAddress(d3d9dll, "D3DPERF_SetMarker");
-                m_pD3DPERF_SetOptions = (D3DPERF_SetOptionsProc) GetProcAddress(d3d9dll, "D3DPERF_SetOptions");
-                m_pD3DPERF_SetRegion = (D3DPERF_SetRegionProc) GetProcAddress(d3d9dll, "D3DPERF_SetRegion");
-                m_pDebugSetLevel = (DebugSetLevelProc) GetProcAddress(d3d9dll, "DebugSetLevel");
-                m_pDebugSetMute = (DebugSetMuteProc) GetProcAddress(d3d9dll, "DebugSetMute");
-                m_pDirect3D9EnableMaximizedWindowedModeShim = (Direct3D9EnableMaximizedWindowedModeShimProc) GetProcAddress(d3d9dll, "Direct3D9EnableMaximizedWindowedModeShim");
-                m_pDirect3DCreate9 = (Direct3DCreate9Proc) GetProcAddress(d3d9dll, "Direct3DCreate9");
-                m_pDirect3DCreate9Ex = (Direct3DCreate9ExProc) GetProcAddress(d3d9dll, "Direct3DCreate9Ex");
+            // create module list
+            if(false) {
+                HMODULE kernel32_dll = GetModuleHandleA("kernel32.dll");
+                if(kernel32_dll) {
+                    o_LoadLibraryA   = (LoadLibraryA_Ptr  ) GetProcAddress(kernel32_dll, "o_LoadLibraryA"  );
+                    o_LoadLibraryW   = (LoadLibraryW_Ptr  ) GetProcAddress(kernel32_dll, "o_LoadLibraryW"  );
+                    o_LoadLibraryExW = (LoadLibraryExW_Ptr) GetProcAddress(kernel32_dll, "o_LoadLibraryExW");
+                    o_LoadLibraryExA = (LoadLibraryExA_Ptr) GetProcAddress(kernel32_dll, "o_LoadLibraryExA");
+                    o_GetProcAddress = (GetProcAddress_Ptr) GetProcAddress(kernel32_dll, "o_GetProcAddress");
 
-                if(fFPSLimit > 0.0f) {
-                    FrameLimiter::FPSLimitMode mode = (GetPrivateProfileInt("MAIN", "FPSLimitMode", 1, path) == 2) ? FrameLimiter::FPSLimitMode::FPS_ACCURATE : FrameLimiter::FPSLimitMode::FPS_REALTIME;
-                    if(mode == FrameLimiter::FPSLimitMode::FPS_ACCURATE)
-                        timeBeginPeriod(1);
-
-                    FrameLimiter::Init(mode);
-                    mFPSLimitMode = mode;
-                }
-                else {
-                    mFPSLimitMode = FrameLimiter::FPSLimitMode::FPS_NONE;
-                }
-                if(bDoNotNotifyOnTaskSwitch) {
-                    oRegisterClassA = (RegisterClassA_fn) Iat_hook::detour_iat_ptr("RegisterClassA", (void*) hk_RegisterClassA);
-                    oRegisterClassW = (RegisterClassW_fn) Iat_hook::detour_iat_ptr("RegisterClassW", (void*) hk_RegisterClassW);
-                    oRegisterClassExA = (RegisterClassExA_fn) Iat_hook::detour_iat_ptr("RegisterClassExA", (void*) hk_RegisterClassExA);
-                    oRegisterClassExW = (RegisterClassExW_fn) Iat_hook::detour_iat_ptr("RegisterClassExW", (void*) hk_RegisterClassExW);
-                    HMODULE user32 = GetModuleHandleA("user32.dll");
-                    if(user32) {
-                        Iat_hook::detour_iat_ptr("RegisterClassA", (void*) hk_RegisterClassA, user32);
-                        Iat_hook::detour_iat_ptr("RegisterClassW", (void*) hk_RegisterClassW, user32);
-                        Iat_hook::detour_iat_ptr("RegisterClassExA", (void*) hk_RegisterClassExA, user32);
-                        Iat_hook::detour_iat_ptr("RegisterClassExW", (void*) hk_RegisterClassExW, user32);
-                    }
+                    Iat_hook::detour_iat_ptr("o_LoadLibraryA"  , (void*) hk_LoadLibraryA   );
+                    Iat_hook::detour_iat_ptr("o_LoadLibraryW"  , (void*) hk_LoadLibraryW   );
+                    Iat_hook::detour_iat_ptr("o_LoadLibraryExW", (void*) hk_LoadLibraryExW );
+                    Iat_hook::detour_iat_ptr("o_LoadLibraryExA", (void*) hk_LoadLibraryExA );
+                    Iat_hook::detour_iat_ptr("o_GetProcAddress", (void*) hk_GetProcAddress );
                 }
             }
+
+            // mhook and log
             {
                 if(!Log::Initialize()) {
                     return false;
@@ -1030,36 +1220,21 @@ bool WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved) {
                 int32_t gameVersion = 0;
 
                 if(!Utils::GetGameVersion(gameVersion)) {
-                    logStream << "Shader Editor only supports patch 3, 4, 6, 7, 8 and CE - " << std::to_string(gameVersion);
-                    Log::Error(logStream.str());
+                    logStream << "Shader Editor only fully supports GTAIV 1.2.00 Complete Edition with FusionFix shaders." << "\n";
                 }
-                logStream.clear();
 
                 logStream << "Game Version: " << gameVersion << "\n";
-                Log::Info(logStream.str());
-                logStream.clear();
 
                 MH_STATUS mhStatus = MH_Initialize();
                 if(mhStatus != MH_OK) {
-                    logStream << "MinHook could not be initialized - " << MH_StatusToString(mhStatus);
-                    Log::Error(logStream.str());
-
+                    logStream << "MinHook could not be initialized - " << MH_StatusToString(mhStatus) << "\n";
                     return false;
                 }
 
+                Log::Info(logStream.str());
                 Log::Info("MinHook initialized");
 
                 gMainThreadHandle = CreateThread(NULL, 0, (LPTHREAD_START_ROUTINE) MainLoop, NULL, 0, NULL);
-            }
-            if(bHook_SHGetFolderPath) {
-                SHELL32_dll = LoadLibraryA("SHELL32.dll");
-                if(SHELL32_dll) {
-                    o_SHGetFolderPathA = (SHGetFolderPathA_Ptr) GetProcAddress(SHELL32_dll, "SHGetFolderPathA");
-                    o_SHGetFolderPathW = (SHGetFolderPathW_Ptr) GetProcAddress(SHELL32_dll, "SHGetFolderPathW");
-
-                    Iat_hook::detour_iat_ptr("SHGetFolderPathA", (void*) hk_SHGetFolderPathA);
-                    Iat_hook::detour_iat_ptr("SHGetFolderPathW", (void*) hk_SHGetFolderPathW);
-                }
             }
         }
         break;
@@ -1070,12 +1245,6 @@ bool WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved) {
 
             if(mFPSLimitMode == FrameLimiter::FPSLimitMode::FPS_ACCURATE)
                 timeEndPeriod(1);
-
-            if(d3d9dll)
-                FreeLibrary(d3d9dll);
-
-            if(SHELL32_dll)
-                FreeLibrary(SHELL32_dll);
         }
         break;
     }
@@ -1083,134 +1252,9 @@ bool WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved) {
     return true;
 }
 
-HRESULT WINAPI Direct3DShaderValidatorCreate9() {
-    if(!m_pDirect3DShaderValidatorCreate9) {
-        return E_FAIL;
-    }
 
-    return m_pDirect3DShaderValidatorCreate9();
-}
 
-HRESULT WINAPI PSGPError() {
-    if(!m_pPSGPError) {
-        return E_FAIL;
-    }
 
-    return m_pPSGPError();
-}
 
-HRESULT WINAPI PSGPSampleTexture() {
-    if(!m_pPSGPSampleTexture) {
-        return E_FAIL;
-    }
 
-    return m_pPSGPSampleTexture();
-}
 
-int WINAPI D3DPERF_BeginEvent(D3DCOLOR col, LPCWSTR wszName) {
-    if(!m_pD3DPERF_BeginEvent) {
-        return NULL;
-    }
-
-    return m_pD3DPERF_BeginEvent(col, wszName);
-}
-
-int WINAPI D3DPERF_EndEvent() {
-    if(!m_pD3DPERF_EndEvent) {
-        return NULL;
-    }
-
-    return m_pD3DPERF_EndEvent();
-}
-
-DWORD WINAPI D3DPERF_GetStatus() {
-    if(!m_pD3DPERF_GetStatus) {
-        return NULL;
-    }
-
-    return m_pD3DPERF_GetStatus();
-}
-
-BOOL WINAPI D3DPERF_QueryRepeatFrame() {
-    if(!m_pD3DPERF_QueryRepeatFrame) {
-        return FALSE;
-    }
-
-    return m_pD3DPERF_QueryRepeatFrame();
-}
-
-void WINAPI D3DPERF_SetMarker(D3DCOLOR col, LPCWSTR wszName) {
-    if(!m_pD3DPERF_SetMarker) {
-        return;
-    }
-
-    return m_pD3DPERF_SetMarker(col, wszName);
-}
-
-void WINAPI D3DPERF_SetOptions(DWORD dwOptions) {
-    if(!m_pD3DPERF_SetOptions) {
-        return;
-    }
-
-    return m_pD3DPERF_SetOptions(dwOptions);
-}
-
-void WINAPI D3DPERF_SetRegion(D3DCOLOR col, LPCWSTR wszName) {
-    if(!m_pD3DPERF_SetRegion) {
-        return;
-    }
-
-    return m_pD3DPERF_SetRegion(col, wszName);
-}
-
-HRESULT WINAPI DebugSetLevel(DWORD dw1) {
-    if(!m_pDebugSetLevel) {
-        return E_FAIL;
-    }
-
-    return m_pDebugSetLevel(dw1);
-}
-
-void WINAPI DebugSetMute() {
-    if(!m_pDebugSetMute) {
-        return;
-    }
-
-    return m_pDebugSetMute();
-}
-
-int WINAPI Direct3D9EnableMaximizedWindowedModeShim(BOOL mEnable) {
-    if(!m_pDirect3D9EnableMaximizedWindowedModeShim) {
-        return NULL;
-    }
-
-    return m_pDirect3D9EnableMaximizedWindowedModeShim(mEnable);
-}
-
-IDirect3D9* WINAPI Direct3DCreate9(UINT SDKVersion) {
-    if(!m_pDirect3DCreate9) {
-        return nullptr;
-    }
-
-    IDirect3D9* pD3D9 = m_pDirect3DCreate9(SDKVersion);
-
-    if(pD3D9) {
-        return new m_IDirect3D9Ex((IDirect3D9Ex*) pD3D9, IID_IDirect3D9);
-    }
-
-    return nullptr;
-}
-
-HRESULT WINAPI Direct3DCreate9Ex(UINT SDKVersion, IDirect3D9Ex** ppD3D) {
-    if(!m_pDirect3DCreate9Ex) {
-        return E_FAIL;
-    }
-
-    HRESULT hr = m_pDirect3DCreate9Ex(SDKVersion, ppD3D);
-
-    if(SUCCEEDED(hr) && ppD3D) {
-        *ppD3D = new m_IDirect3D9Ex(*ppD3D, IID_IDirect3D9Ex);
-    }
-
-    return hr;
-}
