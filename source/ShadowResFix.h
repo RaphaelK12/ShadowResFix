@@ -74,7 +74,7 @@ public:
 
     int32_t GameVersion = 0;
 
-    ImGuiKey mOpenWindowKey = ImGuiKey_F9;
+    ImGuiKey mOpenWindowKey = ImGuiKey_F10;
     ImGuiKey mCompileShader = ImGuiKey_F5;
 
     ImVec2 mWindowPos = ImVec2(5.f, 5.f);

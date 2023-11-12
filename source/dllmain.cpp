@@ -58,6 +58,10 @@ IDirect3DTexture9* pRainDropsRefractionHDRTex = 0;
 bool gNearFarPlane = 1;
 float NearFarPlane[4] = { 0 };
 
+extern bool DisableADAPTIVETESS_X;
+extern bool EnableDepthOverwrite;
+extern bool AlowPauseGame;
+
 bool gTreeLeavesSwayInTheWind = 0;
 BOOL gFixCascadedShadowMapResolution = 0;
 BOOL gFixWashedMirror = 0;
@@ -366,6 +370,12 @@ HRESULT m_IDirect3DDevice9Ex::PresentEx(THIS_ CONST RECT* pSourceRect, CONST REC
         while(!FrameLimiter::Sync_SLP());
 
     return ProxyInterface->PresentEx(pSourceRect, pDestRect, hDestWindowOverride, pDirtyRegion, dwFlags);
+}
+
+HRESULT m_IDirect3DDevice9Ex::BeginScene() {
+    auto hr = ProxyInterface->BeginScene();
+    ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE, 1);
+    return hr;
 }
 
 HRESULT m_IDirect3DDevice9Ex::EndScene() {
@@ -1046,6 +1056,10 @@ bool WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved) {
                 gLightResMult = GetPrivateProfileInt("SHADOWRESFIX", "LightResolutionMult", 1, path);
                 bSaveSettingsOnExit = GetPrivateProfileInt("SHADOWRESFIX", "SaveSettingsOnExit", 0, path) != 0;
 
+                DisableADAPTIVETESS_X = GetPrivateProfileInt("SHADOWRESFIX", "DisableADAPTIVETESS_X", 0, path) != 0;
+                EnableDepthOverwrite = GetPrivateProfileInt("SHADOWRESFIX", "EnableDepthOverwrite", 0, path) != 0;
+                AlowPauseGame = GetPrivateProfileInt("SHADOWRESFIX", "AlowPauseGame", 0, path) != 0;
+
                 hookWait = GetPrivateProfileInt("SHADOWRESFIX", "hookDelayMS", 0, path);
 
                 if(fFPSLimit > 0.0f) {
@@ -1144,14 +1158,35 @@ bool WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved) {
                 }
             }
             else if(bHookDirect3DCreate9) {
-                // system d3d9
-                GetSystemDirectoryA(path, MAX_PATH);
-                strcat_s(path, "\\d3d9.dll");
-                d3d9dll = LoadLibraryA(path);
+                if(false) {
+                    char dllname[100] = { 0 };
+                    for(int version = 43; version > 23; version--) {
+                        sprintf(dllname, "d3dx9_%i.dll", version);
+                        d3d9dll = LoadLibraryA(dllname);
+                        if(d3d9dll) {
+                            Direct3DCreate9ExProc proc1 = (Direct3DCreate9ExProc) GetProcAddress(d3d9dll, "Direct3DCreate9Ex");
+                            Direct3DCreate9Proc proc2 = (Direct3DCreate9Proc) GetProcAddress(d3d9dll, "Direct3DCreate9");
+                            if(proc1 && proc2) {
+                                Log::Info(std::string("DirectX dll found = ") + dllname);
+                                break;
+                            }
+                            else {
+                                FreeLibrary(d3d9dll);
+                                d3d9dll = nullptr;
+                            }
+                        }
+                    }
+                }
                 if(!d3d9dll) {
-                    char buff[1000] = { 0 };
-                    sprintf(buff, "Unable to open:\n\"%s\"", path);
-                    MessageBox(0, TEXT(buff), TEXT("Shader Editor"), MB_ICONWARNING);
+                    // system d3d9
+                    GetSystemDirectoryA(path, MAX_PATH);
+                    strcat_s(path, "\\d3d9.dll");
+                    d3d9dll = LoadLibraryA(path);
+                    if(!d3d9dll) {
+                        char buff[1000] = { 0 };
+                        sprintf(buff, "Unable to open:\n\"%s\"", path);
+                        MessageBox(0, TEXT(buff), TEXT("Shader Editor"), MB_ICONWARNING);
+                    }
                 }
             }
             

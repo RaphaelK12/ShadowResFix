@@ -135,10 +135,6 @@ HRESULT m_IDirect3DDevice9Ex::TestCooperativeLevel() {
     return ProxyInterface->TestCooperativeLevel();
 }
 
-HRESULT m_IDirect3DDevice9Ex::BeginScene() {
-    return ProxyInterface->BeginScene();
-}
-
 HRESULT m_IDirect3DDevice9Ex::SetStreamSource(THIS_ UINT StreamNumber, IDirect3DVertexBuffer9* pStreamData, UINT OffsetInBytes, UINT Stride) {
     if(pStreamData) {
         pStreamData = static_cast<m_IDirect3DVertexBuffer9*>(pStreamData)->GetProxyInterface();

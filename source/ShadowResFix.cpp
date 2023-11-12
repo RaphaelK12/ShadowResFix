@@ -49,6 +49,9 @@ extern UINT gLightResMult;
 extern float shaderReturnColor[4];
 extern BOOL gFixWashedMirror;
 
+bool DisableADAPTIVETESS_X = 1;
+bool EnableDepthOverwrite = 1;
+
 extern uint8_t* baseAddress;
 
 float DEPTHBIAS = 0.f;
@@ -101,6 +104,8 @@ std::vector<std::vector<m_IDirect3DVertexShader9*>> fx_vs;
 
 // found texture list
 std::list<m_IDirect3DTexture9*> textureList;
+
+m_IDirect3DTexture9* rainDepth = nullptr;
 
 extern std::list<std::string> shadowGen;
 
@@ -713,16 +718,20 @@ HRESULT m_IDirect3DDevice9Ex::SetPixelShader(THIS_ IDirect3DPixelShader9* pShade
 
     if(pShader) {
         if(pShader2) {
-            if(pShader2->overwriteDepth) {
-                ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE, pShader2->depthWrite);
-            }
-            else {
-                ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE, last);
+            if(EnableDepthOverwrite) {
+                if(pShader2->overwriteDepth) {
+                    ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE, pShader2->depthWrite);
+                }
+                else {
+                    ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE, last);
+                }
             }
             GetPixelShaderConstantF(0, &pShader2->constants[0][0], 233);
         }
         else {
-            ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE, last);
+            if(EnableDepthOverwrite) {
+                ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE, last);
+            }
         }
     }
     return hr;
@@ -732,7 +741,7 @@ HRESULT m_IDirect3DDevice9Ex::SetRenderState(D3DRENDERSTATETYPE State, DWORD Val
     HRESULT hr = 0;
 
     // fix from AssaultKifle47
-    if(State == D3DRS_ADAPTIVETESS_X) {
+    if(State == D3DRS_ADAPTIVETESS_X && DisableADAPTIVETESS_X) {
         Value = 0;
     }
 
@@ -740,13 +749,13 @@ HRESULT m_IDirect3DDevice9Ex::SetRenderState(D3DRENDERSTATETYPE State, DWORD Val
     m_IDirect3DPixelShader9* pShader2 = 0;
     GetPixelShader(&pShader);
     pShader2 = static_cast<m_IDirect3DPixelShader9*>(pShader);
-    
+
     if(State == D3DRS_ZWRITEENABLE) {
         last = Value;
     }
 
     hr = ProxyInterface->SetRenderState(State, Value);
-    if(State == D3DRS_ZWRITEENABLE && pShader2) {
+    if(State == D3DRS_ZWRITEENABLE && pShader2 && EnableDepthOverwrite) {
         if(pShader2->overwriteDepth) {
             if(pShader2->depthWrite) {
                 ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE, 1);

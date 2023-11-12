@@ -38,6 +38,11 @@ bool* IsGamePaused;
 bool* IsGameOnMenu;
 bool* IsInInterior;
 
+extern bool DisableADAPTIVETESS_X;
+extern bool EnableDepthOverwrite;
+bool AlowPauseGame = 1;
+
+
 extern LPDIRECT3DPIXELSHADER9       ImGuiPS;
 extern LPDIRECT3DVERTEXSHADER9      ImGuiVS;
 
@@ -387,6 +392,7 @@ bool ShadowResFix::OnWndProc(const HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM l
 void ShadowResFix::Update() {
     static bool prevShowWindow = 0;
     prevShowWindow = mShowWindow;
+    ImGuiIO& io = ImGui::GetIO();
 
     if(ImGui::IsKeyPressed(mOpenWindowKey)) {
         mShowWindow = !mShowWindow;
@@ -413,18 +419,32 @@ void ShadowResFix::Update() {
             mDisableMouseControl = !mDisableMouseControl;
         }
     }
-    else if(GameVersion == 1200 && baseAddress && IsGameOnMenu && IsGamePaused) {
+    //else 
+    if(GameVersion == 1200 && baseAddress && IsGameOnMenu && IsGamePaused && AlowPauseGame) {
         try {
-            if(*IsGameOnMenu || pauseGame) {
+            if(/**IsGameOnMenu ||*/ pauseGame || io.WantCaptureKeyboard) {
                 *IsGamePaused = true;
             }
             else {
-                *IsGamePaused = false;
+                if(!*IsGameOnMenu) {
+                    *IsGamePaused = false;
+                }
             }
         }
         catch(const std::exception&) {
         }
     }
+    //if(io.WantCaptureKeyboard || pauseGame) {
+    //    *IsGamePaused = true;
+    //}
+    //else {
+    //    if(*IsGameOnMenu) {
+    //        *IsGamePaused = true;
+    //    }
+    //    else {
+    //        *IsGamePaused = false;
+    //    }
+    //}
 
     bool windowWasJustClosed = prevShowWindow && !mShowWindow;
     if(windowWasJustClosed) {
@@ -463,6 +483,16 @@ void ShadowResFix::OnBeforeD3D9DeviceEndScene(IDirect3DDevice9* d3d9Device) {
     ImGui::EndFrame();
     ImGui::Render();
     ImGui_ImplDX9_RenderDrawData(ImGui::GetDrawData());
+}
+
+static void HelpMarker(const char* desc) {
+    ImGui::TextDisabled("(?)");
+    if(ImGui::BeginItemTooltip()) {
+        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
+        ImGui::TextUnformatted(desc);
+        ImGui::PopTextWrapPos();
+        ImGui::EndTooltip();
+    }
 }
 
 void ShadowResFix::DrawMainWindow() {
@@ -510,6 +540,10 @@ void ShadowResFix::DrawMainWindow() {
     ImGui::Checkbox("TreeLeavesSwayInTheWind", &gTreeLeavesSwayInTheWind);
     ImGui::Checkbox("NearFarPlane", &gNearFarPlane);
     ImGui::Checkbox("Show Log Window", &bShowLogWindow);
+    ImGui::Checkbox("FixAdaptiveTess", &DisableADAPTIVETESS_X);
+    ImGui::Checkbox("EnableDepthOverwrite", &EnableDepthOverwrite);
+    ImGui::SameLine();
+    HelpMarker("Activating the depth override causes the rain bug\nwhere the rain on the floor does not appear and the rain passes through the ceilings.");
     
     ImGui::Separator();
     if(ImGui::Button("Set all shaders to use original fxc")) {
@@ -2258,6 +2292,15 @@ void ShadowResFix::DrawMainWindow() {
             // baseAddress + 0xD60EB0
             // baseAddress + 0x14B6DEC
 
+
+            ImGui::Checkbox("game baseAddress + 0x0C6B420", (bool*) (baseAddress + 0x0C6B420));
+            ImGui::Checkbox("game baseAddress + 0x0C6B428", (bool*) (baseAddress + 0x0C6B428));
+            ImGui::Checkbox("game baseAddress + 0x13ED9C4", (bool*) (baseAddress + 0x13ED9C4));
+            ImGui::Checkbox("game baseAddress + 0x13ED9E0", (bool*) (baseAddress + 0x13ED9E0));
+            ImGui::Checkbox("game baseAddress + 0x13F5860", (bool*) (baseAddress + 0x13F5860));
+            ImGui::Checkbox("game baseAddress + 0x13F5870", (bool*) (baseAddress + 0x13F5870));
+
+
             //
             ImGui::SliderInt("Reflex Quality BA + 0xD612BC ", (int*) (baseAddress + 0xD612BC), 0, 100);
 
@@ -2474,17 +2517,6 @@ void ShadowResFix::DrawMainWindow() {
     }
     ImGui::End();
 
-    if(io.WantCaptureKeyboard || pauseGame) {
-    	*IsGamePaused = true;
-    }
-    else {
-    	if(*IsGameOnMenu) {
-    		*IsGamePaused = true;
-    	}
-    	else {
-    		*IsGamePaused = false;
-    	}
-    }
     if(showDemoWindow)
         ImGui::ShowDemoWindow(&showDemoWindow);
 
@@ -2516,6 +2548,7 @@ void ShadowResFix::DrawMainWindow() {
         ImGui::End();
     }
 }
+
 
 void ShadowResFix::DrawSettingsWindow() {
     if(mShowSettingsWindow) {
