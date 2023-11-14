@@ -99,7 +99,7 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <LinkIncremental>true</LinkIncremental>
-    <OutDir>F:\SteamLibrary\steamapps\common\Medal of Honor\Binaries\</OutDir>
+    <OutDir>F:\SteamLibrary\steamapps\common\Grand Theft Auto IV\GTAIV\</OutDir>
     <IntDir>obj\Win32\Debug\</IntDir>
     <TargetName>d3d9</TargetName>
     <TargetExt>.dll</TargetExt>

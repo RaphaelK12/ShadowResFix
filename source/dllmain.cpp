@@ -24,6 +24,7 @@
 
 std::string Log::LogText;
 std::ofstream Log::mLogFile;
+bool Log::isDirt = true;
 
 #pragma comment(lib, "d3dx9.lib")
 #pragma comment(lib, "winmm.lib") // needed for timeBeginPeriod()/timeEndPeriod()

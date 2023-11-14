@@ -46,7 +46,32 @@ bool AlowPauseGame = 1;
 extern LPDIRECT3DPIXELSHADER9       ImGuiPS;
 extern LPDIRECT3DVERTEXSHADER9      ImGuiVS;
 
-ShadowResFix::ShadowResFix() {};
+ShadowResFix::ShadowResFix() :
+    mDisableMouseControl(false),
+    mIsImGuiInitialized(false),
+    mSettingsFileMajorVersion(1),
+    mSettingsFileMinorVersion(1),
+    mShowWindow(false),
+    mShowEditor(false),
+    showEditorWindow(false),
+    mShowLogWindow(true),
+    bShowLogWindow(true),
+    mShowSettingsWindow(false),
+    showDemoWindow(false),
+    pauseGame(false),
+    GameVersion(0),
+    mOpenWindowKey(ImGuiKey_F10),
+    mCompileShader(ImGuiKey_F6),
+    mWindowPos(ImVec2(5.f, 5.f)),
+    mWindowSize(ImVec2(440.f, 650.f)),
+    mEditorPos(ImVec2(0.f, 0.f)),
+    mEditorSize(ImVec2(0.f, 0.f)),
+    mLogPos(ImVec2(0.f, 0.f)),
+    mLogSize(ImVec2(0.f, 0.f)),
+    mItemInnerSpacing(4.f),
+    mFontScale(0.9f),
+    mToggleCameraControlKey(ImGuiKey_None) {
+};
 ShadowResFix::~ShadowResFix() {};
 
 void ShadowResFix::Initialize(const uint8_t* baseAddress) {
@@ -419,7 +444,7 @@ void ShadowResFix::Update() {
             mDisableMouseControl = !mDisableMouseControl;
         }
     }
-    //else 
+
     if(GameVersion == 1200 && baseAddress && IsGameOnMenu && IsGamePaused && AlowPauseGame) {
         try {
             if(/**IsGameOnMenu ||*/ pauseGame || io.WantCaptureKeyboard) {
@@ -485,7 +510,7 @@ void ShadowResFix::OnBeforeD3D9DeviceEndScene(IDirect3DDevice9* d3d9Device) {
     ImGui_ImplDX9_RenderDrawData(ImGui::GetDrawData());
 }
 
-static void HelpMarker(const char* desc) {
+void HelpMarker(const char* desc) {
     ImGui::TextDisabled("(?)");
     if(ImGui::BeginItemTooltip()) {
         ImGui::PushTextWrapPos(ImGui::GetFontSize() * 35.0f);
@@ -496,17 +521,16 @@ static void HelpMarker(const char* desc) {
 }
 
 void ShadowResFix::DrawMainWindow() {
-    static float color[4] = { 0 };
-    static ImVec4 texCol(0.5f, 0.5f, 0.5f, 1.0f);
-    static bool checkBox = false;
-    static int int4[4] = { 0 };
+    static float shaderColor[4] = { 0 };
+    static ImVec4 textureColor(0.5f, 0.5f, 0.5f, 1.0f);
+    //static bool checkBox = false;
+    //static int int4[4] = { 0 };
     ImGuiIO& io = ImGui::GetIO();
 
     static char buf100[100] = { 0 };
     static bool showUnused = false;
     static bool showUnusedTex = true;
     static bool hideEmptyFXC = true;
-    static bool showDemoWindow = false;
 
     ImGui::Begin("Shader Editor 1.0.0.6", NULL, ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoBringToFrontOnFocus);
 
@@ -530,7 +554,7 @@ void ShadowResFix::DrawMainWindow() {
         //ImGui::SetNextItemWidth(140.f);
         ImGui::ColorEdit4("ShadCol", shaderReturnColor, ImGuiColorEditFlags_HDR | ImGuiColorEditFlags_NoInputs);
         //ImGui::SetNextItemWidth(140.f);
-        ImGui::ColorEdit4("texCol", &texCol.x, ImGuiColorEditFlags_HDR | ImGuiColorEditFlags_NoInputs);
+        ImGui::ColorEdit4("textureColor", &textureColor.x, ImGuiColorEditFlags_HDR | ImGuiColorEditFlags_NoInputs);
         ImGui::Checkbox("Pause Game F5", &pauseGame);
         ImGui::EndMenuBar();
     }
@@ -539,14 +563,15 @@ void ShadowResFix::DrawMainWindow() {
     ImGui::Checkbox("FixRainDrops", &gFixRainDrops);
     ImGui::Checkbox("TreeLeavesSwayInTheWind", &gTreeLeavesSwayInTheWind);
     ImGui::Checkbox("NearFarPlane", &gNearFarPlane);
-    ImGui::Checkbox("Show Log Window", &bShowLogWindow);
+    ImGui::Checkbox("Show Log Window", &mShowLogWindow);
+    ImGui::Checkbox("Show Editor Window", &showEditorWindow);
     ImGui::Checkbox("FixAdaptiveTess", &DisableADAPTIVETESS_X);
     ImGui::Checkbox("EnableDepthOverwrite", &EnableDepthOverwrite);
     ImGui::SameLine();
     HelpMarker("Activating the depth override causes the rain bug\nwhere the rain on the floor does not appear and the rain passes through the ceilings.");
     
     ImGui::Separator();
-    if(ImGui::Button("Set all shaders to use original fxc")) {
+    if(ImGui::Button("Set all shaders to use game fxc")) {
         for(auto& l : fx_ps) {
             for(auto s : l) {
                 if(s) {
@@ -682,7 +707,7 @@ void ShadowResFix::DrawMainWindow() {
 
                         {
                             //ImGui::Image(tex, ImVec2(200.f, 200.f/pp), uv_min, uv_max, tint_col, border_col);
-                            ImGui::Image(tex, ImVec2(my_tex_w, my_tex_h), uv_min, uv_max, texCol, border_col);
+                            ImGui::Image(tex, ImVec2(my_tex_w, my_tex_h), uv_min, uv_max, textureColor, border_col);
                             if(ImGui::BeginItemTooltip()) {
                                 float region_sz = 32.0f;
                                 float region_x = io.MousePos.x - pos.x - region_sz * 0.5f;
@@ -696,7 +721,7 @@ void ShadowResFix::DrawMainWindow() {
                                 //ImGui::Text("Max: (%.2f, %.2f)", region_x + region_sz, region_y + region_sz);
                                 ImVec2 uv0 = ImVec2((region_x) / my_tex_w, (region_y) / my_tex_h);
                                 ImVec2 uv1 = ImVec2((region_x + region_sz) / my_tex_w, (region_y + region_sz) / my_tex_h);
-                                ImGui::Image(tex, ImVec2(region_sz * zoom, region_sz * zoom), uv0, uv1, texCol, border_col);
+                                ImGui::Image(tex, ImVec2(region_sz * zoom, region_sz * zoom), uv0, uv1, textureColor, border_col);
                                 ImGui::EndTooltip();
                             }
                         }
@@ -771,12 +796,17 @@ void ShadowResFix::DrawMainWindow() {
                 }
                 for(int j = 0; j < (int) fx_ps[i].size(); j++) {
                     if(fx_ps[i][j] && ((showUnused == false && fx_ps[i][j]->used > 0) || showUnused == true)) {
+                        sprintf(buf100, "##Disable PS Shader %i_%i_%i", i, j, fx_ps[i][j]->id);
+                        ImGui::Checkbox(buf100, &fx_ps[i][j]->disable);
                         sprintf(buf100, "%s #ps%i_%i_%i", fx_ps[i][j]->oName.c_str(), i, j, fx_ps[i][j]->id);
+                        ImGui::SameLine();
                         if(ImGui::TreeNode(buf100)) {
+
+
                             std::string namefx = fx_ps[i][j]->oName.substr(0, fx_ps[i][j]->oName.find_last_of(".")) + std::string(".fx");
                             std::string nameasm = fx_ps[i][j]->oName;
 
-                            ImGui::Text("PS ID %i ##%i_%i_%i", fx_ps[i][j]->id, i, j, fx_ps[i][j]->id);
+                            //ImGui::Text("PS ID %i ##%i_%i_%i", fx_ps[i][j]->id, i, j, fx_ps[i][j]->id);
                             ImGui::Text("CRC_32:  %x ##vs%i_%i_%i", fx_ps[i][j]->id, i, j, fx_ps[i][j]->id);
                             ImGui::Text("Use Counter: %i ##%i_%i_%i", fx_ps[i][j]->used, i, j, fx_ps[i][j]->id);
 
@@ -853,6 +883,7 @@ void ShadowResFix::DrawMainWindow() {
                                     if(bs && t->bs == bs && t->name == name) {
                                         isInEditor = true;
                                         t->show = true;
+                                        showEditorWindow = true;
                                     }
                                 }
                                 if(isInEditor == false) {
@@ -863,6 +894,7 @@ void ShadowResFix::DrawMainWindow() {
                                     s->editor->SetShowWhitespaces(0);
                                     s->editor->SetText(s->bs->GetAsm());
                                     lst.push_back(s);
+                                    showEditorWindow = true;
                                 }
                             }
                             sprintf(buf100, "Edit PS Loaded asm ##%i_%i_%i", i, j, fx_ps[i][j]->id);
@@ -875,6 +907,7 @@ void ShadowResFix::DrawMainWindow() {
                                     if(bs && t->bs == bs && t->name == name) {
                                         isInEditor = true;
                                         t->show = true;
+                                        showEditorWindow = true;
                                     }
                                 }
                                 if(isInEditor == false) {
@@ -885,6 +918,7 @@ void ShadowResFix::DrawMainWindow() {
                                     s->editor->SetShowWhitespaces(0);
                                     s->editor->SetText(s->bs->loadedAsm);
                                     lst.push_back(s);
+                                    showEditorWindow = true;
                                 }
                             }
                             sprintf(buf100, "Edit PS Loaded hlsl ##%i_%i_%i", i, j, fx_ps[i][j]->id);
@@ -897,6 +931,7 @@ void ShadowResFix::DrawMainWindow() {
                                     if(bs && t->bs == bs && t->name == name) {
                                         isInEditor = true;
                                         t->show = true;
+                                        showEditorWindow = true;
                                     }
                                 }
                                 if(isInEditor == false) {
@@ -907,6 +942,7 @@ void ShadowResFix::DrawMainWindow() {
                                     s->editor->SetShowWhitespaces(0);
                                     s->editor->SetText(s->bs->loadedFx);
                                     lst.push_back(s);
+                                    showEditorWindow = true;
                                 }
                             }
                             sprintf(buf100, "Edit PS Edited hlsl ##%i_%i_%i", i, j, fx_ps[i][j]->id);
@@ -919,6 +955,7 @@ void ShadowResFix::DrawMainWindow() {
                                     if(bs && t->bs == bs && t->name == name) {
                                         isInEditor = true;
                                         t->show = true;
+                                        showEditorWindow = true;
                                     }
                                 }
                                 if(isInEditor == false) {
@@ -929,11 +966,10 @@ void ShadowResFix::DrawMainWindow() {
                                     s->editor->SetShowWhitespaces(0);
                                     s->editor->SetText(s->bs->editedFx);
                                     lst.push_back(s);
+                                    showEditorWindow = true;
                                 }
                             }
 
-                            sprintf(buf100, "Disable PS Shader ##%i_%i_%i", i, j, fx_ps[i][j]->id);
-                            ImGui::Checkbox(buf100, &fx_ps[i][j]->disable);
                             if(!fx_ps[i][j]->newShader)
                                 fx_ps[i][j]->useNewShader = false;
                             else {
@@ -1032,12 +1068,15 @@ void ShadowResFix::DrawMainWindow() {
                 }
                 for(int j = 0; j < (int) fx_vs[i].size(); j++) {
                     if(fx_vs[i][j] && ((showUnused == false && fx_vs[i][j]->used > 0) || showUnused == true)) {
+                        sprintf(buf100, "##Disable VS Shader %i_%i_%i", i, j, fx_vs[i][j]->id);
+                        ImGui::Checkbox(buf100, &fx_vs[i][j]->disable);
+                        ImGui::SameLine();
                         sprintf(buf100, "%s #vs%i_%i_%i", fx_vs[i][j]->oName.c_str(), i, j, fx_vs[i][j]->id);
                         if(ImGui::TreeNode(buf100)) {
                             std::string namefx = fx_vs[i][j]->oName.substr(0, fx_vs[i][j]->oName.find_last_of(".")) + std::string(".fx");
                             std::string nameasm = fx_vs[i][j]->oName;
 
-                            ImGui::Text("VS ID %i ##%i_%i_%i", fx_vs[i][j]->id, i, j, fx_vs[i][j]->id);
+                            //ImGui::Text("VS ID %i ##%i_%i_%i", fx_vs[i][j]->id, i, j, fx_vs[i][j]->id);
                             ImGui::Text("CRC_32:   %x ##vs%i_%i_%i", fx_vs[i][j]->crc32, i, j, fx_vs[i][j]->id);
                             ImGui::Text("Use Counter: %i ##%i_%i_%i", fx_vs[i][j]->used, i, j, fx_vs[i][j]->id);
 
@@ -1114,6 +1153,7 @@ void ShadowResFix::DrawMainWindow() {
                                     if(bs && t->bs == bs && t->name == name) {
                                         isInEditor = true;
                                         t->show = true;
+                                        showEditorWindow = true;
                                     }
                                 }
                                 if(isInEditor == false) {
@@ -1124,6 +1164,7 @@ void ShadowResFix::DrawMainWindow() {
                                     s->editor->SetShowWhitespaces(0);
                                     s->editor->SetText(s->bs->GetAsm());
                                     lst.push_back(s);
+                                    showEditorWindow = true;
                                 }
                             }
                             sprintf(buf100, "Edit VS Loaded asm ##%i_%i_%i", i, j, fx_vs[i][j]->id);
@@ -1136,6 +1177,7 @@ void ShadowResFix::DrawMainWindow() {
                                     if(bs && t->bs == bs && t->name == name) {
                                         isInEditor = true;
                                         t->show = true;
+                                        showEditorWindow = true;
                                     }
                                 }
                                 if(isInEditor == false) {
@@ -1146,6 +1188,7 @@ void ShadowResFix::DrawMainWindow() {
                                     s->editor->SetShowWhitespaces(0);
                                     s->editor->SetText(s->bs->loadedAsm);
                                     lst.push_back(s);
+                                    showEditorWindow = true;
                                 }
                             }
                             sprintf(buf100, "Edit VS Loaded hlsl ##%i_%i_%i", i, j, fx_vs[i][j]->id);
@@ -1158,6 +1201,7 @@ void ShadowResFix::DrawMainWindow() {
                                     if(bs && t->bs == bs && t->name == name) {
                                         isInEditor = true;
                                         t->show = true;
+                                        showEditorWindow = true;
                                     }
                                 }
                                 if(isInEditor == false) {
@@ -1168,6 +1212,7 @@ void ShadowResFix::DrawMainWindow() {
                                     s->editor->SetShowWhitespaces(0);
                                     s->editor->SetText(s->bs->loadedFx);
                                     lst.push_back(s);
+                                    showEditorWindow = true;
                                 }
                             }
                             sprintf(buf100, "Edit VS Edited hlsl ##%i_%i_%i", i, j, fx_vs[i][j]->id);
@@ -1180,6 +1225,7 @@ void ShadowResFix::DrawMainWindow() {
                                     if(bs && t->bs == bs && t->name == name) {
                                         isInEditor = true;
                                         t->show = true;
+                                        showEditorWindow = true;
                                     }
                                 }
                                 if(isInEditor == false) {
@@ -1190,11 +1236,10 @@ void ShadowResFix::DrawMainWindow() {
                                     s->editor->SetShowWhitespaces(0);
                                     s->editor->SetText(s->bs->editedFx);
                                     lst.push_back(s);
+                                    showEditorWindow = true;
                                 }
                             }
 
-                            sprintf(buf100, "Disable VS Shader ##%i_%i_%i", i, j, fx_vs[i][j]->id);
-                            ImGui::Checkbox(buf100, &fx_vs[i][j]->disable);
                             if(!fx_vs[i][j]->newShader)
                                 fx_vs[i][j]->useNewShader = false;
                             else {
@@ -1210,10 +1255,10 @@ void ShadowResFix::DrawMainWindow() {
 
                             ImGui::Text("");
 
-                            sprintf(buf100, "Overwrite Depth ##vs%i_%i_%i", i, j, fx_vs[i][j]->id);
-                            ImGui::Checkbox(buf100, &fx_vs[i][j]->overwriteDepth);
-                            sprintf(buf100, "Depth write ##vs%i_%i_%i", i, j, fx_vs[i][j]->id);
-                            ImGui::Checkbox(buf100, &fx_vs[i][j]->depthWrite);
+                            //sprintf(buf100, "Overwrite Depth ##vs%i_%i_%i", i, j, fx_vs[i][j]->id);
+                            //ImGui::Checkbox(buf100, &fx_vs[i][j]->overwriteDepth);
+                            //sprintf(buf100, "Depth write ##vs%i_%i_%i", i, j, fx_vs[i][j]->id);
+                            //ImGui::Checkbox(buf100, &fx_vs[i][j]->depthWrite);
 
                             //sprintf(buf100, "Disable depth write ##vs%i_%i_%i", i, j, fx_vs[i][j]->id);
                             //ImGui::Checkbox(buf100, &fx_vs[i][j]->disableDepthWrite);
@@ -1297,6 +1342,10 @@ void ShadowResFix::DrawMainWindow() {
                 if((strlen(filter) >0 && ps_2[i]->oName.find(filter) != ps_2[i]->oName.npos) || strlen(filter) == 0) {
                     //continue;
                 
+                    sprintf(buf100, "##Disable PS Shader %i_%i", i, ps_2[i]->id);
+                    ImGui::Checkbox(buf100, &ps_2[i]->disable);
+                    ImGui::SameLine();
+
                     sprintf(buf100, "%s #ps2%i %i", ps_2[i]->oName.c_str(), i, ps_2[i]->id);
                     if(ImGui::TreeNode(buf100)) {
                         sprintf(buf100, "ps_%x.fx", ps_2[i]->crc32);
@@ -1305,7 +1354,7 @@ void ShadowResFix::DrawMainWindow() {
                         std::string nameasm = buf100;
                         //ps_2[i]->oName;
 
-                        ImGui::Text("PS ID %i ##%i", ps_2[i]->id, i);
+                        //ImGui::Text("PS ID %i ##%i", ps_2[i]->id, i);
                         ImGui::Text("Use Counter: %i ##%i_%i", ps_2[i]->used, i, ps_2[i]->id);
 
                         sprintf(buf100, "Compile PS asm ##%i_%i", i, ps_2[i]->id);
@@ -1381,6 +1430,7 @@ void ShadowResFix::DrawMainWindow() {
                                 if(bs && t->bs == bs && t->name == name) {
                                     isInEditor = true;
                                     t->show = true;
+                                    showEditorWindow = true;
                                 }
                             }
                             if(isInEditor == false) {
@@ -1391,6 +1441,7 @@ void ShadowResFix::DrawMainWindow() {
                                 s->editor->SetShowWhitespaces(0);
                                 s->editor->SetText(s->bs->GetAsm());
                                 lst.push_back(s);
+                                showEditorWindow = true;
                             }
                         }
                         sprintf(buf100, "Edit PS Loaded asm ##%i_%i", i, ps_2[i]->id);
@@ -1403,6 +1454,7 @@ void ShadowResFix::DrawMainWindow() {
                                 if(bs && t->bs == bs && t->name == name) {
                                     isInEditor = true;
                                     t->show = true;
+                                    showEditorWindow = true;
                                 }
                             }
                             if(isInEditor == false) {
@@ -1413,6 +1465,7 @@ void ShadowResFix::DrawMainWindow() {
                                 s->editor->SetShowWhitespaces(0);
                                 s->editor->SetText(s->bs->loadedAsm);
                                 lst.push_back(s);
+                                showEditorWindow = true;
                             }
                         }
                         sprintf(buf100, "Edit PS Loaded hlsl ##%i_%i", i, ps_2[i]->id);
@@ -1425,6 +1478,7 @@ void ShadowResFix::DrawMainWindow() {
                                 if(bs && t->bs == bs && t->name == name) {
                                     isInEditor = true;
                                     t->show = true;
+                                    showEditorWindow = true;
                                 }
                             }
                             if(isInEditor == false) {
@@ -1435,6 +1489,7 @@ void ShadowResFix::DrawMainWindow() {
                                 s->editor->SetShowWhitespaces(0);
                                 s->editor->SetText(s->bs->loadedFx);
                                 lst.push_back(s);
+                                showEditorWindow = true;
                             }
                         }
                         sprintf(buf100, "Edit PS Edited hlsl ##%i_%i", i, ps_2[i]->id);
@@ -1447,6 +1502,7 @@ void ShadowResFix::DrawMainWindow() {
                                 if(bs && t->bs == bs && t->name == name) {
                                     isInEditor = true;
                                     t->show = true;
+                                    showEditorWindow = true;
                                 }
                             }
                             if(isInEditor == false) {
@@ -1457,11 +1513,10 @@ void ShadowResFix::DrawMainWindow() {
                                 s->editor->SetShowWhitespaces(0);
                                 s->editor->SetText(s->bs->editedFx);
                                 lst.push_back(s);
+                                showEditorWindow = true;
                             }
                         }
 
-                        sprintf(buf100, "Disable PS Shader ##%i_%i", i, ps_2[i]->id);
-                        ImGui::Checkbox(buf100, &ps_2[i]->disable);
                         if(!ps_2[i]->newShader)
                             ps_2[i]->useNewShader = false;
                         else {
@@ -1561,6 +1616,11 @@ void ShadowResFix::DrawMainWindow() {
                     continue;
                 }
 
+                sprintf(buf100, "##Disable VS Shader %i_%i", i, vs_2[i]->id);
+                ImGui::Checkbox(buf100, &vs_2[i]->disable);
+
+                ImGui::SameLine();
+
                 sprintf(buf100, "%s #vs2%i %i", vs_2[i]->oName.c_str(), i, vs_2[i]->id);
                 if(ImGui::TreeNode(buf100)) {
                     sprintf(buf100, "vs_%x.fx", vs_2[i]->crc32);
@@ -1569,7 +1629,7 @@ void ShadowResFix::DrawMainWindow() {
                     std::string nameasm = buf100;
                     //vs_2[i]->oName;
 
-                    ImGui::Text("VS ID %i ##%i", vs_2[i]->id, i);
+                    //ImGui::Text("VS ID %i ##%i", vs_2[i]->id, i);
                     ImGui::Text("Use Counter: %i ##%i_%i", vs_2[i]->used, i, vs_2[i]->id);
 
                     sprintf(buf100, "Compile VS asm ##%i_%i", i, vs_2[i]->id);
@@ -1645,6 +1705,7 @@ void ShadowResFix::DrawMainWindow() {
                             if(bs && t->bs == bs && t->name == name) {
                                 isInEditor = true;
                                 t->show = true;
+                                showEditorWindow = true;
                             }
                         }
                         if(isInEditor == false) {
@@ -1655,6 +1716,7 @@ void ShadowResFix::DrawMainWindow() {
                             s->editor->SetShowWhitespaces(0);
                             s->editor->SetText(s->bs->GetAsm());
                             lst.push_back(s);
+                            showEditorWindow = true;
                         }
                     }
                     sprintf(buf100, "Edit VS Loaded asm ##%i_%i", i, vs_2[i]->id);
@@ -1667,6 +1729,7 @@ void ShadowResFix::DrawMainWindow() {
                             if(bs && t->bs == bs && t->name == name) {
                                 isInEditor = true;
                                 t->show = true;
+                                showEditorWindow = true;
                             }
                         }
                         if(isInEditor == false) {
@@ -1677,6 +1740,7 @@ void ShadowResFix::DrawMainWindow() {
                             s->editor->SetShowWhitespaces(0);
                             s->editor->SetText(s->bs->loadedAsm);
                             lst.push_back(s);
+                            showEditorWindow = true;
                         }
                     }
                     sprintf(buf100, "Edit VS Loaded hlsl ##%i_%i", i, vs_2[i]->id);
@@ -1689,6 +1753,7 @@ void ShadowResFix::DrawMainWindow() {
                             if(bs && t->bs == bs && t->name == name) {
                                 isInEditor = true;
                                 t->show = true;
+                                showEditorWindow = true;
                             }
                         }
                         if(isInEditor == false) {
@@ -1699,6 +1764,7 @@ void ShadowResFix::DrawMainWindow() {
                             s->editor->SetShowWhitespaces(0);
                             s->editor->SetText(s->bs->loadedFx);
                             lst.push_back(s);
+                            showEditorWindow = true;
                         }
                     }
                     sprintf(buf100, "Edit VS Edited hlsl ##%i_%i", i, vs_2[i]->id);
@@ -1711,6 +1777,7 @@ void ShadowResFix::DrawMainWindow() {
                             if(bs && t->bs == bs && t->name == name) {
                                 isInEditor = true;
                                 t->show = true;
+                                showEditorWindow = true;
                             }
                         }
                         if(isInEditor == false) {
@@ -1721,11 +1788,10 @@ void ShadowResFix::DrawMainWindow() {
                             s->editor->SetShowWhitespaces(0);
                             s->editor->SetText(s->bs->editedFx);
                             lst.push_back(s);
+                            showEditorWindow = true;
                         }
                     }
 
-                    sprintf(buf100, "Disable VS Shader ##%i_%i", i, vs_2[i]->id);
-                    ImGui::Checkbox(buf100, &vs_2[i]->disable);
                     if(!vs_2[i]->newShader)
                         vs_2[i]->useNewShader = false;
                     else {
@@ -1741,10 +1807,10 @@ void ShadowResFix::DrawMainWindow() {
 
                     ImGui::Text("");
 
-                    sprintf(buf100, "Overwrite Depth ##%i_%i", i, vs_2[i]->id);
-                    ImGui::Checkbox(buf100, &vs_2[i]->overwriteDepth);
-                    sprintf(buf100, "Depth write ##%i_%i", i, vs_2[i]->id);
-                    ImGui::Checkbox(buf100, &vs_2[i]->depthWrite);
+                    //sprintf(buf100, "Overwrite Depth ##%i_%i", i, vs_2[i]->id);
+                    //ImGui::Checkbox(buf100, &vs_2[i]->overwriteDepth);
+                    //sprintf(buf100, "Depth write ##%i_%i", i, vs_2[i]->id);
+                    //ImGui::Checkbox(buf100, &vs_2[i]->depthWrite);
 
                     sprintf(buf100, "Original VS ASM ##%i_%i", i, vs_2[i]->id);
                     if(vs_2[i]->fxcAsm.length() > 1 && ImGui::TreeNode(buf100)) { ImGui::Text(vs_2[i]->fxcAsm.c_str()); ImGui::TreePop(); }
@@ -2330,225 +2396,231 @@ void ShadowResFix::DrawMainWindow() {
         }
     }
 
-    ImGui::BeginChild("ChildDummy", ImVec2(ImGui::GetContentRegionAvail().x, WindowSize.y), false, ImGuiWindowFlags_NoScrollbar);
+    ImGui::BeginChild("##ChildDummy", ImVec2(ImGui::GetContentRegionAvail().x, WindowSize.y), false, ImGuiWindowFlags_NoScrollbar);
     ImGui::EndChild();
     ImGui::End();
 
-    ImGui::SetNextWindowCollapsed(!mShowEditor);
-    ImGui::Begin("Shader Editor", nullptr /*&mShowEditor*/, /*ImGuiWindowFlags_HorizontalScrollbar |*/ ImGuiWindowFlags_MenuBar);
-    mShowEditor = !ImGui::IsWindowCollapsed();
-    if(mEditorPos.x == 0.f)
-        mEditorPos.x = 600.f;
-    if(mEditorSize.x == 0.f || mEditorSize.y == 0.f)
-        mEditorSize = ImVec2(600, 600);
-    ImGui::SetWindowPos(mEditorPos, ImGuiCond_FirstUseEver);
-    ImGui::SetWindowSize(mEditorSize, ImGuiCond_FirstUseEver);
-    mEditorPos = ImGui::GetWindowPos();
-    ImVec2 EditorSize = ImGui::GetWindowSize();
-    if(EditorSize.x > 100 && EditorSize.y > 50)
-        mEditorSize = EditorSize;
-    ImGuiTabBarFlags tab_bar_flags = ImGuiTabBarFlags_FittingPolicyScroll | ImGuiTabBarFlags_TabListPopupButton;
-    if(ImGui::BeginTabBar("MyTabBar", tab_bar_flags)) {
-        int i = 0;
-        for(auto t : lst) {
-            TextEditor& editor = *t->editor;
-            char c[100] = {};
-            sprintf(c, "%s##%i", t->name.c_str(), i);
-            if(ImGui::BeginTabItem(c, &t->show)) {
-                if(ImGui::BeginMenuBar()) {
-                    if(ImGui::BeginMenu("File")) {
-                        if(ImGui::MenuItem("Save edited from text editor")) {
-                            switch(t->shaderType) {
-                                case	PS_ASM:
-                                case	VS_ASM:
-                                    SaveASM(t->bs->fxName, t->name, t->editor->GetText(), t->shaderType);
-                                    break;
-                                case	PS_FX:
-                                case	VS_FX:
-                                    SaveFX(t->bs->fxName, t->name, t->editor->GetText(), t->shaderType);
-                                    break;
-                                default:
-                                    Log::Error("Unknow shader type to save:" + t->name);
-                                    //Log::Error(t->name);
-                                    break;
-                            }
-                            //std::string textToSave = t->editor->GetText();
-                            //std::string dir1 = "shaders\\";
-                            //std::string dir2 = dir1 + t->bs->fxName + "\\";
-                            //std::string name = dir2 + t->name;
-                            //std::string mk = std::string("mkdir ") + dir2;
-                            //system(mk.c_str());
-                            //FILE* file = fopen(name.c_str(), "w");
-                            //if(file) {
-                            //	fwrite(textToSave.data(), 1, textToSave.length(), file);
-                            //	fclose(file);
-                            //	Log::Info("File saved:");
-                            //	Log::Info(name);
-                            //}
-                            //else {
-                            //	Log::Error("File not saved");
-                            //	Log::Error(name);
-                            //}
-                        }
-                        if(ImGui::MenuItem("Save loaded shader")) {
-                            switch(t->shaderType) {
-                                case	PS_ASM:
-                                case	VS_ASM:
-                                    if(t->bs->loadedAsm.length() > 1) {
-                                        SaveASM(t->bs->fxName, t->name, t->bs->loadedAsm, t->shaderType);
-                                    }
-                                    break;
-                                case	PS_FX:
-                                case	VS_FX:
-                                    if(t->bs->loadedFx.length() > 1) {
-                                        SaveFX(t->bs->fxName, t->name, t->bs->loadedFx, t->shaderType);
+    if(showEditorWindow) {
+        ImGui::SetNextWindowCollapsed(!mShowEditor);
+        ImGui::Begin("Shader Editor", &showEditorWindow /*&mShowEditor*/, /*ImGuiWindowFlags_HorizontalScrollbar |*/ ImGuiWindowFlags_MenuBar);
+        mShowEditor = !ImGui::IsWindowCollapsed();
+        if(mEditorPos.x == 0.f)
+            mEditorPos.x = 600.f;
+        if(mEditorSize.x == 0.f || mEditorSize.y == 0.f)
+            mEditorSize = ImVec2(600, 600);
+        ImGui::SetWindowPos(mEditorPos, ImGuiCond_FirstUseEver);
+        ImGui::SetWindowSize(mEditorSize, ImGuiCond_FirstUseEver);
+        mEditorPos = ImGui::GetWindowPos();
+        ImVec2 EditorSize = ImGui::GetWindowSize();
+        if(EditorSize.x > 100 && EditorSize.y > 50)
+            mEditorSize = EditorSize;
+        ImGuiTabBarFlags tab_bar_flags = ImGuiTabBarFlags_FittingPolicyScroll | ImGuiTabBarFlags_TabListPopupButton;
+        if(ImGui::BeginTabBar("##MyTabBar", tab_bar_flags)) {
+            int i = 0;
+            for(auto t : lst) {
+                TextEditor& editor = *t->editor;
+                char c[100] = {};
+                sprintf(c, "%s##%i", t->name.c_str(), i);
+                if(ImGui::BeginTabItem(c, &t->show)) {
+                    if(ImGui::BeginMenuBar()) {
+                        if(ImGui::BeginMenu("File")) {
+                            if(ImGui::MenuItem("Save edited from text editor")) {
+                                switch(t->shaderType) {
+                                    case	PS_ASM:
+                                    case	VS_ASM:
+                                        SaveASM(t->bs->fxName, t->name, t->editor->GetText(), t->shaderType);
                                         break;
-                                    }
-                                default:
-                                    Log::Error("Unknow shader type to save:" + t->name);
-                                    //Log::Error(t->name);
-                                    break;
+                                    case	PS_FX:
+                                    case	VS_FX:
+                                        SaveFX(t->bs->fxName, t->name, t->editor->GetText(), t->shaderType);
+                                        break;
+                                    default:
+                                        Log::Error("Unknow shader type to save:" + t->name);
+                                        //Log::Error(t->name);
+                                        break;
+                                }
+                                //std::string textToSave = t->editor->GetText();
+                                //std::string dir1 = "shaders\\";
+                                //std::string dir2 = dir1 + t->bs->fxName + "\\";
+                                //std::string name = dir2 + t->name;
+                                //std::string mk = std::string("mkdir ") + dir2;
+                                //system(mk.c_str());
+                                //FILE* file = fopen(name.c_str(), "w");
+                                //if(file) {
+                                //	fwrite(textToSave.data(), 1, textToSave.length(), file);
+                                //	fclose(file);
+                                //	Log::Info("File saved:");
+                                //	Log::Info(name);
+                                //}
+                                //else {
+                                //	Log::Error("File not saved");
+                                //	Log::Error(name);
+                                //}
                             }
+                            if(ImGui::MenuItem("Save loaded shader")) {
+                                switch(t->shaderType) {
+                                    case	PS_ASM:
+                                    case	VS_ASM:
+                                        if(t->bs->loadedAsm.length() > 1) {
+                                            SaveASM(t->bs->fxName, t->name, t->bs->loadedAsm, t->shaderType);
+                                        }
+                                        break;
+                                    case	PS_FX:
+                                    case	VS_FX:
+                                        if(t->bs->loadedFx.length() > 1) {
+                                            SaveFX(t->bs->fxName, t->name, t->bs->loadedFx, t->shaderType);
+                                            break;
+                                        }
+                                    default:
+                                        Log::Error("Unknow shader type to save:" + t->name);
+                                        //Log::Error(t->name);
+                                        break;
+                                }
+                            }
+                            if(ImGui::MenuItem("Save original from fxc file")) {
+                                switch(t->shaderType) {
+                                    case	PS_ASM:
+                                    case	VS_ASM:
+                                        SaveASM(t->bs->fxName, t->name, t->bs->GetAsm(), t->shaderType);
+                                        break;
+                                    case	PS_FX:
+                                    case	VS_FX:
+                                        if(t->bs->loadedFx.length() > 1) {
+                                            SaveFX(t->bs->fxName, t->name, t->bs->loadedFx, t->shaderType);
+                                        }
+                                        break;
+                                    default:
+                                        Log::Error("Unknow shader type to save:" + t->name);
+                                        //Log::Error(t->name);
+                                        break;
+                                }
+                                //	std::string textToSave = t->bs->GetAsm();
+                                //	std::string dir1 = "shaders\\";
+                                //	std::string dir2 = dir1 + t->bs->fxName + "\\";
+                                //	std::string name = dir2 + t->name;
+                                //	std::string mk = std::string("mkdir ") + dir2;
+                                //	system(mk.c_str());
+                                //	FILE* file = fopen(name.c_str(), "w");
+                                //	if(file) {
+                                //		fwrite(textToSave.data(), 1, textToSave.length(), file);
+                                //		fclose(file);
+                                //		Log::Info("File saved:");
+                                //		Log::Info(name);
+                                //	}
+                                //	else {
+                                //		Log::Error("File not saved");
+                                //		Log::Error(name);
+                                //	}
+                            }
+                            ImGui::EndMenu();
                         }
-                        if(ImGui::MenuItem("Save original from fxc file")) {
+                        if(ImGui::BeginMenu("Edit")) {
+                            bool ro = editor.IsReadOnly();
+                            if(ImGui::MenuItem("Read-only mode", nullptr, &ro))
+                                editor.SetReadOnly(ro);
+                            ImGui::Separator();
+
+                            if(ImGui::MenuItem("Undo", "ALT-Backspace", nullptr, !ro && editor.CanUndo()))
+                                editor.Undo();
+                            if(ImGui::MenuItem("Redo", "Ctrl-Y", nullptr, !ro && editor.CanRedo()))
+                                editor.Redo();
+
+                            ImGui::Separator();
+
+                            if(ImGui::MenuItem("Copy", "Ctrl-C", nullptr, editor.HasSelection()))
+                                editor.Copy();
+                            if(ImGui::MenuItem("Cut", "Ctrl-X", nullptr, !ro && editor.HasSelection()))
+                                editor.Cut();
+                            if(ImGui::MenuItem("Delete", "Del", nullptr, !ro && editor.HasSelection()))
+                                editor.Delete();
+                            if(ImGui::MenuItem("Paste", "Ctrl-V", nullptr, !ro && ImGui::GetClipboardText() != nullptr))
+                                editor.Paste();
+
+                            ImGui::Separator();
+
+                            if(ImGui::MenuItem("Select all", nullptr, nullptr))
+                                editor.SetSelection(TextEditor::Coordinates(), TextEditor::Coordinates(editor.GetTotalLines(), 0));
+
+                            ImGui::EndMenu();
+                        }
+                        if(ImGui::BeginMenu("View")) {
+                            if(ImGui::MenuItem("Dark palette"))
+                                editor.SetPalette(TextEditor::GetDarkPalette());
+                            if(ImGui::MenuItem("Light palette"))
+                                editor.SetPalette(TextEditor::GetLightPalette());
+                            if(ImGui::MenuItem("Retro blue palette"))
+                                editor.SetPalette(TextEditor::GetRetroBluePalette());
+                            ImGui::EndMenu();
+                        }
+                        if(ImGui::MenuItem("Compile", "F6", nullptr, true) || ImGui::IsKeyPressed(ImGuiKey_F6, false)) {
+                            ShaderUse su = SU_EASM;
                             switch(t->shaderType) {
-                                case	PS_ASM:
-                                case	VS_ASM:
-                                    SaveASM(t->bs->fxName, t->name, t->bs->GetAsm(), t->shaderType);
+                                case PS_ASM:
+                                case VS_ASM:
+                                    t->bs->compileShaderSource(t->editor->GetText(), t->shaderType, SU_EASM);
+                                    t->bs->editedAsm = t->editor->GetText();
+                                    t->bs->usingShader = SU_EASM;
                                     break;
-                                case	PS_FX:
-                                case	VS_FX:
-                                    if(t->bs->loadedFx.length() > 1) {
-                                        SaveFX(t->bs->fxName, t->name, t->bs->loadedFx, t->shaderType);
-                                    }
+                                case PS_FX:
+                                case VS_FX:
+                                    t->bs->compileShaderSource(t->editor->GetText(), t->shaderType, SU_EFX);
+                                    t->bs->editedFx = t->editor->GetText();
+                                    t->bs->usingShader = SU_EFX;
                                     break;
                                 default:
-                                    Log::Error("Unknow shader type to save:" + t->name);
-                                    //Log::Error(t->name);
+                                    Log::Error("Undefined shader type to compile!");
                                     break;
                             }
-                            //	std::string textToSave = t->bs->GetAsm();
-                            //	std::string dir1 = "shaders\\";
-                            //	std::string dir2 = dir1 + t->bs->fxName + "\\";
-                            //	std::string name = dir2 + t->name;
-                            //	std::string mk = std::string("mkdir ") + dir2;
-                            //	system(mk.c_str());
-                            //	FILE* file = fopen(name.c_str(), "w");
-                            //	if(file) {
-                            //		fwrite(textToSave.data(), 1, textToSave.length(), file);
-                            //		fclose(file);
-                            //		Log::Info("File saved:");
-                            //		Log::Info(name);
-                            //	}
-                            //	else {
-                            //		Log::Error("File not saved");
-                            //		Log::Error(name);
-                            //	}
                         }
-                        ImGui::EndMenu();
+                        ImGui::EndMenuBar();
                     }
-                    if(ImGui::BeginMenu("Edit")) {
-                        bool ro = editor.IsReadOnly();
-                        if(ImGui::MenuItem("Read-only mode", nullptr, &ro))
-                            editor.SetReadOnly(ro);
-                        ImGui::Separator();
-
-                        if(ImGui::MenuItem("Undo", "ALT-Backspace", nullptr, !ro && editor.CanUndo()))
-                            editor.Undo();
-                        if(ImGui::MenuItem("Redo", "Ctrl-Y", nullptr, !ro && editor.CanRedo()))
-                            editor.Redo();
-
-                        ImGui::Separator();
-
-                        if(ImGui::MenuItem("Copy", "Ctrl-C", nullptr, editor.HasSelection()))
-                            editor.Copy();
-                        if(ImGui::MenuItem("Cut", "Ctrl-X", nullptr, !ro && editor.HasSelection()))
-                            editor.Cut();
-                        if(ImGui::MenuItem("Delete", "Del", nullptr, !ro && editor.HasSelection()))
-                            editor.Delete();
-                        if(ImGui::MenuItem("Paste", "Ctrl-V", nullptr, !ro && ImGui::GetClipboardText() != nullptr))
-                            editor.Paste();
-
-                        ImGui::Separator();
-
-                        if(ImGui::MenuItem("Select all", nullptr, nullptr))
-                            editor.SetSelection(TextEditor::Coordinates(), TextEditor::Coordinates(editor.GetTotalLines(), 0));
-
-                        ImGui::EndMenu();
-                    }
-                    if(ImGui::BeginMenu("View")) {
-                        if(ImGui::MenuItem("Dark palette"))
-                            editor.SetPalette(TextEditor::GetDarkPalette());
-                        if(ImGui::MenuItem("Light palette"))
-                            editor.SetPalette(TextEditor::GetLightPalette());
-                        if(ImGui::MenuItem("Retro blue palette"))
-                            editor.SetPalette(TextEditor::GetRetroBluePalette());
-                        ImGui::EndMenu();
-                    }
-                    if(ImGui::MenuItem("Compile", "F5", nullptr, true)) {
-                        ShaderUse su = SU_EASM;
-                        switch(t->shaderType) {
-                            case PS_ASM:
-                            case VS_ASM:
-                                t->bs->compileShaderSource(t->editor->GetText(), t->shaderType, SU_EASM);
-                                t->bs->editedAsm = t->editor->GetText();
-                                t->bs->usingShader = SU_EASM;
-                                break;
-                            case PS_FX:
-                            case VS_FX:
-                                t->bs->compileShaderSource(t->editor->GetText(), t->shaderType, SU_EFX);
-                                t->bs->editedFx = t->editor->GetText();
-                                t->bs->usingShader = SU_EFX;
-                                break;
-                            default:
-                                Log::Error("Undefined shader type to compile!");
-                                break;
-                        }
-                    }
-                    ImGui::EndMenuBar();
+                    auto cpos = t->editor->GetCursorPosition();
+                    t->editor->Render(t->name.c_str());
+                    ImGui::EndTabItem();
                 }
-                auto cpos = t->editor->GetCursorPosition();
-                t->editor->Render(t->name.c_str());
-                ImGui::EndTabItem();
+                i++;
             }
-            i++;
+            ImGui::EndTabBar();
         }
-        ImGui::EndTabBar();
+        ImGui::End();
     }
-    ImGui::End();
 
     if(showDemoWindow)
         ImGui::ShowDemoWindow(&showDemoWindow);
 
-    if(bShowLogWindow) {
-        if(mLogPos.y == 0.f) {
+    if(mShowLogWindow) {
+        if(mLogPos.y < 10.f) {
             mLogPos.y = gWindowHeight - 230.f;
         }
-        if(mLogSize.x == 0.f || mLogSize.y == 0.f) {
-            mLogSize = ImVec2(float(gWindowWidth - 5), 200.f);
+        if(mLogSize.y < 10.f) {
+            mLogSize.y = 10.f;
         }
-
-        if(ImGui::Begin("LOG Window", &bShowLogWindow, 0)) {
-            ImGui::SetWindowPos(mLogPos, ImGuiCond_FirstUseEver);
-            ImGui::SetWindowSize(mLogSize, ImGuiCond_FirstUseEver);
-            //const float footer_height_to_reserve = ImGui::GetStyle().ItemSpacing.y + ImGui::GetFrameHeightWithSpacing();
-            //if(ImGui::BeginChild("ScrollingRegion", ImVec2(0, -footer_height_to_reserve), false, ImGuiWindowFlags_HorizontalScrollbar)) {
-            ImGui::InputTextMultiline("Log", (char*) Log::c_str(), Log::length(), ImVec2(-1, -1), ImGuiInputTextFlags_ReadOnly | ImGuiWindowFlags_HorizontalScrollbar);
-
-            //ImGui::PopStyleVar();
-        //}
-        //ImGui::EndChild();
-
-        //ImGui::Text(Log::c_str());
+        if(mLogSize.x < 20.f) {
+            mLogSize.x = 20.f;
         }
+        if(mLogSize.x > float(gWindowWidth - 5)) {
+            mLogSize.x = float(gWindowWidth - 10);
+        }
+        ImGui::SetNextWindowCollapsed(!bShowLogWindow);
+        ImGui::Begin("##LOG Window", &mShowLogWindow, 0);
+        bShowLogWindow = !ImGui::IsWindowCollapsed();
+        ImGui::SetWindowPos(mLogPos, ImGuiCond_FirstUseEver);
+        ImGui::SetWindowSize(mLogSize, ImGuiCond_FirstUseEver);
+
+        ImGui::InputTextMultiline("##Log", (char*) Log::c_str(), Log::length(), ImVec2(-1, -1), ImGuiInputTextFlags_ReadOnly | ImGuiWindowFlags_HorizontalScrollbar);
         mLogPos = ImGui::GetWindowPos();
         ImVec2 LogSize = ImGui::GetWindowSize();
         if(LogSize.x > 100 && LogSize.y > 50)
             mLogSize = LogSize;
+
+        if(Log::isDirt) {
+            ImGui::SetScrollHereY(1.0f);
+            ImGui::SetScrollY(1.0f);
+            Log::isDirt = false;
+        }
         ImGui::End();
     }
 }
-
 
 void ShadowResFix::DrawSettingsWindow() {
     if(mShowSettingsWindow) {

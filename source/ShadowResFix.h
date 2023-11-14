@@ -49,7 +49,6 @@ public:
 
     void OnBeforeD3D9DeviceEndScene(IDirect3DDevice9* d3d9Device);
 
-    bool mDisableMouseControl = false;
 
     //private:
     void InitializeImGui(IDirect3DDevice9* d3d9Device);
@@ -61,32 +60,37 @@ public:
     void DrawMainWindow();
     void DrawSettingsWindow();
 
-    bool mIsImGuiInitialized = false;
+    bool mDisableMouseControl;// = false;
 
-    const uint8_t mSettingsFileMajorVersion = 1;
-    const uint8_t mSettingsFileMinorVersion = 1;
+    bool mIsImGuiInitialized;// = false;
 
-    bool mShowWindow = false;
-    bool mShowEditor = true;
-    bool bShowLogWindow = true;
-    bool mShowSettingsWindow = false;
-    bool pauseGame = false;
+    const uint8_t mSettingsFileMajorVersion;// = 1;
+    const uint8_t mSettingsFileMinorVersion;// = 1;
 
-    int32_t GameVersion = 0;
+    bool mShowWindow;// = false;
+    bool mShowEditor;// = false;
+    bool showEditorWindow;// = false;
+    bool mShowLogWindow;// = true;
+    bool bShowLogWindow;// = true;
+    bool mShowSettingsWindow;// = false;
+    bool showDemoWindow;// = false;
+    bool pauseGame;// = false;
 
-    ImGuiKey mOpenWindowKey = ImGuiKey_F10;
-    ImGuiKey mCompileShader = ImGuiKey_F5;
+    int32_t GameVersion;// = 0;
 
-    ImVec2 mWindowPos = ImVec2(5.f, 5.f);
-    ImVec2 mWindowSize = ImVec2(440.f, 650.f);
+    ImGuiKey mOpenWindowKey;// = ImGuiKey_F10;
+    ImGuiKey mCompileShader;// = ImGuiKey_F6;
 
-    ImVec2 mEditorPos = ImVec2(0.f, 0.f);
-    ImVec2 mEditorSize = ImVec2(0.f, 0.f);
+    ImVec2 mWindowPos;// = ImVec2(5.f, 5.f);
+    ImVec2 mWindowSize;// = ImVec2(440.f, 650.f);
 
-    ImVec2 mLogPos = ImVec2(0.f, 0.f);
-    ImVec2 mLogSize = ImVec2(0.f, 0.f);
+    ImVec2 mEditorPos;// = ImVec2(0.f, 0.f);
+    ImVec2 mEditorSize;// = ImVec2(0.f, 0.f);
 
-    float mItemInnerSpacing = 4.f;
-    float mFontScale = 0.9f;
-    ImGuiKey mToggleCameraControlKey = ImGuiKey_None;
+    ImVec2 mLogPos;// = ImVec2(0.f, 0.f);
+    ImVec2 mLogSize;// = ImVec2(0.f, 0.f);
+
+    float mItemInnerSpacing;// = 4.f;
+    float mFontScale;// = 0.9f;
+    ImGuiKey mToggleCameraControlKey;// = ImGuiKey_None;
 };
