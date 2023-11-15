@@ -51,8 +51,8 @@ BOOL InitProxyFunctions;
 char ProxyLibrary[MAX_PATH] = { 0 };
 
 bool gFixRainDrops = 0;
-UINT gWindowWidth = 1280;
-UINT gWindowHeight = 720;
+UINT gWindowWidth = 0;
+UINT gWindowHeight = 0;
 UINT gWindowDivisor = 4; // rain drops blur
 IDirect3DTexture9* pRainDropsRefractionHDRTex = 0;
 
@@ -317,6 +317,9 @@ typedef HMODULE(WINAPI* LoadLibraryExW_Ptr)(LPCWSTR lpLibFileName, HANDLE hFile,
 typedef HMODULE(WINAPI* LoadLibraryExA_Ptr)(LPCSTR lpLibFileName, HANDLE hFile, DWORD dwFlags);
 typedef FARPROC(WINAPI* GetProcAddress_Ptr)(HMODULE hModule, LPCSTR lpProcName);
 
+typedef HRESULT(WINAPI* DirectInput8Create_ptr)(HINSTANCE hinst, DWORD dwVersion, REFIID riidltf, LPVOID* ppvOut, LPUNKNOWN punkOuter);
+
+
 Direct3DShaderValidatorCreate9Proc              o_pDirect3DShaderValidatorCreate9;
 PSGPErrorProc                                   o_pPSGPError;
 PSGPSampleTextureProc                           o_pPSGPSampleTexture;
@@ -332,6 +335,8 @@ DebugSetMuteProc                                o_pDebugSetMute;
 Direct3D9EnableMaximizedWindowedModeShimProc    o_pDirect3D9EnableMaximizedWindowedModeShim;
 Direct3DCreate9Proc                             o_pDirect3DCreate9;
 Direct3DCreate9ExProc                           o_pDirect3DCreate9Ex;
+
+DirectInput8Create_ptr                          o_DirectInput8Create;
 
 
 RegisterClassA_fn o_RegisterClassA = nullptr;
@@ -354,12 +359,66 @@ SHGetFolderPathW_Ptr o_SHGetFolderPathW = nullptr;
 DInput8DeviceGetDeviceStateT* o_DInput8DeviceGetDeviceState = nullptr;
 DInput8DeviceAcquireT* o_DInput8DeviceAcquire = nullptr;
 
+bool UsePresentToRenderUI = false;
 
 HRESULT m_IDirect3DDevice9Ex::Present(CONST RECT* pSourceRect, CONST RECT* pDestRect, HWND hDestWindowOverride, CONST RGNDATA* pDirtyRegion) {
     if(mFPSLimitMode == FrameLimiter::FPSLimitMode::FPS_REALTIME)
         while(!FrameLimiter::Sync_RT());
     else if(mFPSLimitMode == FrameLimiter::FPSLimitMode::FPS_ACCURATE)
         while(!FrameLimiter::Sync_SLP());
+
+    if(UsePresentToRenderUI) {
+        if(bDisplayFPSCounter)
+            FrameLimiter::ShowFPS(ProxyInterface);
+
+        // Need to keep dx9 state the same as before using ImGui functions
+        DWORD		_D3DRS_ZWRITEENABLE = FALSE;
+        DWORD		_D3DRS_ALPHATESTENABLE = FALSE;
+        D3DCULL		_D3DRS_CULLMODE = D3DCULL_NONE;
+        DWORD		_D3DRS_ZENABLE = FALSE;
+        DWORD		_D3DRS_ALPHABLENDENABLE = TRUE;
+        D3DBLENDOP	_D3DRS_BLENDOP = D3DBLENDOP_ADD;
+        D3DBLEND	_D3DRS_SRCBLEND = D3DBLEND_SRCALPHA;
+        D3DBLEND	_D3DRS_DESTBLEND = D3DBLEND_INVSRCALPHA;
+        DWORD		_D3DRS_SEPARATEALPHABLENDENABLE = FALSE;
+        D3DBLEND	_D3DRS_SRCBLENDALPHA = D3DBLEND_ONE;
+        D3DBLEND	_D3DRS_DESTBLENDALPHA = D3DBLEND_ONE;
+        DWORD		_D3DRS_SCISSORTESTENABLE = FALSE;
+
+        ProxyInterface->GetRenderState(D3DRS_ZWRITEENABLE, (DWORD*) &_D3DRS_ZWRITEENABLE);
+        ProxyInterface->GetRenderState(D3DRS_ALPHATESTENABLE, (DWORD*) &_D3DRS_ALPHATESTENABLE);
+        ProxyInterface->GetRenderState(D3DRS_CULLMODE, (DWORD*) &_D3DRS_CULLMODE);
+        ProxyInterface->GetRenderState(D3DRS_ZENABLE, (DWORD*) &_D3DRS_ZENABLE);
+        ProxyInterface->GetRenderState(D3DRS_ALPHABLENDENABLE, (DWORD*) &_D3DRS_ALPHABLENDENABLE);
+        ProxyInterface->GetRenderState(D3DRS_BLENDOP, (DWORD*) &_D3DRS_BLENDOP);
+        ProxyInterface->GetRenderState(D3DRS_SRCBLEND, (DWORD*) &_D3DRS_SRCBLEND);
+        ProxyInterface->GetRenderState(D3DRS_DESTBLEND, (DWORD*) &_D3DRS_DESTBLEND);
+        ProxyInterface->GetRenderState(D3DRS_SEPARATEALPHABLENDENABLE, (DWORD*) &_D3DRS_SEPARATEALPHABLENDENABLE);
+        ProxyInterface->GetRenderState(D3DRS_SRCBLENDALPHA, (DWORD*) &_D3DRS_SRCBLENDALPHA);
+        ProxyInterface->GetRenderState(D3DRS_DESTBLENDALPHA, (DWORD*) &_D3DRS_DESTBLENDALPHA);
+        ProxyInterface->GetRenderState(D3DRS_SCISSORTESTENABLE, (DWORD*) &_D3DRS_SCISSORTESTENABLE);
+
+        gShadowResFix->OnBeforeD3D9DeviceEndScene(this);
+
+        ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE, (DWORD) _D3DRS_ZWRITEENABLE);
+        ProxyInterface->SetRenderState(D3DRS_ALPHATESTENABLE, (DWORD) _D3DRS_ALPHATESTENABLE);
+        ProxyInterface->SetRenderState(D3DRS_CULLMODE, (DWORD) _D3DRS_CULLMODE);
+        ProxyInterface->SetRenderState(D3DRS_ZENABLE, (DWORD) _D3DRS_ZENABLE);
+        ProxyInterface->SetRenderState(D3DRS_ALPHABLENDENABLE, (DWORD) _D3DRS_ALPHABLENDENABLE);
+        ProxyInterface->SetRenderState(D3DRS_BLENDOP, (DWORD) _D3DRS_BLENDOP);
+        ProxyInterface->SetRenderState(D3DRS_SRCBLEND, (DWORD) _D3DRS_SRCBLEND);
+        ProxyInterface->SetRenderState(D3DRS_DESTBLEND, (DWORD) _D3DRS_DESTBLEND);
+        ProxyInterface->SetRenderState(D3DRS_SEPARATEALPHABLENDENABLE, (DWORD) _D3DRS_SEPARATEALPHABLENDENABLE);
+        ProxyInterface->SetRenderState(D3DRS_SRCBLENDALPHA, (DWORD) _D3DRS_SRCBLENDALPHA);
+        ProxyInterface->SetRenderState(D3DRS_DESTBLENDALPHA, (DWORD) _D3DRS_DESTBLENDALPHA);
+        ProxyInterface->SetRenderState(D3DRS_SCISSORTESTENABLE, (DWORD) _D3DRS_SCISSORTESTENABLE);
+
+        if(GetAsyncKeyState(VK_F3) & 0x01) {
+            gFixEmissiveTransparency++;
+            gFixEmissiveTransparency = gFixEmissiveTransparency % 3;
+        }
+        ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE, 1);
+    }
 
     return ProxyInterface->Present(pSourceRect, pDestRect, hDestWindowOverride, pDirtyRegion);
 }
@@ -370,67 +429,123 @@ HRESULT m_IDirect3DDevice9Ex::PresentEx(THIS_ CONST RECT* pSourceRect, CONST REC
     else if(mFPSLimitMode == FrameLimiter::FPSLimitMode::FPS_ACCURATE)
         while(!FrameLimiter::Sync_SLP());
 
+    if(UsePresentToRenderUI) {
+        if(bDisplayFPSCounter)
+            FrameLimiter::ShowFPS(ProxyInterface);
+
+        // Need to keep dx9 state the same as before using ImGui functions
+        DWORD		_D3DRS_ZWRITEENABLE = FALSE;
+        DWORD		_D3DRS_ALPHATESTENABLE = FALSE;
+        D3DCULL		_D3DRS_CULLMODE = D3DCULL_NONE;
+        DWORD		_D3DRS_ZENABLE = FALSE;
+        DWORD		_D3DRS_ALPHABLENDENABLE = TRUE;
+        D3DBLENDOP	_D3DRS_BLENDOP = D3DBLENDOP_ADD;
+        D3DBLEND	_D3DRS_SRCBLEND = D3DBLEND_SRCALPHA;
+        D3DBLEND	_D3DRS_DESTBLEND = D3DBLEND_INVSRCALPHA;
+        DWORD		_D3DRS_SEPARATEALPHABLENDENABLE = FALSE;
+        D3DBLEND	_D3DRS_SRCBLENDALPHA = D3DBLEND_ONE;
+        D3DBLEND	_D3DRS_DESTBLENDALPHA = D3DBLEND_ONE;
+        DWORD		_D3DRS_SCISSORTESTENABLE = FALSE;
+
+        ProxyInterface->GetRenderState(D3DRS_ZWRITEENABLE, (DWORD*) &_D3DRS_ZWRITEENABLE);
+        ProxyInterface->GetRenderState(D3DRS_ALPHATESTENABLE, (DWORD*) &_D3DRS_ALPHATESTENABLE);
+        ProxyInterface->GetRenderState(D3DRS_CULLMODE, (DWORD*) &_D3DRS_CULLMODE);
+        ProxyInterface->GetRenderState(D3DRS_ZENABLE, (DWORD*) &_D3DRS_ZENABLE);
+        ProxyInterface->GetRenderState(D3DRS_ALPHABLENDENABLE, (DWORD*) &_D3DRS_ALPHABLENDENABLE);
+        ProxyInterface->GetRenderState(D3DRS_BLENDOP, (DWORD*) &_D3DRS_BLENDOP);
+        ProxyInterface->GetRenderState(D3DRS_SRCBLEND, (DWORD*) &_D3DRS_SRCBLEND);
+        ProxyInterface->GetRenderState(D3DRS_DESTBLEND, (DWORD*) &_D3DRS_DESTBLEND);
+        ProxyInterface->GetRenderState(D3DRS_SEPARATEALPHABLENDENABLE, (DWORD*) &_D3DRS_SEPARATEALPHABLENDENABLE);
+        ProxyInterface->GetRenderState(D3DRS_SRCBLENDALPHA, (DWORD*) &_D3DRS_SRCBLENDALPHA);
+        ProxyInterface->GetRenderState(D3DRS_DESTBLENDALPHA, (DWORD*) &_D3DRS_DESTBLENDALPHA);
+        ProxyInterface->GetRenderState(D3DRS_SCISSORTESTENABLE, (DWORD*) &_D3DRS_SCISSORTESTENABLE);
+
+        gShadowResFix->OnBeforeD3D9DeviceEndScene(this);
+
+        ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE, (DWORD) _D3DRS_ZWRITEENABLE);
+        ProxyInterface->SetRenderState(D3DRS_ALPHATESTENABLE, (DWORD) _D3DRS_ALPHATESTENABLE);
+        ProxyInterface->SetRenderState(D3DRS_CULLMODE, (DWORD) _D3DRS_CULLMODE);
+        ProxyInterface->SetRenderState(D3DRS_ZENABLE, (DWORD) _D3DRS_ZENABLE);
+        ProxyInterface->SetRenderState(D3DRS_ALPHABLENDENABLE, (DWORD) _D3DRS_ALPHABLENDENABLE);
+        ProxyInterface->SetRenderState(D3DRS_BLENDOP, (DWORD) _D3DRS_BLENDOP);
+        ProxyInterface->SetRenderState(D3DRS_SRCBLEND, (DWORD) _D3DRS_SRCBLEND);
+        ProxyInterface->SetRenderState(D3DRS_DESTBLEND, (DWORD) _D3DRS_DESTBLEND);
+        ProxyInterface->SetRenderState(D3DRS_SEPARATEALPHABLENDENABLE, (DWORD) _D3DRS_SEPARATEALPHABLENDENABLE);
+        ProxyInterface->SetRenderState(D3DRS_SRCBLENDALPHA, (DWORD) _D3DRS_SRCBLENDALPHA);
+        ProxyInterface->SetRenderState(D3DRS_DESTBLENDALPHA, (DWORD) _D3DRS_DESTBLENDALPHA);
+        ProxyInterface->SetRenderState(D3DRS_SCISSORTESTENABLE, (DWORD) _D3DRS_SCISSORTESTENABLE);
+
+        if(GetAsyncKeyState(VK_F3) & 0x01) {
+            gFixEmissiveTransparency++;
+            gFixEmissiveTransparency = gFixEmissiveTransparency % 3;
+        }
+        ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE, 1);
+    }
+
     return ProxyInterface->PresentEx(pSourceRect, pDestRect, hDestWindowOverride, pDirtyRegion, dwFlags);
 }
 
 HRESULT m_IDirect3DDevice9Ex::BeginScene() {
     auto hr = ProxyInterface->BeginScene();
-    ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE, 1);
+    //ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE, 1);
     return hr;
 }
 
 HRESULT m_IDirect3DDevice9Ex::EndScene() {
-    if(bDisplayFPSCounter)
-        FrameLimiter::ShowFPS(ProxyInterface);
+    if(!UsePresentToRenderUI) {
+        if(bDisplayFPSCounter)
+            FrameLimiter::ShowFPS(ProxyInterface);
 
-    // Need to keep dx9 state the same as before using ImGui functions
-    DWORD		_D3DRS_ZWRITEENABLE = FALSE;
-    DWORD		_D3DRS_ALPHATESTENABLE = FALSE;
-    D3DCULL		_D3DRS_CULLMODE = D3DCULL_NONE;
-    DWORD		_D3DRS_ZENABLE = FALSE;
-    DWORD		_D3DRS_ALPHABLENDENABLE = TRUE;
-    D3DBLENDOP	_D3DRS_BLENDOP = D3DBLENDOP_ADD;
-    D3DBLEND	_D3DRS_SRCBLEND = D3DBLEND_SRCALPHA;
-    D3DBLEND	_D3DRS_DESTBLEND = D3DBLEND_INVSRCALPHA;
-    DWORD		_D3DRS_SEPARATEALPHABLENDENABLE = FALSE;
-    D3DBLEND	_D3DRS_SRCBLENDALPHA = D3DBLEND_ONE;
-    D3DBLEND	_D3DRS_DESTBLENDALPHA = D3DBLEND_ONE;
-    DWORD		_D3DRS_SCISSORTESTENABLE = FALSE;
+        // Need to keep dx9 state the same as before using ImGui functions
+        DWORD		_D3DRS_ZWRITEENABLE = FALSE;
+        DWORD		_D3DRS_ALPHATESTENABLE = FALSE;
+        D3DCULL		_D3DRS_CULLMODE = D3DCULL_NONE;
+        DWORD		_D3DRS_ZENABLE = FALSE;
+        DWORD		_D3DRS_ALPHABLENDENABLE = TRUE;
+        D3DBLENDOP	_D3DRS_BLENDOP = D3DBLENDOP_ADD;
+        D3DBLEND	_D3DRS_SRCBLEND = D3DBLEND_SRCALPHA;
+        D3DBLEND	_D3DRS_DESTBLEND = D3DBLEND_INVSRCALPHA;
+        DWORD		_D3DRS_SEPARATEALPHABLENDENABLE = FALSE;
+        D3DBLEND	_D3DRS_SRCBLENDALPHA = D3DBLEND_ONE;
+        D3DBLEND	_D3DRS_DESTBLENDALPHA = D3DBLEND_ONE;
+        DWORD		_D3DRS_SCISSORTESTENABLE = FALSE;
 
-    ProxyInterface->GetRenderState(D3DRS_ZWRITEENABLE, (DWORD*) &_D3DRS_ZWRITEENABLE);
-    ProxyInterface->GetRenderState(D3DRS_ALPHATESTENABLE, (DWORD*) &_D3DRS_ALPHATESTENABLE);
-    ProxyInterface->GetRenderState(D3DRS_CULLMODE, (DWORD*) &_D3DRS_CULLMODE);
-    ProxyInterface->GetRenderState(D3DRS_ZENABLE, (DWORD*) &_D3DRS_ZENABLE);
-    ProxyInterface->GetRenderState(D3DRS_ALPHABLENDENABLE, (DWORD*) &_D3DRS_ALPHABLENDENABLE);
-    ProxyInterface->GetRenderState(D3DRS_BLENDOP, (DWORD*) &_D3DRS_BLENDOP);
-    ProxyInterface->GetRenderState(D3DRS_SRCBLEND, (DWORD*) &_D3DRS_SRCBLEND);
-    ProxyInterface->GetRenderState(D3DRS_DESTBLEND, (DWORD*) &_D3DRS_DESTBLEND);
-    ProxyInterface->GetRenderState(D3DRS_SEPARATEALPHABLENDENABLE, (DWORD*) &_D3DRS_SEPARATEALPHABLENDENABLE);
-    ProxyInterface->GetRenderState(D3DRS_SRCBLENDALPHA, (DWORD*) &_D3DRS_SRCBLENDALPHA);
-    ProxyInterface->GetRenderState(D3DRS_DESTBLENDALPHA, (DWORD*) &_D3DRS_DESTBLENDALPHA);
-    ProxyInterface->GetRenderState(D3DRS_SCISSORTESTENABLE, (DWORD*) &_D3DRS_SCISSORTESTENABLE);
+        ProxyInterface->GetRenderState(D3DRS_ZWRITEENABLE, (DWORD*) &_D3DRS_ZWRITEENABLE);
+        ProxyInterface->GetRenderState(D3DRS_ALPHATESTENABLE, (DWORD*) &_D3DRS_ALPHATESTENABLE);
+        ProxyInterface->GetRenderState(D3DRS_CULLMODE, (DWORD*) &_D3DRS_CULLMODE);
+        ProxyInterface->GetRenderState(D3DRS_ZENABLE, (DWORD*) &_D3DRS_ZENABLE);
+        ProxyInterface->GetRenderState(D3DRS_ALPHABLENDENABLE, (DWORD*) &_D3DRS_ALPHABLENDENABLE);
+        ProxyInterface->GetRenderState(D3DRS_BLENDOP, (DWORD*) &_D3DRS_BLENDOP);
+        ProxyInterface->GetRenderState(D3DRS_SRCBLEND, (DWORD*) &_D3DRS_SRCBLEND);
+        ProxyInterface->GetRenderState(D3DRS_DESTBLEND, (DWORD*) &_D3DRS_DESTBLEND);
+        ProxyInterface->GetRenderState(D3DRS_SEPARATEALPHABLENDENABLE, (DWORD*) &_D3DRS_SEPARATEALPHABLENDENABLE);
+        ProxyInterface->GetRenderState(D3DRS_SRCBLENDALPHA, (DWORD*) &_D3DRS_SRCBLENDALPHA);
+        ProxyInterface->GetRenderState(D3DRS_DESTBLENDALPHA, (DWORD*) &_D3DRS_DESTBLENDALPHA);
+        ProxyInterface->GetRenderState(D3DRS_SCISSORTESTENABLE, (DWORD*) &_D3DRS_SCISSORTESTENABLE);
 
-    gShadowResFix->OnBeforeD3D9DeviceEndScene(this);
+        gShadowResFix->OnBeforeD3D9DeviceEndScene(this);
 
-    ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE, (DWORD) _D3DRS_ZWRITEENABLE);
-    ProxyInterface->SetRenderState(D3DRS_ALPHATESTENABLE, (DWORD) _D3DRS_ALPHATESTENABLE);
-    ProxyInterface->SetRenderState(D3DRS_CULLMODE, (DWORD) _D3DRS_CULLMODE);
-    ProxyInterface->SetRenderState(D3DRS_ZENABLE, (DWORD) _D3DRS_ZENABLE);
-    ProxyInterface->SetRenderState(D3DRS_ALPHABLENDENABLE, (DWORD) _D3DRS_ALPHABLENDENABLE);
-    ProxyInterface->SetRenderState(D3DRS_BLENDOP, (DWORD) _D3DRS_BLENDOP);
-    ProxyInterface->SetRenderState(D3DRS_SRCBLEND, (DWORD) _D3DRS_SRCBLEND);
-    ProxyInterface->SetRenderState(D3DRS_DESTBLEND, (DWORD) _D3DRS_DESTBLEND);
-    ProxyInterface->SetRenderState(D3DRS_SEPARATEALPHABLENDENABLE, (DWORD) _D3DRS_SEPARATEALPHABLENDENABLE);
-    ProxyInterface->SetRenderState(D3DRS_SRCBLENDALPHA, (DWORD) _D3DRS_SRCBLENDALPHA);
-    ProxyInterface->SetRenderState(D3DRS_DESTBLENDALPHA, (DWORD) _D3DRS_DESTBLENDALPHA);
-    ProxyInterface->SetRenderState(D3DRS_SCISSORTESTENABLE, (DWORD) _D3DRS_SCISSORTESTENABLE);
+        ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE, (DWORD) _D3DRS_ZWRITEENABLE);
+        ProxyInterface->SetRenderState(D3DRS_ALPHATESTENABLE, (DWORD) _D3DRS_ALPHATESTENABLE);
+        ProxyInterface->SetRenderState(D3DRS_CULLMODE, (DWORD) _D3DRS_CULLMODE);
+        ProxyInterface->SetRenderState(D3DRS_ZENABLE, (DWORD) _D3DRS_ZENABLE);
+        ProxyInterface->SetRenderState(D3DRS_ALPHABLENDENABLE, (DWORD) _D3DRS_ALPHABLENDENABLE);
+        ProxyInterface->SetRenderState(D3DRS_BLENDOP, (DWORD) _D3DRS_BLENDOP);
+        ProxyInterface->SetRenderState(D3DRS_SRCBLEND, (DWORD) _D3DRS_SRCBLEND);
+        ProxyInterface->SetRenderState(D3DRS_DESTBLEND, (DWORD) _D3DRS_DESTBLEND);
+        ProxyInterface->SetRenderState(D3DRS_SEPARATEALPHABLENDENABLE, (DWORD) _D3DRS_SEPARATEALPHABLENDENABLE);
+        ProxyInterface->SetRenderState(D3DRS_SRCBLENDALPHA, (DWORD) _D3DRS_SRCBLENDALPHA);
+        ProxyInterface->SetRenderState(D3DRS_DESTBLENDALPHA, (DWORD) _D3DRS_DESTBLENDALPHA);
+        ProxyInterface->SetRenderState(D3DRS_SCISSORTESTENABLE, (DWORD) _D3DRS_SCISSORTESTENABLE);
 
-    if(GetAsyncKeyState(VK_F3) & 0x01) {
-        gFixEmissiveTransparency++;
-        gFixEmissiveTransparency = gFixEmissiveTransparency % 3;
+        if(GetAsyncKeyState(VK_F3) & 0x01) {
+            gFixEmissiveTransparency++;
+            gFixEmissiveTransparency = gFixEmissiveTransparency % 3;
+        }
+        ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE, 1);
     }
+
     HRESULT hr = ProxyInterface->EndScene();
-    ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE, 1);
 
     return hr;
 }
@@ -751,6 +866,13 @@ FARPROC WINAPI hk_GetProcAddress(HMODULE hModule, LPCSTR lpProcName) {
     return hr;
 }
 
+HRESULT WINAPI hk_DirectInput8Create(HINSTANCE hinst, DWORD dwVersion, REFIID riidltf, LPVOID* ppvOut, LPUNKNOWN punkOuter) {
+    if(o_DirectInput8Create) {
+        return o_DirectInput8Create(hinst, dwVersion, riidltf, ppvOut, punkOuter);
+    }
+    return 0;
+}
+
 LRESULT CALLBACK WndProcH(const HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     if(gShadowResFix->OnWndProc(hWnd, uMsg, wParam, lParam))
         return true;
@@ -782,6 +904,9 @@ HRESULT __stdcall DInput8DeviceAcquireH(IDirectInputDevice8* This) {
 int hookWait = 10;
 
 bool Initialize() {
+    if(!gWindowWidth || !gWindowHeight)
+        return false;
+   
     std::stringstream logStream;
     MH_STATUS mhStatus;
     baseAddress = (uint8_t*) GetModuleHandle(NULL);
@@ -1003,6 +1128,8 @@ bool WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved) {
     static HMODULE d3d9dll = nullptr;
     static HMODULE SHELL32_dll = nullptr;
     static HMODULE kernel32_dll = nullptr;
+    static HMODULE dinput8_dll = nullptr;
+
     //bool isAsi = false;
     switch(dwReason) {
         case DLL_PROCESS_ATTACH:
@@ -1059,6 +1186,7 @@ bool WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved) {
 
                 DisableADAPTIVETESS_X = GetPrivateProfileInt("SHADOWRESFIX", "DisableADAPTIVETESS_X", 0, path) != 0;
                 EnableDepthOverwrite = GetPrivateProfileInt("SHADOWRESFIX", "EnableDepthOverwrite", 0, path) != 0;
+                UsePresentToRenderUI = GetPrivateProfileInt("SHADOWRESFIX", "UsePresentToRenderUI", 0, path) != 0;
                 AlowPauseGame = GetPrivateProfileInt("SHADOWRESFIX", "AlowPauseGame", 0, path) != 0;
 
                 hookWait = GetPrivateProfileInt("SHADOWRESFIX", "hookDelayMS", 0, path);
@@ -1132,10 +1260,19 @@ bool WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved) {
                     /*o_SHGetFolderPathW = (SHGetFolderPathW_Ptr)*/ Iat_hook::detour_iat_ptr("SHGetFolderPathW", (void*) hk_SHGetFolderPathW);
                 }
             }
-
+            //dinput8_dll = GetModuleHandleA("DINPUT8.dll");
+            //if(dinput8_dll) {
+            //    o_DirectInput8Create = (DirectInput8Create_ptr) GetProcAddress(dinput8_dll, "DirectInput8Create");
+            //    if(o_DirectInput8Create) {
+            //        Iat_hook::detour_iat_ptr("DirectInput8Create", (void*) hk_DirectInput8Create);
+            //    }
+            //}
             // window aways on top
             if(bDoNotNotifyOnTaskSwitch) {
                 HMODULE user32 = GetModuleHandleA("user32.dll");
+                //if(!user32) {
+                //    user32 = LoadLibraryA("user32.dll");
+                //}
                 if(user32) {
                     o_RegisterClassA   = (RegisterClassA_fn)   GetProcAddress(user32, "RegisterClassA"  );
                     o_RegisterClassW   = (RegisterClassW_fn)   GetProcAddress(user32, "RegisterClassW"  );
