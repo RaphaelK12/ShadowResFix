@@ -49,6 +49,7 @@ char shadersrcps[] =
 "mul oDepth, r20.x, r20.y\n"
 ;
 
+
 int getSignature(m_IDirect3DPixelShader9* pShader, std::vector<uint8_t>& pattern) {
     static std::vector<uint8_t> pbFunc;
     UINT len;
@@ -182,6 +183,7 @@ HRESULT SaveASM(std::string fxname, std::string shadername, std::string source, 
 }
 
 IDirect3DPixelShader9* m_IDirect3DPixelShader9::dummyShader = nullptr;
+extern IDirect3DPixelShader9* PostFxPS;
 
 m_IDirect3DPixelShader9::m_IDirect3DPixelShader9(LPDIRECT3DPIXELSHADER9 pShader9, m_IDirect3DDevice9Ex* pDevice, ShaderCreationMode extra) :
     ProxyInterface(pShader9), m_pDeviceEx(pDevice) {
@@ -210,7 +212,7 @@ m_IDirect3DPixelShader9::m_IDirect3DPixelShader9(LPDIRECT3DPIXELSHADER9 pShader9
         if(fxid<0 || fxid>(int)fx_ps.size()) {
             Log::Error("fxid not found");
         }
-        else if(extra == SC_FXC || extra == SC_GAME  ) {
+        else if(extra == SC_FXC || extra == SC_GAME) {
             fx_ps[fxid].push_back(this);
             ps[id] = this;
         }
@@ -289,6 +291,54 @@ m_IDirect3DPixelShader9::m_IDirect3DPixelShader9(LPDIRECT3DPIXELSHADER9 pShader9
         }
         if(hr1 != S_OK || hr2 != S_OK) {
             Log::Error("Unable to compile Dummy Pixel shader");
+        }
+        SAFE_RELEASE(bf1);
+        SAFE_RELEASE(bf2);
+    }
+    if(!PostFxPS) {
+        FILE* f = nullptr;
+        UINT size = 0;
+        f = fopen("shaders/PostFx.asm", "r");
+        if(!f) {
+            f = fopen("PostFx.asm", "r");
+        }
+        if(!f) {
+            return;
+        }
+        fseek(f, 0, SEEK_END);
+        size = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        char* buff = new char[size];
+        if(!buff) {
+            fclose(f);
+            return;
+        }
+        UINT size2 = fread(buff, 1, size, f);
+        //if( size2 != size) {
+        //    Log::Error("fread(*) != size");
+        //    fclose(f);
+        //    delete[] buff;
+        //}
+        fclose(f);
+        HRESULT hr2 = S_FALSE;
+        ID3DXBuffer* bf1 = nullptr;
+        ID3DXBuffer* bf2 = nullptr;
+        HRESULT hr1 = D3DXAssembleShader(buff, size, 0, 0, 0, &bf1, &bf2);
+        delete[] buff;
+        if(hr1 == S_OK) {
+            int sz = bf1->GetBufferSize();
+            char* p = (char*) bf1->GetBufferPointer();
+            hr2 = m_pDeviceEx->CreatePixelShader2((DWORD*) p, &PostFxPS, SC_NEW);
+            if(PostFxPS) {
+                ((m_IDirect3DPixelShader9*) PostFxPS)->disable = false;
+                ((m_IDirect3DPixelShader9*) PostFxPS)->oName = "PostFxPS";
+                ps_2.push_back((m_IDirect3DPixelShader9*) PostFxPS);
+            }
+        }
+        if(hr1 != S_OK || hr2 != S_OK) {
+            buff = (char*) bf2->GetBufferPointer();
+            Log::Error("Unable to compile PostFx Pixel shader");
+            Log::Text(buff);
         }
         SAFE_RELEASE(bf1);
         SAFE_RELEASE(bf2);

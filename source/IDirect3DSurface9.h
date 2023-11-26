@@ -2,12 +2,15 @@
 
 class m_IDirect3DSurface9 : public IDirect3DSurface9, public AddressLookupTableObject {
 private:
+public:
 	LPDIRECT3DSURFACE9 ProxyInterface;
 	m_IDirect3DDevice9Ex* m_pDeviceEx = nullptr;
+	D3DSURFACE_DESC mDesc;
 
 public:
 	m_IDirect3DSurface9(LPDIRECT3DSURFACE9 pSurface9, m_IDirect3DDevice9Ex* pDevice) : ProxyInterface(pSurface9), m_pDeviceEx(pDevice) {
 		pDevice->ProxyAddressLookupTable->SaveAddress(this, ProxyInterface);
+		GetDesc(&mDesc);
 	}
 	~m_IDirect3DSurface9() {}
 

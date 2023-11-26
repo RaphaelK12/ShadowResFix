@@ -298,7 +298,13 @@ uint8_t* baseAddress = nullptr;
 
 FrameLimiter::FPSLimitMode mFPSLimitMode = FrameLimiter::FPSLimitMode::FPS_NONE;
 
+extern IDirect3DTexture9* pHDRTex ;
+extern IDirect3DSurface9* pHDRSurface ;
+extern IDirect3DTexture9* pHDRTex2;
+extern IDirect3DSurface9* pHDRSurface2 ;
 
+
+typedef BOOL(WINAPI* ClipCursor_Ptr)(const RECT* lpRect);
 
 typedef HRESULT(__stdcall DInput8DeviceGetDeviceStateT)(IDirectInputDevice8*, DWORD, LPVOID);
 typedef HRESULT(__stdcall DInput8DeviceAcquireT)(IDirectInputDevice8*);
@@ -320,23 +326,23 @@ typedef FARPROC(WINAPI* GetProcAddress_Ptr)(HMODULE hModule, LPCSTR lpProcName);
 typedef HRESULT(WINAPI* DirectInput8Create_ptr)(HINSTANCE hinst, DWORD dwVersion, REFIID riidltf, LPVOID* ppvOut, LPUNKNOWN punkOuter);
 
 
-Direct3DShaderValidatorCreate9Proc              o_pDirect3DShaderValidatorCreate9;
-PSGPErrorProc                                   o_pPSGPError;
-PSGPSampleTextureProc                           o_pPSGPSampleTexture;
-D3DPERF_BeginEventProc                          o_pD3DPERF_BeginEvent;
-D3DPERF_EndEventProc                            o_pD3DPERF_EndEvent;
-D3DPERF_GetStatusProc                           o_pD3DPERF_GetStatus;
-D3DPERF_QueryRepeatFrameProc                    o_pD3DPERF_QueryRepeatFrame;
-D3DPERF_SetMarkerProc                           o_pD3DPERF_SetMarker;
-D3DPERF_SetOptionsProc                          o_pD3DPERF_SetOptions;
-D3DPERF_SetRegionProc                           o_pD3DPERF_SetRegion;
-DebugSetLevelProc                               o_pDebugSetLevel;
-DebugSetMuteProc                                o_pDebugSetMute;
-Direct3D9EnableMaximizedWindowedModeShimProc    o_pDirect3D9EnableMaximizedWindowedModeShim;
-Direct3DCreate9Proc                             o_pDirect3DCreate9;
-Direct3DCreate9ExProc                           o_pDirect3DCreate9Ex;
+Direct3DShaderValidatorCreate9Proc              o_pDirect3DShaderValidatorCreate9 = nullptr;
+PSGPErrorProc                                   o_pPSGPError = nullptr;
+PSGPSampleTextureProc                           o_pPSGPSampleTexture = nullptr;
+D3DPERF_BeginEventProc                          o_pD3DPERF_BeginEvent = nullptr;
+D3DPERF_EndEventProc                            o_pD3DPERF_EndEvent = nullptr;
+D3DPERF_GetStatusProc                           o_pD3DPERF_GetStatus = nullptr;
+D3DPERF_QueryRepeatFrameProc                    o_pD3DPERF_QueryRepeatFrame = nullptr;
+D3DPERF_SetMarkerProc                           o_pD3DPERF_SetMarker = nullptr;
+D3DPERF_SetOptionsProc                          o_pD3DPERF_SetOptions = nullptr;
+D3DPERF_SetRegionProc                           o_pD3DPERF_SetRegion = nullptr;
+DebugSetLevelProc                               o_pDebugSetLevel = nullptr;
+DebugSetMuteProc                                o_pDebugSetMute = nullptr;
+Direct3D9EnableMaximizedWindowedModeShimProc    o_pDirect3D9EnableMaximizedWindowedModeShim = nullptr;
+Direct3DCreate9Proc                             o_pDirect3DCreate9 = nullptr;
+Direct3DCreate9ExProc                           o_pDirect3DCreate9Ex = nullptr;
 
-DirectInput8Create_ptr                          o_DirectInput8Create;
+DirectInput8Create_ptr                          o_DirectInput8Create = nullptr;
 
 
 RegisterClassA_fn o_RegisterClassA = nullptr;
@@ -358,6 +364,7 @@ SHGetFolderPathW_Ptr o_SHGetFolderPathW = nullptr;
 
 DInput8DeviceGetDeviceStateT* o_DInput8DeviceGetDeviceState = nullptr;
 DInput8DeviceAcquireT* o_DInput8DeviceAcquire = nullptr;
+ClipCursor_Ptr    o_ClipCursor = nullptr;
 
 bool UsePresentToRenderUI = false;
 
@@ -692,6 +699,10 @@ HRESULT m_IDirect3D9Ex::CreateDeviceEx(THIS_ UINT Adapter, D3DDEVTYPE DeviceType
 
 HRESULT m_IDirect3DDevice9Ex::Reset(D3DPRESENT_PARAMETERS* pPresentationParameters) {
     pRainDropsRefractionHDRTex = 0;
+    SAFE_RELEASE(pHDRTex);
+    SAFE_RELEASE(pHDRSurface);
+    SAFE_RELEASE(pHDRTex2);
+    SAFE_RELEASE(pHDRSurface2);
 
     if(bForceWindowedMode)
         ForceWindowed(pPresentationParameters);
@@ -725,6 +736,11 @@ HRESULT m_IDirect3DDevice9Ex::Reset(D3DPRESENT_PARAMETERS* pPresentationParamete
 
 HRESULT m_IDirect3DDevice9Ex::ResetEx(THIS_ D3DPRESENT_PARAMETERS* pPresentationParameters, D3DDISPLAYMODEEX* pFullscreenDisplayMode) {
     pRainDropsRefractionHDRTex = 0;
+    SAFE_RELEASE(pHDRTex);
+    SAFE_RELEASE(pHDRSurface);
+    SAFE_RELEASE(pHDRTex2);
+    SAFE_RELEASE(pHDRSurface2);
+
     if(bForceWindowedMode)
         ForceWindowed(pPresentationParameters, pFullscreenDisplayMode);
 
@@ -866,16 +882,35 @@ FARPROC WINAPI hk_GetProcAddress(HMODULE hModule, LPCSTR lpProcName) {
     return hr;
 }
 
+ //IDirectInputA *diA = nullptr;
+ //IDirectInputW *diW = nullptr;
+
 HRESULT WINAPI hk_DirectInput8Create(HINSTANCE hinst, DWORD dwVersion, REFIID riidltf, LPVOID* ppvOut, LPUNKNOWN punkOuter) {
+    HRESULT hr = S_FALSE;
     if(o_DirectInput8Create) {
-        return o_DirectInput8Create(hinst, dwVersion, riidltf, ppvOut, punkOuter);
+        hr = o_DirectInput8Create(hinst, dwVersion, riidltf, ppvOut, punkOuter);
+        //if(hr == S_OK) {
+        //    diA = (IDirectInputA*) ppvOut;
+        //    diW = (IDirectInputW*) ppvOut;
+        //}
     }
-    return 0;
+    return hr;
 }
+
+BOOL WINAPI hk_ClipCursor(const RECT* lpRect) {
+    lpRect = nullptr;
+    if(o_ClipCursor)
+        return o_ClipCursor(lpRect);
+    return ClipCursor(lpRect);
+}
+
 
 LRESULT CALLBACK WndProcH(const HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
     if(gShadowResFix->OnWndProc(hWnd, uMsg, wParam, lParam))
         return true;
+    //if(gShadowResFix->mShowWindow) {
+    //    return true;
+    //}
     return CallWindowProc(o_WndProc, hWnd, uMsg, wParam, lParam);
 }
 
@@ -957,6 +992,7 @@ bool Initialize() {
         if(!o_WndProc) {
             return false;
         }
+        Log::Info("WndProc Hooked");
     }
 
     mhStatus = MH_EnableHook(MH_ALL_HOOKS);
@@ -966,7 +1002,7 @@ bool Initialize() {
 
         return false;
     }
-
+    Log::Info("Hooked finished");
     return true;
 }
 
@@ -983,7 +1019,6 @@ void MainLoop() {
     GetExitCodeThread(gMainThreadHandle, &exitCode);
     TerminateThread(gMainThreadHandle, exitCode);
 }
-
 
 
 
@@ -1129,6 +1164,7 @@ bool WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved) {
     static HMODULE SHELL32_dll = nullptr;
     static HMODULE kernel32_dll = nullptr;
     static HMODULE dinput8_dll = nullptr;
+    static HMODULE user32_dll = nullptr;
 
     //bool isAsi = false;
     switch(dwReason) {
@@ -1260,14 +1296,17 @@ bool WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved) {
                     /*o_SHGetFolderPathW = (SHGetFolderPathW_Ptr)*/ Iat_hook::detour_iat_ptr("SHGetFolderPathW", (void*) hk_SHGetFolderPathW);
                 }
             }
-            //dinput8_dll = GetModuleHandleA("DINPUT8.dll");
-            //if(dinput8_dll) {
-            //    o_DirectInput8Create = (DirectInput8Create_ptr) GetProcAddress(dinput8_dll, "DirectInput8Create");
-            //    if(o_DirectInput8Create) {
-            //        Iat_hook::detour_iat_ptr("DirectInput8Create", (void*) hk_DirectInput8Create);
-            //    }
-            //}
-            // window aways on top
+            {
+                //dinput8_dll = GetModuleHandleA("DINPUT8.dll");
+                dinput8_dll = LoadLibraryA("DINPUT8.dll");
+                if(dinput8_dll) {
+                    o_DirectInput8Create = (DirectInput8Create_ptr) GetProcAddress(dinput8_dll, "DirectInput8Create");
+                    if(o_DirectInput8Create) {
+                        Iat_hook::detour_iat_ptr("DirectInput8Create", (void*) hk_DirectInput8Create, 0);
+                    }
+                }
+            }
+             //window aways on top
             if(bDoNotNotifyOnTaskSwitch) {
                 HMODULE user32 = GetModuleHandleA("user32.dll");
                 //if(!user32) {
@@ -1328,6 +1367,14 @@ bool WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved) {
                 }
             }
             
+            {
+                user32_dll = GetModuleHandleA("user32.dll");
+                if(user32_dll) {
+                    o_ClipCursor = (ClipCursor_Ptr) GetProcAddress(user32_dll, "ClipCursor" );
+                    Iat_hook::detour_iat_ptr("ClipCursor" ,  (void*) hk_ClipCursor);
+                }
+            }
+
             // hook d3d9
             if(d3d9dll){
                 o_pDirect3DCreate9Ex                        = (Direct3DCreate9ExProc)                           GetProcAddress(d3d9dll, "Direct3DCreate9Ex"                         );
@@ -1363,6 +1410,7 @@ bool WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved) {
                 Iat_hook::detour_iat_ptr("DebugSetLevel"                             , (void*) DebugSetLevel                             );
                 Iat_hook::detour_iat_ptr("DebugSetMute"                              , (void*) DebugSetMute                              );
                 Iat_hook::detour_iat_ptr("PSGPError"                                 , (void*) PSGPError                                 );
+                
             }
 
             // create module list

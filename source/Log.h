@@ -17,6 +17,7 @@ public:
     static void Info(const std::string message) {
         LogText += "Info: " + message + "\n";
         mLogFile << "Info: " + message + "\n";
+        mLogFile.flush();
         isDirt = true;
     }
 
@@ -28,17 +29,20 @@ public:
         isDirt = true;
         LogText += "Warning: " + message + "\n";
         mLogFile << "Warning: " + message + "\n";
+        mLogFile.flush();
     }
 
     static void Error(const std::string message) {
         isDirt = true;
         LogText += "ERROR: " + message + "\n";
         mLogFile << "ERROR: " + message + "\n";
+        mLogFile.flush();
     }
     static void Text(const std::string message) {
         isDirt = true;
         LogText += "		" + message + "\n";
         mLogFile << "		" + message + "\n";
+        mLogFile.flush();
     }
     static size_t length() {
         return LogText.length();

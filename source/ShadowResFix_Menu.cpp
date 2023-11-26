@@ -51,7 +51,7 @@ ShadowResFix::ShadowResFix() :
     mIsImGuiInitialized(false),
     mSettingsFileMajorVersion(1),
     mSettingsFileMinorVersion(1),
-    mShowWindow(false),
+    mShowWindow(true),
     mShowEditor(false),
     showEditorWindow(false),
     mShowLogWindow(true),

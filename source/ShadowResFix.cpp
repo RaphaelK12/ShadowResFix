@@ -107,6 +107,12 @@ std::list<m_IDirect3DTexture9*> textureList;
 
 m_IDirect3DTexture9* rainDepth = nullptr;
 
+IDirect3DTexture9* pHDRTex =  nullptr;
+IDirect3DSurface9* pHDRSurface =  nullptr;
+IDirect3DTexture9* pHDRTex2 =  nullptr;
+IDirect3DSurface9* pHDRSurface2 =  nullptr;
+
+
 extern std::list<std::string> shadowGen;
 
 bool doPostFx = false;
@@ -141,6 +147,31 @@ bool isShaderInAnyList(m_IDirect3DVertexShader9* shader) {
     }
     return false;
 }
+bool isShaderPostFx(m_IDirect3DPixelShader9* shader) {
+    if(shader) {
+        switch(shader->id) {
+            case 815:
+            case 817:
+            case 819:
+            case 821:
+            case 827:
+            case 829:
+            case 831:
+            {
+                return true;
+                break;
+            }
+            default:
+            {
+                return false;
+                break;
+            }
+        }
+    }
+    return false;
+}
+
+IDirect3DPixelShader9* PostFxPS = nullptr;
 
 HRESULT m_IDirect3DDevice9Ex::CreateTexture(THIS_ UINT Width, UINT Height, UINT Levels, DWORD Usage, D3DFORMAT Format, D3DPOOL Pool, IDirect3DTexture9** ppTexture, HANDLE* pSharedHandle) {
     bool addToList = false;
@@ -401,6 +432,20 @@ HRESULT m_IDirect3DDevice9Ex::CreateTexture(THIS_ UINT Width, UINT Height, UINT 
     //RainDropsFix from AssaultKifle47
     if(Format == D3DFMT_A16B16G16R16F && Width == gWindowWidth / gWindowDivisor && Height == gWindowHeight / gWindowDivisor && ppTexture != 0 && (*ppTexture) != 0) {
         pRainDropsRefractionHDRTex = (*ppTexture);
+    }
+    
+    if(Format == D3DFMT_A16B16G16R16F && Width == gWindowWidth && Height == gWindowHeight) {
+        pHDRTex = *ppTexture;
+        (*ppTexture)->GetSurfaceLevel(0, &pHDRSurface);
+
+        // create new texture to postfx
+        HRESULT hr = ProxyInterface->CreateTexture(Width, Height, Levels, Usage, Format, Pool, &pHDRTex2, 0);
+        if(SUCCEEDED(hr) && pHDRTex2) {
+            m_IDirect3DTexture9* tex = nullptr;
+            tex = new m_IDirect3DTexture9(pHDRTex2, this, Width, Height, Levels, Usage, Format, Pool, name, addToList);
+            pHDRTex2 = tex;
+        }
+        pHDRTex2->GetSurfaceLevel(0, &pHDRSurface2);
     }
 
     return hr;
@@ -705,7 +750,15 @@ HRESULT m_IDirect3DDevice9Ex::SetPixelShader(THIS_ IDirect3DPixelShader9* pShade
             else {
                 pShader = pShader2->GetProxyInterface();
             }
-            if(pShader2->id >= 814 && pShader2->id <= 831) {
+            if(
+                pShader2->id == 815 ||
+                pShader2->id == 817 ||
+                pShader2->id == 819 ||
+                pShader2->id == 821 ||
+                pShader2->id == 827 ||
+                pShader2->id == 829 ||
+                pShader2->id == 831
+                ) {
                 doPostFx = true;
             }
         }
@@ -776,20 +829,40 @@ HRESULT m_IDirect3DDevice9Ex::DrawIndexedPrimitiveUP(D3DPRIMITIVETYPE PrimitiveT
     return ProxyInterface->DrawIndexedPrimitiveUP(PrimitiveType, MinIndex, NumVertices, PrimitiveCount, pIndexData, IndexDataFormat, pVertexStreamZeroData, VertexStreamZeroStride);
 }
 
+void dopostfx(m_IDirect3D9Ex* pDevice, m_IDirect3DPixelShader9* pixelShader, UINT32 shaderCounter,
+              IDirect3DSurface9* renderTarget, m_IDirect3DTexture9* temptex, m_IDirect3DTexture9* screentex) {
+
+}
+
 HRESULT m_IDirect3DDevice9Ex::DrawPrimitive(D3DPRIMITIVETYPE PrimitiveType, UINT StartVertex, UINT PrimitiveCount) {
-    //IDirect3DPixelShader9* pShader = 0;
-    //m_IDirect3DPixelShader9* pShader2 = 0;
-    //if(doPostFx) {
-    //    GetPixelShader(&pShader);
-    //    if(pShader) {
-    //        pShader2 = static_cast<m_IDirect3DPixelShader9*>(pShader);
-    //        if(pShader2) {
-    //            if(pShader2->id >= 814 && pShader2->id <= 831) {
-    //                doPostFx = false;
-    //            }
-    //        }
-    //    }
-    //}
+    IDirect3DPixelShader9* pShader = 0;
+    m_IDirect3DPixelShader9* pShader2 = 0;
+    if(doPostFx) {
+        GetPixelShader(&pShader);
+        if(pShader) {
+            pShader2 = static_cast<m_IDirect3DPixelShader9*>(pShader);
+            if(pShader2) {
+                if(isShaderPostFx(pShader2)) {
+                    doPostFx = false;
+                    IDirect3DSurface9* backBuffer = 0;
+                    if(PostFxPS && pHDRTex2) {
+                        ProxyInterface->GetRenderTarget(0, &backBuffer);
+                        if(backBuffer) {
+                            ProxyInterface->SetPixelShader(pShader2->GetProxyInterface());
+                            pHDRTex2->GetSurfaceLevel(0, &pHDRSurface2);
+                            ProxyInterface->SetRenderTarget(0, static_cast<m_IDirect3DSurface9*>(pHDRSurface2)->GetProxyInterface());
+                            ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+                            ProxyInterface->SetRenderTarget(0, backBuffer);
+                            ProxyInterface->SetTexture(2, static_cast<m_IDirect3DTexture9*>(pHDRTex2)->GetProxyInterface());
+                            SetPixelShader(PostFxPS);
+                            SAFE_RELEASE(backBuffer);
+                            SAFE_RELEASE(pHDRSurface2);
+                        }
+                    }
+                }
+            }
+        }
+    }
     return ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
 }
 
