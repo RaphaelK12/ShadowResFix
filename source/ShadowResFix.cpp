@@ -12,6 +12,7 @@
 */
 
 #include "d3d9.h"
+#include "D3DX9Mesh.h"
 #include "Utils.h"
 
 // cascaded shadows resolution
@@ -51,11 +52,22 @@ extern BOOL gFixWashedMirror;
 
 bool DisableADAPTIVETESS_X = 1;
 bool EnableDepthOverwrite = 1;
+bool UseSMAA = 1;
+bool UseMSAA = 0;
+bool UseSSAA = 1;
+bool UseSSAO = 1;
+bool UseBokeh = 0;
+bool UseMBlur = 0;
 
 extern uint8_t* baseAddress;
 
 float DEPTHBIAS = 0.f;
 float SLOPESCALEDEPTHBIAS = 0.f;
+
+bool doPostFx = false;
+extern bool fixCoronaDepth;
+extern int UsePostFx[4]; // postfx type
+
 
 struct stTextue {
     UINT Cnt;
@@ -107,15 +119,19 @@ std::list<m_IDirect3DTexture9*> textureList;
 
 m_IDirect3DTexture9* rainDepth = nullptr;
 
-IDirect3DTexture9* pHDRTex =  nullptr;
-IDirect3DSurface9* pHDRSurface =  nullptr;
-IDirect3DTexture9* pHDRTex2 =  nullptr;
-IDirect3DSurface9* pHDRSurface2 =  nullptr;
+// postfx textures
+IDirect3DTexture9* pHDRTex =  nullptr; // game hdr texture
+IDirect3DTexture9* pHDRTex2 =  nullptr; // main temp texture
 
+ // smaa textures
+IDirect3DTexture9* areaTex =  nullptr; // loaded from file
+IDirect3DTexture9* searchTex =  nullptr; // loaded from file
+IDirect3DTexture9* edgesTex =  nullptr; // gen
+IDirect3DTexture9* blendTex =  nullptr; // gen
 
+// old, used to add bias into shadows
 extern std::list<std::string> shadowGen;
 
-bool doPostFx = false;
 
 bool isShaderInAnyList(m_IDirect3DPixelShader9* shader) {
     for(auto& f : fx_ps) {
@@ -172,6 +188,16 @@ bool isShaderPostFx(m_IDirect3DPixelShader9* shader) {
 }
 
 IDirect3DPixelShader9* PostFxPS = nullptr;
+
+IDirect3DPixelShader9* SMAA_EdgeDetection = nullptr;
+IDirect3DPixelShader9* SMAA_BlendingWeightsCalculation = nullptr;
+IDirect3DPixelShader9* SMAA_NeighborhoodBlending = nullptr;
+
+IDirect3DVertexShader9* SMAA_EdgeDetectionVS = nullptr;
+IDirect3DVertexShader9* SMAA_BlendingWeightsCalculationVS = nullptr;
+IDirect3DVertexShader9* SMAA_NeighborhoodBlendingVS = nullptr;
+
+std::vector<m_IDirect3DPixelShader9*> PostFxList;
 
 HRESULT m_IDirect3DDevice9Ex::CreateTexture(THIS_ UINT Width, UINT Height, UINT Levels, DWORD Usage, D3DFORMAT Format, D3DPOOL Pool, IDirect3DTexture9** ppTexture, HANDLE* pSharedHandle) {
     bool addToList = false;
@@ -296,9 +322,9 @@ HRESULT m_IDirect3DDevice9Ex::CreateTexture(THIS_ UINT Width, UINT Height, UINT 
     static uint8_t dummyVar = 1;
 
     uint8_t* ReflexQualityBA0xD612BC = &dummyVar;
-    uint8_t* waterQualityBA0xD612C0  = &dummyVar;
+    uint8_t* waterQualityBA0xD612C0 = &dummyVar;
     uint8_t* ShadowQualityBA0xD612B8 = &dummyVar;
-    uint8_t* NightShadowBA0xD612B4   = &dummyVar;
+    uint8_t* NightShadowBA0xD612B4 = &dummyVar;
 
     int32_t GameVersion = 0;
     Utils::GetGameVersion(GameVersion);
@@ -421,6 +447,10 @@ HRESULT m_IDirect3DDevice9Ex::CreateTexture(THIS_ UINT Width, UINT Height, UINT 
         addToList = false;
     }
 
+    if(UseSSAA && Width == gWindowWidth && Height == gWindowHeight) {
+        Width *= 2;
+        Height *= 2;
+    }
     HRESULT hr = ProxyInterface->CreateTexture(Width, Height, Levels, Usage, Format, Pool, ppTexture, pSharedHandle);
 
     if(SUCCEEDED(hr) && ppTexture) {
@@ -433,19 +463,35 @@ HRESULT m_IDirect3DDevice9Ex::CreateTexture(THIS_ UINT Width, UINT Height, UINT 
     if(Format == D3DFMT_A16B16G16R16F && Width == gWindowWidth / gWindowDivisor && Height == gWindowHeight / gWindowDivisor && ppTexture != 0 && (*ppTexture) != 0) {
         pRainDropsRefractionHDRTex = (*ppTexture);
     }
-    
-    if(Format == D3DFMT_A16B16G16R16F && Width == gWindowWidth && Height == gWindowHeight) {
-        pHDRTex = *ppTexture;
-        (*ppTexture)->GetSurfaceLevel(0, &pHDRSurface);
+    if(Format == D3DFMT_A16B16G16R16F && ppTexture && Width == (gWindowWidth * (UseSSAA?2:1)) && Height == (gWindowHeight * (UseSSAA  ? 2 : 1))) {
+        pHDRTex = (*ppTexture);
 
         // create new texture to postfx
         HRESULT hr = ProxyInterface->CreateTexture(Width, Height, Levels, Usage, Format, Pool, &pHDRTex2, 0);
         if(SUCCEEDED(hr) && pHDRTex2) {
             m_IDirect3DTexture9* tex = nullptr;
             tex = new m_IDirect3DTexture9(pHDRTex2, this, Width, Height, Levels, Usage, Format, Pool, name, addToList);
-            pHDRTex2 = tex;
+            pHDRTex2 = tex;            
+            tex->name = "Screen";
+            hr = D3DXCreateTextureFromFileExA(this, "shaders/AreaTex.png", 0, 0, 0, 0, D3DFMT_UNKNOWN, D3DPOOL_MANAGED, D3DX_FILTER_LINEAR, D3DX_FILTER_LINEAR, D3DCOLOR_ARGB(150, 100, 100, 100), NULL, NULL, &areaTex);
+            if(hr != S_OK) {
+                hr = D3DXCreateTextureFromFileExA(this, "AreaTex.png", 0, 0, 0, 0, D3DFMT_UNKNOWN, D3DPOOL_MANAGED, D3DX_FILTER_LINEAR, D3DX_FILTER_LINEAR, D3DCOLOR_ARGB(150, 100, 100, 100), NULL, NULL, &areaTex);
+            }
+            hr = D3DXCreateTextureFromFileExA(this, "shaders/SearchTex.png", 0, 0, 0, 0, D3DFMT_UNKNOWN, D3DPOOL_MANAGED, D3DX_FILTER_LINEAR, D3DX_FILTER_LINEAR, D3DCOLOR_ARGB(150, 100, 100, 100), NULL, NULL, &searchTex);
+            if(hr != S_OK) {
+                hr = D3DXCreateTextureFromFileExA(this, "SearchTex.png", 0, 0, 0, 0, D3DFMT_UNKNOWN, D3DPOOL_MANAGED, D3DX_FILTER_LINEAR, D3DX_FILTER_LINEAR, D3DCOLOR_ARGB(150, 100, 100, 100), NULL, NULL, &searchTex);
+            }
+            if(hr == S_OK) {
+                hr = CreateTexture(Width, Height, Levels, Usage, D3DFMT_X8R8G8B8, Pool, &edgesTex, 0);
+                if(hr == S_OK && edgesTex) {
+                    ((m_IDirect3DTexture9*) edgesTex)->name = "Screen";
+                }
+                hr = CreateTexture(Width, Height, Levels, Usage, D3DFMT_A8R8G8B8, Pool, &blendTex, 0);
+                if(hr == S_OK && blendTex) {
+                    ((m_IDirect3DTexture9*) blendTex)->name = "Screen";
+                }
+            }
         }
-        pHDRTex2->GetSurfaceLevel(0, &pHDRSurface2);
     }
 
     return hr;
@@ -454,8 +500,23 @@ HRESULT m_IDirect3DDevice9Ex::CreateTexture(THIS_ UINT Width, UINT Height, UINT 
 HRESULT m_IDirect3DDevice9Ex::SetPixelShaderConstantF(THIS_ UINT StartRegister, CONST float* pConstantData, UINT Vector4fCount) {
     IDirect3DPixelShader9* pShader = 0;
     m_IDirect3DPixelShader9* pshader = 0;
+    float vec[4] = { 0.f };
     if(!ProxyInterface) {
         return S_FALSE;
+    }
+    if(UseSSAA && pConstantData[0] == 1.f / gWindowWidth && pConstantData[1] == 1.f / gWindowHeight && Vector4fCount==1) {
+        vec[0] = pConstantData[0] * 0.5f;
+        vec[1] = pConstantData[1] * 0.5f;
+        vec[2] = pConstantData[2];
+        vec[3] = pConstantData[3];
+        return ProxyInterface->SetPixelShaderConstantF(StartRegister, vec, Vector4fCount);
+    }
+    if(UseSSAA && pConstantData[0] == gWindowWidth && pConstantData[1] == gWindowHeight && Vector4fCount == 1) {
+        vec[0] = pConstantData[0] * 2.f;
+        vec[1] = pConstantData[1] * 2.f;
+        vec[2] = pConstantData[2] * 0.5f;
+        vec[3] = pConstantData[3] * 0.5f;
+        return ProxyInterface->SetPixelShaderConstantF(StartRegister, vec, Vector4fCount);
     }
     GetPixelShader(&pShader);
     HRESULT hr = 0;
@@ -474,7 +535,6 @@ HRESULT m_IDirect3DDevice9Ex::SetPixelShaderConstantF(THIS_ UINT StartRegister, 
     if(gFixCascadedShadowMapResolution) {
         if(StartRegister == 53 && Vector4fCount == 1 && oldCascadesWidth != 0 && oldCascadesHeight != 0 &&
            pConstantData[0] == 1.f / oldCascadesWidth && pConstantData[1] == 1.f / oldCascadesHeight) {
-            float vec[4] = { 0.f };
             vec[0] = 1.f / newCascadesWidthX2;
             vec[1] = 1.f / newCascadesHeightX2;
             vec[2] = 1.f / newCascadesHeightX2;
@@ -514,8 +574,13 @@ HRESULT m_IDirect3DDevice9Ex::SetVertexShaderConstantF(THIS_ UINT StartRegister,
     GetVertexShader(&pShader);
     if(pShader) {
         m_IDirect3DVertexShader9* pshader = static_cast<m_IDirect3DVertexShader9*>(pShader);
-        for(int i = 0; i < (int) Vector4fCount * 4; i++) {
-            pshader->constants[StartRegister][i] = pConstantData[i];
+        if(pshader) {
+            for(int i = 0; i < (int) Vector4fCount * 4; i++) {
+                pshader->constants[StartRegister][i] = pConstantData[i];
+            }
+            //if(pshader->id == 15 &&gbuffertexturesampler3) {
+            //    SetTexture(0, gbuffertexturesampler3);
+            //}
         }
     }
     if(gTreeLeavesSwayInTheWind) {
@@ -565,6 +630,14 @@ HRESULT m_IDirect3DDevice9Ex::SetVertexShaderConstantF(THIS_ UINT StartRegister,
 }
 
 HRESULT m_IDirect3DDevice9Ex::SetTexture(DWORD Stage, IDirect3DBaseTexture9* pTexture) {
+    if(Stage == 0 && pTexture) {
+        IDirect3DVertexShader9* pShader = nullptr;
+        m_IDirect3DVertexShader9* pShader2 = nullptr;
+        GetVertexShader(&pShader);
+        if(pShader) {
+            pShader2 = static_cast<m_IDirect3DVertexShader9*>(pShader);
+        }
+    }
     // fix from AssaultKifle47
     if(gFixRainDrops && Stage == 1 && pTexture == 0 && pRainDropsRefractionHDRTex) {
         pTexture = pRainDropsRefractionHDRTex;
@@ -595,44 +668,8 @@ HRESULT m_IDirect3DDevice9Ex::CreatePixelShader(THIS_ CONST DWORD* pFunction, ID
 
     if(SUCCEEDED(hr) && ppShader) {
         *ppShader = new m_IDirect3DPixelShader9(*ppShader, this, SC_FXC);
-        //IDirect3DPixelShader9* pShader = (*ppShader);
-        //{
-        //    IDirect3DPixelShader9* pShader = (*ppShader);
-        //    static std::vector<uint8_t> pbFunc;
-        //    UINT len;
-        //    pShader->GetFunction(nullptr, &len);
-        //    if(pbFunc.size() < len) {
-        //        pbFunc.resize(len + len % 4);
-        //    }
-        //    pShader->GetFunction(pbFunc.data(), &len);
-        //    int cnt = 0;
-        //    for(int i = 0; i < (int) pbFunc.size(); i++) {
-        //        for(int j = 0; j < (int) pattern2.size() - 1; j++) {
-        //            if(pbFunc[i + j] == pattern2[j]) {
-        //                cnt = j;
-        //                continue;
-        //            }
-        //            else {
-        //                cnt = 0;
-        //                break;
-        //            }
-        //        }
-        //        if(cnt >= (int) pattern2.size() - 2) {
-        //            cnt = i;
-        //            break;
-        //        }
-        //    }
-        //    int c = 0;
-        //    if(cnt > 0) {
-        //        c = *((int*) &pbFunc[cnt + pattern2.size() - 1]);
-        //        ps2.push_back(pShader);
-        //    }
-        //}
+        
     }
-    //if(!ppShader || !(*ppShader)) {
-    //    printf("!");
-    //    return hr;
-    //}
     return hr;
 }
 
@@ -641,44 +678,8 @@ HRESULT m_IDirect3DDevice9Ex::CreatePixelShader2(THIS_ CONST DWORD* pFunction, I
 
     if(SUCCEEDED(hr) && ppShader) {
         *ppShader = new m_IDirect3DPixelShader9(*ppShader, this, extra);
-        //IDirect3DPixelShader9* pShader = (*ppShader);
-        //{
-        //    IDirect3DPixelShader9* pShader = (*ppShader);
-        //    static std::vector<uint8_t> pbFunc;
-        //    UINT len;
-        //    pShader->GetFunction(nullptr, &len);
-        //    if(pbFunc.size() < len) {
-        //        pbFunc.resize(len + len % 4);
-        //    }
-        //    pShader->GetFunction(pbFunc.data(), &len);
-        //    int cnt = 0;
-        //    for(int i = 0; i < (int) pbFunc.size(); i++) {
-        //        for(int j = 0; j < (int) pattern2.size() - 1; j++) {
-        //            if(pbFunc[i + j] == pattern2[j]) {
-        //                cnt = j;
-        //                continue;
-        //            }
-        //            else {
-        //                cnt = 0;
-        //                break;
-        //            }
-        //        }
-        //        if(cnt >= (int) pattern2.size() - 2) {
-        //            cnt = i;
-        //            break;
-        //        }
-        //    }
-        //    int c = 0;
-        //    if(cnt > 0) {
-        //        c = *((int*) &pbFunc[cnt + pattern2.size() - 1]);
-        //        ps2.push_back(pShader);
-        //    }
-        //}
     }
-    //if(!ppShader || !(*ppShader)) {
-    //    printf("!");
-    //    return hr;
-    //}
+    
     return hr;
 }
 
@@ -687,12 +688,7 @@ HRESULT m_IDirect3DDevice9Ex::CreateVertexShader(THIS_ CONST DWORD* pFunction, I
 
     if(SUCCEEDED(hr) && ppShader) {
         *ppShader = new m_IDirect3DVertexShader9(*ppShader, this, SC_FXC);
-    }
-    //if(!ppShader || !(*ppShader)) {
-    //    printf("!");
-    //    return hr;
-    //}
-
+    }    
     return hr;
 }
 
@@ -702,11 +698,7 @@ HRESULT m_IDirect3DDevice9Ex::CreateVertexShader2(THIS_ CONST DWORD* pFunction, 
     if(SUCCEEDED(hr) && ppShader) {
         *ppShader = new m_IDirect3DVertexShader9(*ppShader, this, extra);
     }
-    //if(!ppShader || !(*ppShader)) {
-    //    printf("!");
-    //    return hr;
-    //}
-
+    
     return hr;
 }
 
@@ -725,6 +717,7 @@ HRESULT m_IDirect3DDevice9Ex::SetVertexShader(THIS_ IDirect3DVertexShader9* pSha
             else {
                 pShader = static_cast<m_IDirect3DVertexShader9*>(pShader)->GetProxyInterface();
             }
+            GetVertexShaderConstantF(0, &pShader2->constants[0][0], 233);
         }
         else {
             pShader = static_cast<m_IDirect3DVertexShader9*>(pShader)->GetProxyInterface();
@@ -750,16 +743,10 @@ HRESULT m_IDirect3DDevice9Ex::SetPixelShader(THIS_ IDirect3DPixelShader9* pShade
             else {
                 pShader = pShader2->GetProxyInterface();
             }
-            if(
-                pShader2->id == 815 ||
-                pShader2->id == 817 ||
-                pShader2->id == 819 ||
-                pShader2->id == 821 ||
-                pShader2->id == 827 ||
-                pShader2->id == 829 ||
-                pShader2->id == 831
-                ) {
-                doPostFx = true;
+            if(UsePostFx) {
+                if(isShaderPostFx(pShader2)) {
+                    doPostFx = true;
+                }
             }
         }
         else {
@@ -787,6 +774,212 @@ HRESULT m_IDirect3DDevice9Ex::SetPixelShader(THIS_ IDirect3DPixelShader9* pShade
             }
         }
     }
+
+
+    if(1 && (!SMAA_EdgeDetection || !SMAA_BlendingWeightsCalculation || !SMAA_NeighborhoodBlending ||
+             !SMAA_EdgeDetectionVS || !SMAA_BlendingWeightsCalculationVS || !SMAA_NeighborhoodBlendingVS)) {
+        FILE* f = nullptr;
+        UINT size = 0;
+        f = fopen("shaders/SMAA2.hlsl", "r");
+        if(!f) {
+            f = fopen("SMAA2.hlsl", "r");
+        }
+        if(!f) {
+            return hr;
+        }
+        fseek(f, 0, SEEK_END);
+        size = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        char* buff = new char[size + 5];
+        memset(buff, 0, size + 5);
+        if(!buff) {
+            fclose(f);
+            return hr;
+        }
+        UINT size2 = fread(buff, 1, size, f);
+
+        fclose(f);
+        HRESULT hr2 = S_FALSE;
+        ID3DXBuffer* bf1 = nullptr;
+        ID3DXBuffer* bf2 = nullptr;
+        ID3DXConstantTable* ppConstantTable = nullptr;
+        IDirect3DPixelShader9* shader = nullptr;
+        if(!SMAA_EdgeDetection || !SMAA_EdgeDetectionVS) {
+            { // SMAAColorEdgeDetectionPS
+                HRESULT hr3 = D3DXCompileShader(buff, size, 0, 0, "SMAAColorEdgeDetectionPS", "ps_3_0", 0, &bf1, &bf2, &ppConstantTable);
+                HRESULT hr2 = S_FALSE;
+                IDirect3DPixelShader9* shader = nullptr;
+                if(hr3 == S_OK) {
+                    hr2 = CreatePixelShader2((DWORD*) bf1->GetBufferPointer(), &SMAA_EdgeDetection, SC_NEW);
+                    if(hr2 != S_OK || !SMAA_EdgeDetection) {
+                        Log::Error("Failed to create pixel shader hlsl: ");
+                        SAFE_RELEASE(SMAA_EdgeDetection);
+                    }
+                    m_IDirect3DPixelShader9* shader2 = static_cast<m_IDirect3DPixelShader9*> (SMAA_EdgeDetection);
+                    if(SMAA_EdgeDetection && shader2) {
+                        shader2->oName = "SMAAColorEdgeDetectionPS";
+                        shader2->loadedFx = buff;
+                        ps_2.push_back(shader2);
+                    }
+                    SAFE_RELEASE(bf1);
+                    SAFE_RELEASE(bf2);
+                    SAFE_RELEASE(ppConstantTable);
+                }
+                else {
+                    Log::Error("Failed to compile pixel shader hlsl: ");
+                    Log::Error((char*) bf2->GetBufferPointer());
+                    SAFE_RELEASE(bf1);
+                    SAFE_RELEASE(bf2);
+                    SAFE_RELEASE(ppConstantTable);
+                }
+            }
+            {// SMAAEdgeDetectionVS
+                HRESULT hr3 = D3DXCompileShader(buff, size, 0, 0, "SMAAEdgeDetectionVS", "vs_3_0", 0, &bf1, &bf2, &ppConstantTable);
+                HRESULT hr2 = S_FALSE;
+                IDirect3DVertexShader9* shader = nullptr;
+                if(hr3 == S_OK) {
+                    hr2 = CreateVertexShader2((DWORD*) bf1->GetBufferPointer(), &SMAA_EdgeDetectionVS, SC_NEW);
+                    if(hr2 != S_OK || !SMAA_EdgeDetectionVS) {
+                        Log::Error("Failed to create pixel shader hlsl: ");
+                        SAFE_RELEASE(SMAA_EdgeDetectionVS);
+                    }
+                    m_IDirect3DVertexShader9* shader2 = static_cast<m_IDirect3DVertexShader9*> (SMAA_EdgeDetectionVS);
+                    if(SMAA_EdgeDetectionVS && shader2) {
+                        shader2->oName = "SMAAEdgeDetectionVS";
+                        shader2->loadedFx = buff;
+                        vs_2.push_back(shader2);
+                    }
+                    SAFE_RELEASE(bf1);
+                    SAFE_RELEASE(bf2);
+                    SAFE_RELEASE(ppConstantTable);
+                }
+                else {
+                    Log::Error("Failed to compile pixel shader hlsl: ");
+                    Log::Error((char*) bf2->GetBufferPointer());
+                    SAFE_RELEASE(bf1);
+                    SAFE_RELEASE(bf2);
+                    SAFE_RELEASE(ppConstantTable);
+                }
+            }
+        }
+        if(!SMAA_BlendingWeightsCalculation || !SMAA_BlendingWeightsCalculationVS) {
+            {
+                HRESULT hr3 = D3DXCompileShader(buff, size, 0, 0, "SMAABlendingWeightCalculationPS", "ps_3_0", 0, &bf1, &bf2, &ppConstantTable);
+                HRESULT hr2 = S_FALSE;
+                IDirect3DPixelShader9* shader = nullptr;
+                if(hr3 == S_OK) {
+                    hr2 = CreatePixelShader2((DWORD*) bf1->GetBufferPointer(), &SMAA_BlendingWeightsCalculation, SC_NEW);
+                    if(hr2 != S_OK || !SMAA_BlendingWeightsCalculation) {
+                        Log::Error("Failed to create pixel shader hlsl: ");
+                        SAFE_RELEASE(SMAA_BlendingWeightsCalculation);
+                    }
+                    m_IDirect3DPixelShader9* shader2 = static_cast<m_IDirect3DPixelShader9*> (SMAA_BlendingWeightsCalculation);
+                    if(SMAA_BlendingWeightsCalculation && shader2) {
+                        shader2->oName = "SMAABlendingWeightCalculationPS";
+                        shader2->loadedFx = buff;
+                        ps_2.push_back(shader2);
+                    }
+                    SAFE_RELEASE(bf1);
+                    SAFE_RELEASE(bf2);
+                    SAFE_RELEASE(ppConstantTable);
+                }
+                else {
+                    Log::Error("Failed to compile pixel shader hlsl: ");
+                    Log::Error((char*) bf2->GetBufferPointer());
+                    SAFE_RELEASE(bf1);
+                    SAFE_RELEASE(bf2);
+                    SAFE_RELEASE(ppConstantTable);
+                }
+            }
+            {
+                HRESULT hr3 = D3DXCompileShader(buff, size, 0, 0, "SMAABlendingWeightCalculationVS", "vs_3_0", 0, &bf1, &bf2, &ppConstantTable);
+                HRESULT hr2 = S_FALSE;
+                IDirect3DVertexShader9* shader = nullptr;
+                if(hr3 == S_OK) {
+                    hr2 = CreateVertexShader2((DWORD*) bf1->GetBufferPointer(), &SMAA_BlendingWeightsCalculationVS, SC_NEW);
+                    if(hr2 != S_OK || !SMAA_BlendingWeightsCalculationVS) {
+                        Log::Error("Failed to create pixel shader hlsl: ");
+                        SAFE_RELEASE(SMAA_BlendingWeightsCalculationVS);
+                    }
+                    m_IDirect3DVertexShader9* shader2 = static_cast<m_IDirect3DVertexShader9*> (SMAA_BlendingWeightsCalculationVS);
+                    if(SMAA_BlendingWeightsCalculationVS && shader2) {
+                        shader2->oName = "SMAABlendingWeightCalculationVS";
+                        shader2->loadedFx = buff;
+                        vs_2.push_back(shader2);
+                    }
+                    SAFE_RELEASE(bf1);
+                    SAFE_RELEASE(bf2);
+                    SAFE_RELEASE(ppConstantTable);
+                }
+                else {
+                    Log::Error("Failed to compile pixel shader hlsl: ");
+                    Log::Error((char*) bf2->GetBufferPointer());
+                    SAFE_RELEASE(bf1);
+                    SAFE_RELEASE(bf2);
+                    SAFE_RELEASE(ppConstantTable);
+                }
+            }
+        }
+        if(!SMAA_NeighborhoodBlending || !SMAA_NeighborhoodBlendingVS) {
+            {
+                HRESULT hr3 = D3DXCompileShader(buff, size, 0, 0, "SMAANeighborhoodBlendingPS", "ps_3_0", 0, &bf1, &bf2, &ppConstantTable);
+                HRESULT hr2 = S_FALSE;
+                IDirect3DPixelShader9* shader = nullptr;
+                if(hr3 == S_OK) {
+                    hr2 = CreatePixelShader2((DWORD*) bf1->GetBufferPointer(), &SMAA_NeighborhoodBlending, SC_NEW);
+                    if(hr2 != S_OK || !SMAA_NeighborhoodBlending) {
+                        Log::Error("Failed to create pixel shader hlsl: ");
+                        SAFE_RELEASE(SMAA_NeighborhoodBlending);
+                    }
+                    m_IDirect3DPixelShader9* shader2 = static_cast<m_IDirect3DPixelShader9*> (SMAA_NeighborhoodBlending);
+                    if(SMAA_NeighborhoodBlending && shader2) {
+                        shader2->oName = "SMAANeighborhoodBlendingPS";
+                        shader2->loadedFx = buff;
+                        ps_2.push_back(shader2);
+                    }
+                    SAFE_RELEASE(bf1);
+                    SAFE_RELEASE(bf2);
+                    SAFE_RELEASE(ppConstantTable);
+                }
+                else {
+                    Log::Error("Failed to compile pixel shader hlsl: ");
+                    Log::Error((char*) bf2->GetBufferPointer());
+                    SAFE_RELEASE(bf1);
+                    SAFE_RELEASE(bf2);
+                    SAFE_RELEASE(ppConstantTable);
+                }
+            }
+            {
+                HRESULT hr3 = D3DXCompileShader(buff, size, 0, 0, "SMAANeighborhoodBlendingVS", "vs_3_0", 0, &bf1, &bf2, &ppConstantTable);
+                HRESULT hr2 = S_FALSE;
+                IDirect3DVertexShader9* shader = nullptr;
+                if(hr3 == S_OK) {
+                    hr2 = CreateVertexShader2((DWORD*) bf1->GetBufferPointer(), &SMAA_NeighborhoodBlendingVS, SC_NEW);
+                    if(hr2 != S_OK || !SMAA_NeighborhoodBlendingVS) {
+                        Log::Error("Failed to create pixel shader hlsl: ");
+                        SAFE_RELEASE(SMAA_NeighborhoodBlendingVS);
+                    }
+                    m_IDirect3DVertexShader9* shader2 = static_cast<m_IDirect3DVertexShader9*> (SMAA_NeighborhoodBlendingVS);
+                    if(SMAA_NeighborhoodBlendingVS && shader2) {
+                        shader2->oName = "SMAANeighborhoodBlendingVS";
+                        shader2->loadedFx = buff;
+                        vs_2.push_back(shader2);
+                    }
+                    SAFE_RELEASE(bf1);
+                    SAFE_RELEASE(bf2);
+                    SAFE_RELEASE(ppConstantTable);
+                }
+                else {
+                    Log::Error("Failed to compile pixel shader hlsl: ");
+                    Log::Error((char*) bf2->GetBufferPointer());
+                    SAFE_RELEASE(bf1);
+                    SAFE_RELEASE(bf2);
+                    SAFE_RELEASE(ppConstantTable);
+                }
+            }
+        }
+    }
+
     return hr;
 }
 
@@ -802,7 +995,7 @@ HRESULT m_IDirect3DDevice9Ex::SetRenderState(D3DRENDERSTATETYPE State, DWORD Val
     m_IDirect3DPixelShader9* pShader2 = 0;
     GetPixelShader(&pShader);
     pShader2 = static_cast<m_IDirect3DPixelShader9*>(pShader);
-
+    
     if(State == D3DRS_ZWRITEENABLE) {
         last = Value;
     }
@@ -829,41 +1022,222 @@ HRESULT m_IDirect3DDevice9Ex::DrawIndexedPrimitiveUP(D3DPRIMITIVETYPE PrimitiveT
     return ProxyInterface->DrawIndexedPrimitiveUP(PrimitiveType, MinIndex, NumVertices, PrimitiveCount, pIndexData, IndexDataFormat, pVertexStreamZeroData, VertexStreamZeroStride);
 }
 
-void dopostfx(m_IDirect3D9Ex* pDevice, m_IDirect3DPixelShader9* pixelShader, UINT32 shaderCounter,
-              IDirect3DSurface9* renderTarget, m_IDirect3DTexture9* temptex, m_IDirect3DTexture9* screentex) {
+struct VERTEX {
+    D3DXVECTOR3 pos;
+    D3DXVECTOR2 tex1;
+};
+DWORD CoronaDepth = 0;
+const DWORD VertexFVF = D3DFVF_XYZ | D3DFVF_TEX1;
+DWORD OldFVF = D3DFVF_XYZ | D3DFVF_TEX1;
+extern VERTEX SmaaVertexArray[4];
 
-}
 
 HRESULT m_IDirect3DDevice9Ex::DrawPrimitive(D3DPRIMITIVETYPE PrimitiveType, UINT StartVertex, UINT PrimitiveCount) {
-    IDirect3DPixelShader9* pShader = 0;
-    m_IDirect3DPixelShader9* pShader2 = 0;
-    if(doPostFx) {
+    m_IDirect3DPixelShader9* pShader2 = nullptr;
+    IDirect3DPixelShader9* pShader = nullptr;
+    static float vec4[4] = { 0.f };
+    HRESULT hr = S_FALSE;
+    IDirect3DSurface9* pHDRSurface = nullptr;
+    IDirect3DSurface9* pHDRSurface2 = nullptr;
+    IDirect3DSurface9* backBuffer = nullptr;
+    IDirect3DSurface9* edgesSurf = nullptr;
+    IDirect3DSurface9* blendSurf = nullptr;
+    DWORD OldSRGB = 0;
+    DWORD OldSampler = 0;
+    DWORD Samplers[5] = { D3DTEXF_LINEAR };
+
+    if(UseSSAA && doPostFx) {
+        GetSamplerState(0, D3DSAMP_MAGFILTER, &OldSampler);
+        SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+    }
+
+    if(UsePostFx[0] > 0) {
         GetPixelShader(&pShader);
         if(pShader) {
             pShader2 = static_cast<m_IDirect3DPixelShader9*>(pShader);
             if(pShader2) {
                 if(isShaderPostFx(pShader2)) {
-                    doPostFx = false;
-                    IDirect3DSurface9* backBuffer = 0;
-                    if(PostFxPS && pHDRTex2) {
-                        ProxyInterface->GetRenderTarget(0, &backBuffer);
-                        if(backBuffer) {
-                            ProxyInterface->SetPixelShader(pShader2->GetProxyInterface());
-                            pHDRTex2->GetSurfaceLevel(0, &pHDRSurface2);
-                            ProxyInterface->SetRenderTarget(0, static_cast<m_IDirect3DSurface9*>(pHDRSurface2)->GetProxyInterface());
-                            ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+                    if(UseSSAA) {
+                        SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+                    }
+                    doPostFx = false; // useless?
+                    ProxyInterface->GetRenderTarget(0, &backBuffer);
+                    if(backBuffer && pHDRTex && pHDRTex2) {
+                        pHDRTex2->GetSurfaceLevel(0, &pHDRSurface2);
+
+                        // FXAA
+                        if((UsePostFx[0] == 1 || UsePostFx[0] == 2) && PostFxPS) {
+                            // game postfx or fxaa
+                            if(UsePostFx[0] == 2)
+                                SetPixelShader(pShader2);
+                            else
+                                SetPixelShader(PostFxPS);
+
+                            SetRenderTarget(0, pHDRSurface2);
+                            Clear(0, 0, D3DCLEAR_TARGET, 0, 0, 0);
+                            hr = ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+
+                            if(UsePostFx[0] == 2)
+                                SetPixelShader(PostFxPS);
+                            else
+                                SetPixelShader(pShader2);
+
                             ProxyInterface->SetRenderTarget(0, backBuffer);
-                            ProxyInterface->SetTexture(2, static_cast<m_IDirect3DTexture9*>(pHDRTex2)->GetProxyInterface());
-                            SetPixelShader(PostFxPS);
-                            SAFE_RELEASE(backBuffer);
-                            SAFE_RELEASE(pHDRSurface2);
+                            SetTexture(2, pHDRTex2);
+
+                            hr = ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+
+                            ProxyInterface->SetTexture(2, 0);
+                            SetPixelShader(pShader);
                         }
+
+                        // SMAA
+                        if(UsePostFx[0] > 2 &&
+                           SMAA_EdgeDetection && SMAA_BlendingWeightsCalculation && SMAA_NeighborhoodBlending &&
+                           SMAA_EdgeDetectionVS && SMAA_BlendingWeightsCalculationVS && SMAA_NeighborhoodBlendingVS &&
+                           areaTex && searchTex && edgesTex && blendTex && pHDRSurface2
+                           ) {
+                            vec4[0] = 1.f / (gWindowWidth * (UseSSAA ? 2 : 1));
+                            vec4[1] = 1.f / (gWindowHeight * (UseSSAA ? 2 : 1));
+                            vec4[2] = (gWindowWidth * (UseSSAA ? 2 : 1));
+                            vec4[3] = (gWindowHeight * (UseSSAA ? 2 : 1));
+                            ProxyInterface->SetPixelShaderConstantF(24, vec4, 1);
+                            ProxyInterface->SetVertexShaderConstantF(24, vec4, 1);
+                            {
+                                edgesTex->GetSurfaceLevel(0, &edgesSurf);
+                                blendTex->GetSurfaceLevel(0, &blendSurf);
+
+                                // save sampler state
+                                for(int i = 0; i < 5; i++)
+                                    GetSamplerState(i, D3DSAMP_MAGFILTER, &Samplers[i]);
+
+                                // game postfx
+                                //SetPixelShader(pShader2);
+                                SetRenderTarget(0, pHDRSurface2);
+                                Clear(0, 0, D3DCLEAR_TARGET, 0, 0, 0);
+                                hr = ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+
+
+                                // SMAA_EdgeDetection
+                                GetRenderState(D3DRS_SRGBWRITEENABLE, &OldSRGB); // save srgb state
+                                SetRenderState(D3DRS_SRGBWRITEENABLE, 0);
+                                ProxyInterface->GetFVF(&OldFVF);
+                                ProxyInterface->SetFVF(VertexFVF);
+                                SetPixelShader(SMAA_EdgeDetection);
+                                SetVertexShader(SMAA_EdgeDetectionVS);
+                                ProxyInterface->SetPixelShaderConstantF(24, vec4, 1);
+                                ProxyInterface->SetVertexShaderConstantF(24, vec4, 1);
+                                SetRenderTarget(0, edgesSurf);
+                                SetTexture(0, pHDRTex2);
+                                SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+                                SetSamplerState(1, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+                                SetSamplerState(2, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+                                SetSamplerState(3, D3DSAMP_MAGFILTER, D3DTEXF_POINT);
+                                SetSamplerState(4, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+
+                                Clear(0, 0, D3DCLEAR_TARGET, 0, 0, 0);
+                                SetSamplerState(0, D3DSAMP_SRGBTEXTURE, 1);
+                                //ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+                                ProxyInterface->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, SmaaVertexArray, sizeof(VERTEX));
+                                SetSamplerState(0, D3DSAMP_SRGBTEXTURE, 0);
+
+                                ProxyInterface->SetTexture(0, 0);
+                                //SetSamplerState(0, D3DSAMP_SRGBTEXTURE, 1);
+
+
+                                // SMAA_BlendingWeightsCalculation
+                                SetPixelShader(SMAA_BlendingWeightsCalculation);
+                                SetVertexShader(SMAA_BlendingWeightsCalculationVS);
+                                ProxyInterface->SetPixelShaderConstantF(24, vec4, 1);
+                                ProxyInterface->SetVertexShaderConstantF(24, vec4, 1);
+                                SetRenderTarget(0, blendSurf);
+                                SetTexture(1, edgesTex);
+                                SetTexture(2, areaTex);
+                                SetTexture(3, searchTex);
+                                Clear(0, 0, D3DCLEAR_TARGET, 0, 0, 0);
+                                //ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+                                ProxyInterface->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, SmaaVertexArray, sizeof(VERTEX));
+
+                                ProxyInterface->SetTexture(1, 0);
+                                ProxyInterface->SetTexture(2, 0);
+                                ProxyInterface->SetTexture(3, 0);
+
+                                //SetSamplerState(0, D3DSAMP_SRGBTEXTURE, 0);                                
+                                SetRenderState(D3DRS_SRGBWRITEENABLE, OldSRGB);// restore srgb state
+
+                                // SMAA_NeighborhoodBlending
+                                SetPixelShader(SMAA_NeighborhoodBlending);
+                                SetVertexShader(SMAA_NeighborhoodBlendingVS);
+                                ProxyInterface->SetPixelShaderConstantF(24, vec4, 1);
+                                ProxyInterface->SetVertexShaderConstantF(24, vec4, 1);
+                                vec4[0] = UsePostFx[0];
+                                vec4[1] = 2;
+                                vec4[2] = 4;
+                                vec4[3] = 5;
+                                ProxyInterface->SetPixelShaderConstantF(5, vec4, 1);
+                                ProxyInterface->SetRenderTarget(0, backBuffer);
+                                //Clear(0, 0, D3DCLEAR_TARGET, 0, 0, 0);
+
+                                SetTexture(0, pHDRTex2);
+                                SetTexture(1, edgesTex);
+                                SetTexture(4, blendTex);
+
+                                //ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+                                SetRenderState(D3DRS_SRGBWRITEENABLE, 0);
+
+                                ProxyInterface->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, SmaaVertexArray, sizeof(VERTEX));
+
+                                ProxyInterface->SetTexture(1, 0);
+                                ProxyInterface->SetTexture(4, 0);
+
+                                SetPixelShader(pShader);
+                                ProxyInterface->SetFVF(OldFVF);
+
+                                // restore sampler state
+                                for(int i = 0; i < 5; i++)
+                                    SetSamplerState(i, D3DSAMP_MAGFILTER, Samplers[i]);
+
+                                SAFE_RELEASE(edgesSurf);
+                                SAFE_RELEASE(blendSurf);
+                            }
+                        }
+
+                        SAFE_RELEASE(backBuffer);
+                        SAFE_RELEASE(pHDRSurface2);
+                        if(UseSSAA && doPostFx) {
+                            SetSamplerState(0, D3DSAMP_MAGFILTER, OldSampler);
+                        }
+
+                        return hr;
                     }
                 }
             }
         }
     }
-    return ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+    if(UseSSAA && doPostFx) {
+        SetSamplerState(0, D3DSAMP_MAGFILTER, OldSampler);
+    }
+
+    // Fixes coronas being rendered through objects in water reflections.
+    if(fixCoronaDepth) {
+        GetRenderState(D3DRS_ZENABLE, &CoronaDepth);
+        IDirect3DVertexShader9* vShader = 0;
+        GetVertexShader(&vShader);
+        if(vShader) {
+            m_IDirect3DVertexShader9* vshader2 = static_cast<m_IDirect3DVertexShader9*>(vShader);
+            if(vshader2) {
+                if(vshader2->id == 15) {
+                    SetRenderState(D3DRS_ZENABLE, 1);
+                    hr = ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+                    SetRenderState(D3DRS_ZENABLE, CoronaDepth);
+                    return hr;
+                }
+            }
+        }
+    }
+
+    hr = ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+    return hr;
 }
 
 HRESULT m_IDirect3DDevice9Ex::DrawPrimitiveUP(D3DPRIMITIVETYPE PrimitiveType, UINT PrimitiveCount, CONST void* pVertexStreamZeroData, UINT VertexStreamZeroStride) {

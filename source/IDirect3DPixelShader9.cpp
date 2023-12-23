@@ -183,7 +183,16 @@ HRESULT SaveASM(std::string fxname, std::string shadername, std::string source, 
 }
 
 IDirect3DPixelShader9* m_IDirect3DPixelShader9::dummyShader = nullptr;
+
 extern IDirect3DPixelShader9* PostFxPS;
+
+extern IDirect3DPixelShader9* SMAA_EdgeDetection;
+extern IDirect3DPixelShader9* SMAA_BlendingWeightsCalculation;
+extern IDirect3DPixelShader9* SMAA_NeighborhoodBlending;
+
+extern IDirect3DVertexShader9* SMAA_EdgeDetectionVS;
+extern IDirect3DVertexShader9* SMAA_BlendingWeightsCalculationVS;
+extern IDirect3DVertexShader9* SMAA_NeighborhoodBlendingVS;
 
 m_IDirect3DPixelShader9::m_IDirect3DPixelShader9(LPDIRECT3DPIXELSHADER9 pShader9, m_IDirect3DDevice9Ex* pDevice, ShaderCreationMode extra) :
     ProxyInterface(pShader9), m_pDeviceEx(pDevice) {
@@ -275,7 +284,7 @@ m_IDirect3DPixelShader9::m_IDirect3DPixelShader9(LPDIRECT3DPIXELSHADER9 pShader9
             }
         }
     }
-    if(!dummyShader) {
+    if(!dummyShader ) {
         HRESULT hr2 = S_FALSE;
         ID3DXBuffer* bf1 = nullptr;
         ID3DXBuffer* bf2 = nullptr;
@@ -295,12 +304,12 @@ m_IDirect3DPixelShader9::m_IDirect3DPixelShader9(LPDIRECT3DPIXELSHADER9 pShader9
         SAFE_RELEASE(bf1);
         SAFE_RELEASE(bf2);
     }
-    if(!PostFxPS) {
+    if(!PostFxPS ) {
         FILE* f = nullptr;
         UINT size = 0;
-        f = fopen("shaders/PostFx.asm", "r");
+        f = fopen("shaders/FXAA.asm", "r");
         if(!f) {
-            f = fopen("PostFx.asm", "r");
+            f = fopen("FXAA.asm", "r");
         }
         if(!f) {
             return;
@@ -331,7 +340,7 @@ m_IDirect3DPixelShader9::m_IDirect3DPixelShader9(LPDIRECT3DPIXELSHADER9 pShader9
             hr2 = m_pDeviceEx->CreatePixelShader2((DWORD*) p, &PostFxPS, SC_NEW);
             if(PostFxPS) {
                 ((m_IDirect3DPixelShader9*) PostFxPS)->disable = false;
-                ((m_IDirect3DPixelShader9*) PostFxPS)->oName = "PostFxPS";
+                ((m_IDirect3DPixelShader9*) PostFxPS)->oName = "FXAA";
                 ps_2.push_back((m_IDirect3DPixelShader9*) PostFxPS);
             }
         }
@@ -406,7 +415,7 @@ m_IDirect3DPixelShader9::m_IDirect3DPixelShader9(LPDIRECT3DPIXELSHADER9 pShader9
             }
         }
     }
-    if(!dummyShader) {
+    if(!dummyShader ) {
         HRESULT hr2 = S_FALSE;
         ID3DXBuffer* bf1 = nullptr;
         ID3DXBuffer* bf2 = nullptr;
@@ -619,13 +628,13 @@ ULONG m_IDirect3DPixelShader9::AddRef(THIS) {
 ULONG m_IDirect3DPixelShader9::Release(THIS) {
     for(int i = 0; i < (int) ps_2.size(); i++) {
         if(ps_2[i] == this) {
-            ps_2[i] = 0;
+            //ps_2[i] = 0;
         }
     }
     for(auto& f : fx_ps) {
         for(int i = 0; i < f.size(); i++) {
             if(f[i] == this) {
-                f[i] = 0;
+                //f[i] = 0;
             }
         }
     }

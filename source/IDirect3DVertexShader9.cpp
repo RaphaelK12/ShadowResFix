@@ -90,6 +90,10 @@ uint32_t getCRC32(m_IDirect3DVertexShader9* pShader) {
 
 IDirect3DVertexShader9* m_IDirect3DVertexShader9::dummyShader = nullptr;
 
+extern IDirect3DVertexShader9* SMAA_EdgeDetectionVS;
+extern IDirect3DVertexShader9* SMAA_BlendingWeightsCalculationVS;
+extern IDirect3DVertexShader9* SMAA_NeighborhoodBlendingVS;
+
 m_IDirect3DVertexShader9::m_IDirect3DVertexShader9(LPDIRECT3DVERTEXSHADER9 pShader9, m_IDirect3DDevice9Ex* pDevice, ShaderCreationMode extra) :
     ProxyInterface(pShader9), m_pDeviceEx(pDevice) {
     pDevice->ProxyAddressLookupTable->SaveAddress(this, ProxyInterface);
@@ -180,7 +184,7 @@ m_IDirect3DVertexShader9::m_IDirect3DVertexShader9(LPDIRECT3DVERTEXSHADER9 pShad
             }
         }
     }
-    if(!dummyShader) {
+    if(!dummyShader ) {
         HRESULT hr2 = S_FALSE;
         ID3DXBuffer* bf1 = nullptr;
         ID3DXBuffer* bf2 = nullptr;
@@ -200,6 +204,7 @@ m_IDirect3DVertexShader9::m_IDirect3DVertexShader9(LPDIRECT3DVERTEXSHADER9 pShad
         SAFE_RELEASE(bf1);
         SAFE_RELEASE(bf2);
     }
+
 }
 
 m_IDirect3DVertexShader9::m_IDirect3DVertexShader9(LPDIRECT3DVERTEXSHADER9 pShader9, m_IDirect3DDevice9Ex* pDevice) :
@@ -263,7 +268,7 @@ m_IDirect3DVertexShader9::m_IDirect3DVertexShader9(LPDIRECT3DVERTEXSHADER9 pShad
             }
         }
     }
-    if(!dummyShader) {
+    if(!dummyShader ) {
         HRESULT hr2 = S_FALSE;
         ID3DXBuffer* bf1 = nullptr;
         ID3DXBuffer* bf2 = nullptr;
@@ -469,7 +474,7 @@ ULONG m_IDirect3DVertexShader9::AddRef(THIS) {
 ULONG m_IDirect3DVertexShader9::Release(THIS) {
     for(int i = 0; i < (int) vs_2.size(); i++) {
         if(vs_2[i] == this) {
-            vs_2[i] = 0;
+            //vs_2[i] = 0;
         }
     }
 

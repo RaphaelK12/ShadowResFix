@@ -3,6 +3,16 @@
 extern IDirect3DTexture9* pRainDropsRefractionHDRTex;
 extern std::list<m_IDirect3DTexture9*> textureList;
 
+
+extern IDirect3DPixelShader9* SMAA_EdgeDetection ;
+extern IDirect3DPixelShader9* SMAA_BlendingWeightsCalculation ;
+extern IDirect3DPixelShader9* SMAA_NeighborhoodBlending ;
+
+extern IDirect3DVertexShader9* SMAA_EdgeDetectionVS ;
+extern IDirect3DVertexShader9* SMAA_BlendingWeightsCalculationVS ;
+extern IDirect3DVertexShader9* SMAA_NeighborhoodBlendingVS ;
+
+
 extern bool bDisplayFPSCounter;
 extern bool gFixRainDrops;
 extern bool gTreeLeavesSwayInTheWind;
@@ -11,7 +21,8 @@ extern bool gNearFarPlane;
 extern UINT gWindowWidth;
 extern UINT gWindowHeight;
 
-//bool bShowLogWindow = 1;
+bool fixCoronaDepth = 1;
+int UsePostFx[4] = { 0 }; // none, fxaa pre, fxaa pos, smaa, blend, edge
 
 long long g_id = 0;
 
@@ -19,6 +30,15 @@ extern float shaderReturnColor[4] = { 0.f };
 
 extern float DEPTHBIAS;
 extern float SLOPESCALEDEPTHBIAS;
+
+const char* TexNames[] = {
+    "hdr",
+    "edgesTex",
+    "areaTex",
+    "searchTex",
+    "blendTex",
+    ""
+};
 
 // name, src, editor
 
@@ -523,8 +543,6 @@ void HelpMarker(const char* desc) {
 void ShadowResFix::DrawMainWindow() {
     static float shaderColor[4] = { 0 };
     static ImVec4 textureColor(0.5f, 0.5f, 0.5f, 1.0f);
-    //static bool checkBox = false;
-    //static int int4[4] = { 0 };
     ImGuiIO& io = ImGui::GetIO();
 
     static char buf100[100] = { 0 };
@@ -566,6 +584,23 @@ void ShadowResFix::DrawMainWindow() {
     ImGui::Checkbox("Show Log Window", &mShowLogWindow);
     ImGui::Checkbox("Show Editor Window", &showEditorWindow);
     ImGui::Checkbox("FixAdaptiveTess", &DisableADAPTIVETESS_X);
+    ImGui::Checkbox("FixCoronaDepth", &fixCoronaDepth);
+
+    static const char* PostFx[] = {
+        "None", "FXAA Before PostFx", "FXAA After PostFx",
+        "SMAA After PostFx", "SMAA blend", "SMAA edges"
+    };
+    ImGui::SliderInt("PostFx AA", UsePostFx, 0, 5, PostFx[UsePostFx[0]]);
+
+    if(ImGui::Button("Reload SMAA##1")) {
+        SAFE_RELEASE( SMAA_EdgeDetection                );
+        SAFE_RELEASE( SMAA_BlendingWeightsCalculation   );
+        SAFE_RELEASE( SMAA_NeighborhoodBlending         );
+        SAFE_RELEASE( SMAA_EdgeDetectionVS              );
+        SAFE_RELEASE( SMAA_BlendingWeightsCalculationVS );
+        SAFE_RELEASE( SMAA_NeighborhoodBlendingVS       );
+    }
+
     ImGui::Checkbox("EnableDepthOverwrite", &EnableDepthOverwrite);
     ImGui::SameLine();
     HelpMarker("Activating the depth override causes the rain bug\nwhere the rain on the floor does not appear and the rain passes through the ceilings.");
@@ -678,7 +713,7 @@ void ShadowResFix::DrawMainWindow() {
         "shadow atlas",
         "shadow cascade"
     };
-
+    
     if(ImGui::CollapsingHeader("Textures")) {
         ImGui::Checkbox("Show Unused tex", &showUnusedTex);
         if(ImGui::Button("Reset Use##tex")) {
@@ -694,6 +729,9 @@ void ShadowResFix::DrawMainWindow() {
             if(ImGui::TreeNode(tname.c_str())) {
                 for(auto tex : textureList) {
                     if(tex && tex->name == tname && ((showUnusedTex == false && tex->useCounter > 0) || showUnusedTex == true)) {
+                        if(tname == "Screen") {
+                            printf("");
+                        }
                         ImVec2 uv_min = ImVec2(0.0f, 0.0f);                 // Top-left
                         ImVec2 uv_max = ImVec2(1.0f, 1.0f);                 // Lower-right
                         ImVec4 tint_col = ImVec4(0.5f, 0.5f, 0.5f, 1.0f);   // No tint
@@ -743,7 +781,6 @@ void ShadowResFix::DrawMainWindow() {
             }
         }
         ImGui::EndChild();
-        //}
     }
 
     if(ImGui::CollapsingHeader("Pixel shaders")) {

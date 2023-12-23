@@ -150,7 +150,6 @@ ULONG m_IDirect3DTexture9::AddRef(THIS) {
 }
 
 ULONG m_IDirect3DTexture9::Release(THIS) {
-    textureList.remove(this);
     return ProxyInterface->Release();
 }
 

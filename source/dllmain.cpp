@@ -63,6 +63,8 @@ extern bool DisableADAPTIVETESS_X;
 extern bool EnableDepthOverwrite;
 extern bool AlowPauseGame;
 
+extern bool UseSSAA;
+
 bool gTreeLeavesSwayInTheWind = 0;
 BOOL gFixCascadedShadowMapResolution = 0;
 BOOL gFixWashedMirror = 0;
@@ -79,6 +81,15 @@ extern std::vector<std::vector<m_IDirect3DPixelShader9*>> fx_ps;
 extern std::vector<std::vector<m_IDirect3DVertexShader9*>> fx_vs;
 
 void* gDinpu8Device_vtbl[32] = {};
+
+// smaa postfx vertex array
+struct VERTEX {
+    D3DXVECTOR3 pos;
+    D3DXVECTOR2 tex1;
+};
+VERTEX SmaaVertexArray[4] = { D3DXVECTOR3(0,0,0),  D3DXVECTOR2(0,0)};
+
+
 
 struct stModule {
     std::string name;
@@ -299,9 +310,17 @@ uint8_t* baseAddress = nullptr;
 FrameLimiter::FPSLimitMode mFPSLimitMode = FrameLimiter::FPSLimitMode::FPS_NONE;
 
 extern IDirect3DTexture9* pHDRTex ;
-extern IDirect3DSurface9* pHDRSurface ;
 extern IDirect3DTexture9* pHDRTex2;
-extern IDirect3DSurface9* pHDRSurface2 ;
+
+extern std::list<m_IDirect3DTexture9*> textureList;
+extern m_IDirect3DTexture9* rainDepth  ;
+extern IDirect3DTexture9* pHDRTex      ;
+extern IDirect3DTexture9* pHDRTex2     ;
+extern IDirect3DTexture9* areaTex      ;
+extern IDirect3DTexture9* searchTex    ;
+extern IDirect3DTexture9* edgesTex     ;
+extern IDirect3DTexture9* blendTex     ;
+
 
 
 typedef BOOL(WINAPI* ClipCursor_Ptr)(const RECT* lpRect);
@@ -367,6 +386,39 @@ DInput8DeviceAcquireT* o_DInput8DeviceAcquire = nullptr;
 ClipCursor_Ptr    o_ClipCursor = nullptr;
 
 bool UsePresentToRenderUI = false;
+
+// SMAA vertex array
+void CreateSmaaVertexArray() {
+    //FLOAT Half = 1.0f;
+    //FLOAT fWidth5 = (FLOAT) Half;
+    //FLOAT fHeight5 = (FLOAT) Half;
+
+    //FLOAT fTexWidth1 = (FLOAT) 1;
+    //FLOAT fTexHeight1 = (FLOAT) 1;
+
+    //FLOAT fWidthMod = 1.0f / (FLOAT) 10;
+    //FLOAT fHeightMod = 1.0f / (FLOAT) 10;
+
+    //SmaaVertexArray[0].pos =  D3DXVECTOR3(fWidth5, -Half, 0.0f);
+    //SmaaVertexArray[0].tex1 = D3DXVECTOR2(fTexWidth1, fTexHeight1);
+    //SmaaVertexArray[1].pos =  D3DXVECTOR3(fWidth5, fHeight5, 0.0f);
+    //SmaaVertexArray[1].tex1 = D3DXVECTOR2(fTexWidth1, 0);
+    //SmaaVertexArray[2].pos =  D3DXVECTOR3(-Half, -Half, 0.0f);
+    //SmaaVertexArray[2].tex1 = D3DXVECTOR2(0, fTexHeight1);
+    //SmaaVertexArray[3].pos =  D3DXVECTOR3(-Half, fHeight5, 0.0f);
+    //SmaaVertexArray[3].tex1 = D3DXVECTOR2(0, 0);
+
+    // corrected texcoord
+    D3DXVECTOR2 pixelSize = D3DXVECTOR2(1.0f / float(gWindowWidth), 1.0f / float(gWindowHeight));
+    SmaaVertexArray[0].pos = D3DXVECTOR3(-1.0f - pixelSize.x, 1.0f + pixelSize.y, 0.5f);
+    SmaaVertexArray[0].tex1 = D3DXVECTOR2(0.0f, 0.0f);
+    SmaaVertexArray[1].pos = D3DXVECTOR3(1.0f - pixelSize.x, 1.0f + pixelSize.y, 0.5f);
+    SmaaVertexArray[1].tex1 = D3DXVECTOR2(1.0f, 0.0f);
+    SmaaVertexArray[2].pos = D3DXVECTOR3(-1.0f - pixelSize.x, -1.0f + pixelSize.y, 0.5f);
+    SmaaVertexArray[2].tex1 = D3DXVECTOR2(0.0f, 1.0f);
+    SmaaVertexArray[3].pos = D3DXVECTOR3(1.0f - pixelSize.x, -1.0f + pixelSize.y, 0.5f);
+    SmaaVertexArray[3].tex1 = D3DXVECTOR2(1.0f, 1.0f);
+}
 
 HRESULT m_IDirect3DDevice9Ex::Present(CONST RECT* pSourceRect, CONST RECT* pDestRect, HWND hDestWindowOverride, CONST RGNDATA* pDirtyRegion) {
     if(mFPSLimitMode == FrameLimiter::FPSLimitMode::FPS_REALTIME)
@@ -642,6 +694,7 @@ void ForceFullScreenRefreshRateInHz(D3DPRESENT_PARAMETERS* pPresentationParamete
     }
 }
 
+
 HRESULT m_IDirect3D9Ex::CreateDevice(UINT Adapter, D3DDEVTYPE DeviceType, HWND hFocusWindow, DWORD BehaviorFlags, D3DPRESENT_PARAMETERS* pPresentationParameters, IDirect3DDevice9** ppReturnedDeviceInterface) {
     pRainDropsRefractionHDRTex = 0;
     pRainDropsRefractionHDRTex = 0;
@@ -667,6 +720,10 @@ HRESULT m_IDirect3D9Ex::CreateDevice(UINT Adapter, D3DDEVTYPE DeviceType, HWND h
     if(SUCCEEDED(hr) && ppReturnedDeviceInterface) {
         *ppReturnedDeviceInterface = new m_IDirect3DDevice9Ex((IDirect3DDevice9Ex*) *ppReturnedDeviceInterface, this, IID_IDirect3DDevice9);
     }
+
+
+    CreateSmaaVertexArray();
+
 
     return hr;
 }
@@ -694,15 +751,28 @@ HRESULT m_IDirect3D9Ex::CreateDeviceEx(THIS_ UINT Adapter, D3DDEVTYPE DeviceType
         *ppReturnedDeviceInterface = new m_IDirect3DDevice9Ex(*ppReturnedDeviceInterface, this, IID_IDirect3DDevice9Ex);
     }
 
+    CreateSmaaVertexArray();
+
     return hr;
 }
 
 HRESULT m_IDirect3DDevice9Ex::Reset(D3DPRESENT_PARAMETERS* pPresentationParameters) {
     pRainDropsRefractionHDRTex = 0;
+    textureList.remove(rainDepth);
+    textureList.remove((m_IDirect3DTexture9*) pHDRTex);
+    textureList.remove((m_IDirect3DTexture9*) pHDRTex2);
+    textureList.remove((m_IDirect3DTexture9*) areaTex);
+    textureList.remove((m_IDirect3DTexture9*) searchTex);
+    textureList.remove((m_IDirect3DTexture9*) edgesTex);
+    textureList.remove((m_IDirect3DTexture9*) blendTex);
+
+    SAFE_RELEASE(rainDepth);
     SAFE_RELEASE(pHDRTex);
-    SAFE_RELEASE(pHDRSurface);
     SAFE_RELEASE(pHDRTex2);
-    SAFE_RELEASE(pHDRSurface2);
+    SAFE_RELEASE(areaTex);
+    SAFE_RELEASE(searchTex);
+    SAFE_RELEASE(edgesTex);
+    SAFE_RELEASE(blendTex);
 
     if(bForceWindowedMode)
         ForceWindowed(pPresentationParameters);
@@ -731,15 +801,31 @@ HRESULT m_IDirect3DDevice9Ex::Reset(D3DPRESENT_PARAMETERS* pPresentationParamete
             FrameLimiter::pTimeFont->OnResetDevice();
     }
     Log::Info("Device9Ex->Reset();");
+
+    CreateSmaaVertexArray();
+
     return hRet;
 }
 
 HRESULT m_IDirect3DDevice9Ex::ResetEx(THIS_ D3DPRESENT_PARAMETERS* pPresentationParameters, D3DDISPLAYMODEEX* pFullscreenDisplayMode) {
     pRainDropsRefractionHDRTex = 0;
+
+    textureList.remove(rainDepth);
+    textureList.remove((m_IDirect3DTexture9*)pHDRTex);
+    textureList.remove((m_IDirect3DTexture9*)pHDRTex2);
+    textureList.remove((m_IDirect3DTexture9*)areaTex);
+    textureList.remove((m_IDirect3DTexture9*)searchTex);
+    textureList.remove((m_IDirect3DTexture9*)edgesTex);
+    textureList.remove((m_IDirect3DTexture9*)blendTex);
+
+    SAFE_RELEASE(rainDepth);
     SAFE_RELEASE(pHDRTex);
-    SAFE_RELEASE(pHDRSurface);
     SAFE_RELEASE(pHDRTex2);
-    SAFE_RELEASE(pHDRSurface2);
+
+    SAFE_RELEASE(areaTex);
+    SAFE_RELEASE(searchTex);
+    SAFE_RELEASE(edgesTex);
+    SAFE_RELEASE(blendTex);
 
     if(bForceWindowedMode)
         ForceWindowed(pPresentationParameters, pFullscreenDisplayMode);
@@ -761,6 +847,9 @@ HRESULT m_IDirect3DDevice9Ex::ResetEx(THIS_ D3DPRESENT_PARAMETERS* pPresentation
             FrameLimiter::pTimeFont->OnResetDevice();
     }
     Log::Info("Device9Ex->ResetEx();");
+
+    CreateSmaaVertexArray();
+
     return hRet;
 }
 
@@ -1224,6 +1313,7 @@ bool WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved) {
                 EnableDepthOverwrite = GetPrivateProfileInt("SHADOWRESFIX", "EnableDepthOverwrite", 0, path) != 0;
                 UsePresentToRenderUI = GetPrivateProfileInt("SHADOWRESFIX", "UsePresentToRenderUI", 0, path) != 0;
                 AlowPauseGame = GetPrivateProfileInt("SHADOWRESFIX", "AlowPauseGame", 0, path) != 0;
+                UseSSAA = GetPrivateProfileInt("SHADOWRESFIX", "UseSSAA", 0, path) != 0;
 
                 hookWait = GetPrivateProfileInt("SHADOWRESFIX", "hookDelayMS", 0, path);
 
@@ -1368,11 +1458,11 @@ bool WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved) {
             }
             
             {
-                user32_dll = GetModuleHandleA("user32.dll");
-                if(user32_dll) {
-                    o_ClipCursor = (ClipCursor_Ptr) GetProcAddress(user32_dll, "ClipCursor" );
-                    Iat_hook::detour_iat_ptr("ClipCursor" ,  (void*) hk_ClipCursor);
-                }
+                //user32_dll = GetModuleHandleA("user32.dll");
+                //if(user32_dll) {
+                //    o_ClipCursor = (ClipCursor_Ptr) GetProcAddress(user32_dll, "ClipCursor" );
+                //    Iat_hook::detour_iat_ptr("ClipCursor" ,  (void*) hk_ClipCursor);
+                //}
             }
 
             // hook d3d9
