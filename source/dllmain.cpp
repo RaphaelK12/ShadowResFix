@@ -29,6 +29,8 @@ bool Log::isDirt = true;
 #pragma comment(lib, "d3dx9.lib")
 #pragma comment(lib, "winmm.lib") // needed for timeBeginPeriod()/timeEndPeriod()
 
+extern float ResSSAA;
+
 
 HWND g_hFocusWindow = NULL;
 
@@ -409,7 +411,7 @@ void CreateSmaaVertexArray() {
     //SmaaVertexArray[3].tex1 = D3DXVECTOR2(0, 0);
 
     // corrected texcoord
-    D3DXVECTOR2 pixelSize = D3DXVECTOR2(1.0f / float(gWindowWidth), 1.0f / float(gWindowHeight));
+    D3DXVECTOR2 pixelSize = D3DXVECTOR2(1.0f / float(gWindowWidth * (UseSSAA? ResSSAA:1)), 1.0f / float(gWindowHeight * (UseSSAA ? ResSSAA : 1)));
     SmaaVertexArray[0].pos = D3DXVECTOR3(-1.0f - pixelSize.x, 1.0f + pixelSize.y, 0.5f);
     SmaaVertexArray[0].tex1 = D3DXVECTOR2(0.0f, 0.0f);
     SmaaVertexArray[1].pos = D3DXVECTOR3(1.0f - pixelSize.x, 1.0f + pixelSize.y, 0.5f);
@@ -1280,7 +1282,7 @@ bool WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved) {
 
             *strrchr(path, '\\') = '\0';
             strcat_s(path, "\\shadowresfix.ini");
-
+            int rescale = 1;
             // read ini
             {
                 bForceWindowedMode = GetPrivateProfileInt("MAIN", "ForceWindowedMode", 0, path) != 0;
@@ -1315,6 +1317,8 @@ bool WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved) {
                 AlowPauseGame = GetPrivateProfileInt("SHADOWRESFIX", "AlowPauseGame", 0, path) != 0;
                 UseSSAA = GetPrivateProfileInt("SHADOWRESFIX", "UseSSAA", 0, path) != 0;
 
+                rescale = GetPrivateProfileInt("SHADOWRESFIX", "ResolutionScale", 1, path) ;
+
                 hookWait = GetPrivateProfileInt("SHADOWRESFIX", "hookDelayMS", 0, path);
 
                 if(fFPSLimit > 0.0f) {
@@ -1329,6 +1333,12 @@ bool WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved) {
                     mFPSLimitMode = FrameLimiter::FPSLimitMode::FPS_NONE;
                 }
             }
+
+            ResSSAA = rescale;
+            if(rescale == 0)
+                ResSSAA = 1;
+            if(rescale < 0)
+                ResSSAA = 1.f/ abs(rescale);
 
             // validate values
             switch(gReflectionResMult) {

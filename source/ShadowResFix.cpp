@@ -59,6 +59,8 @@ bool UseSSAO = 1;
 bool UseBokeh = 0;
 bool UseMBlur = 0;
 
+float ResSSAA = 1;
+
 extern uint8_t* baseAddress;
 
 float DEPTHBIAS = 0.f;
@@ -448,8 +450,8 @@ HRESULT m_IDirect3DDevice9Ex::CreateTexture(THIS_ UINT Width, UINT Height, UINT 
     }
 
     if(UseSSAA && Width == gWindowWidth && Height == gWindowHeight) {
-        Width *= 2;
-        Height *= 2;
+        Width *= ResSSAA;
+        Height *= ResSSAA;
     }
     HRESULT hr = ProxyInterface->CreateTexture(Width, Height, Levels, Usage, Format, Pool, ppTexture, pSharedHandle);
 
@@ -463,7 +465,7 @@ HRESULT m_IDirect3DDevice9Ex::CreateTexture(THIS_ UINT Width, UINT Height, UINT 
     if(Format == D3DFMT_A16B16G16R16F && Width == gWindowWidth / gWindowDivisor && Height == gWindowHeight / gWindowDivisor && ppTexture != 0 && (*ppTexture) != 0) {
         pRainDropsRefractionHDRTex = (*ppTexture);
     }
-    if(Format == D3DFMT_A16B16G16R16F && ppTexture && Width == (gWindowWidth * (UseSSAA?2:1)) && Height == (gWindowHeight * (UseSSAA  ? 2 : 1))) {
+    if(Format == D3DFMT_A16B16G16R16F && ppTexture && Width == (gWindowWidth * (UseSSAA? ResSSAA :1)) && Height == (gWindowHeight * (UseSSAA  ? ResSSAA : 1))) {
         pHDRTex = (*ppTexture);
 
         // create new texture to postfx
@@ -505,17 +507,17 @@ HRESULT m_IDirect3DDevice9Ex::SetPixelShaderConstantF(THIS_ UINT StartRegister, 
         return S_FALSE;
     }
     if(UseSSAA && pConstantData[0] == 1.f / gWindowWidth && pConstantData[1] == 1.f / gWindowHeight && Vector4fCount==1) {
-        vec[0] = pConstantData[0] * 0.5f;
-        vec[1] = pConstantData[1] * 0.5f;
-        vec[2] = pConstantData[2];
-        vec[3] = pConstantData[3];
+        vec[0] = pConstantData[0] * (1.f/ ResSSAA);
+        vec[1] = pConstantData[1] * (1.f / ResSSAA);
+        vec[2] = pConstantData[2] * ResSSAA;
+        vec[3] = pConstantData[3] * ResSSAA;
         return ProxyInterface->SetPixelShaderConstantF(StartRegister, vec, Vector4fCount);
     }
     if(UseSSAA && pConstantData[0] == gWindowWidth && pConstantData[1] == gWindowHeight && Vector4fCount == 1) {
-        vec[0] = pConstantData[0] * 2.f;
-        vec[1] = pConstantData[1] * 2.f;
-        vec[2] = pConstantData[2] * 0.5f;
-        vec[3] = pConstantData[3] * 0.5f;
+        vec[0] = pConstantData[0] * ResSSAA;
+        vec[1] = pConstantData[1] * ResSSAA;
+        vec[2] = pConstantData[2] * (1.f / ResSSAA);
+        vec[3] = pConstantData[3] * (1.f / ResSSAA);
         return ProxyInterface->SetPixelShaderConstantF(StartRegister, vec, Vector4fCount);
     }
     GetPixelShader(&pShader);
@@ -1097,10 +1099,10 @@ HRESULT m_IDirect3DDevice9Ex::DrawPrimitive(D3DPRIMITIVETYPE PrimitiveType, UINT
                            SMAA_EdgeDetectionVS && SMAA_BlendingWeightsCalculationVS && SMAA_NeighborhoodBlendingVS &&
                            areaTex && searchTex && edgesTex && blendTex && pHDRSurface2
                            ) {
-                            vec4[0] = 1.f / (gWindowWidth * (UseSSAA ? 2 : 1));
-                            vec4[1] = 1.f / (gWindowHeight * (UseSSAA ? 2 : 1));
-                            vec4[2] = (gWindowWidth * (UseSSAA ? 2 : 1));
-                            vec4[3] = (gWindowHeight * (UseSSAA ? 2 : 1));
+                            vec4[0] = 1.f / (gWindowWidth * (UseSSAA ? ResSSAA : 1));
+                            vec4[1] = 1.f / (gWindowHeight * (UseSSAA ? ResSSAA : 1));
+                            vec4[2] = (gWindowWidth * (UseSSAA ? ResSSAA : 1));
+                            vec4[3] = (gWindowHeight * (UseSSAA ? ResSSAA : 1));
                             ProxyInterface->SetPixelShaderConstantF(24, vec4, 1);
                             ProxyInterface->SetVertexShaderConstantF(24, vec4, 1);
                             {
@@ -1251,3 +1253,7 @@ HRESULT m_IDirect3DDevice9Ex::DrawRectPatch(UINT Handle, CONST float* pNumSegs, 
 HRESULT m_IDirect3DDevice9Ex::DrawTriPatch(UINT Handle, CONST float* pNumSegs, CONST D3DTRIPATCH_INFO* pTriPatchInfo) {
     return ProxyInterface->DrawTriPatch(Handle, pNumSegs, pTriPatchInfo);
 }
+
+
+
+
