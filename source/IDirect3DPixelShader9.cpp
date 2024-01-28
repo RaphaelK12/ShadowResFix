@@ -23,6 +23,7 @@ extern std::vector<uint8_t> patternFF;
 extern std::vector<uint8_t> pattern2;
 extern std::vector<m_IDirect3DPixelShader9*> ps;
 extern std::vector<m_IDirect3DPixelShader9*> ps_2;
+extern std::vector<m_IDirect3DVertexShader9*> vs_2;
 extern std::vector<const char*> shader_names_ps;
 extern std::vector<const char*> shader_names_vs;
 extern std::vector<const char*> shader_names_fxc;
@@ -190,9 +191,19 @@ extern IDirect3DPixelShader9* SMAA_EdgeDetection;
 extern IDirect3DPixelShader9* SMAA_BlendingWeightsCalculation;
 extern IDirect3DPixelShader9* SMAA_NeighborhoodBlending;
 
+
 extern IDirect3DVertexShader9* SMAA_EdgeDetectionVS;
 extern IDirect3DVertexShader9* SMAA_BlendingWeightsCalculationVS;
 extern IDirect3DVertexShader9* SMAA_NeighborhoodBlendingVS;
+
+extern IDirect3DPixelShader9* DOF_ps;
+
+extern IDirect3DPixelShader9* SSAO_ps;
+extern IDirect3DPixelShader9* SSAO_ps2;
+extern IDirect3DVertexShader9* SSAO_vs;
+
+float m_IDirect3DPixelShader9::globalConstants[256][4] = { {0} }; // constant table, set with Set*ShaderConstantF
+
 
 m_IDirect3DPixelShader9::m_IDirect3DPixelShader9(LPDIRECT3DPIXELSHADER9 pShader9, m_IDirect3DDevice9Ex* pDevice, ShaderCreationMode extra) :
     ProxyInterface(pShader9), m_pDeviceEx(pDevice) {
@@ -307,7 +318,10 @@ m_IDirect3DPixelShader9::m_IDirect3DPixelShader9(LPDIRECT3DPIXELSHADER9 pShader9
     if(!PostFxPS ) {
         FILE* f = nullptr;
         UINT size = 0;
-        f = fopen("shaders/FXAA.asm", "r");
+        f = fopen("update/shaders/FXAA.asm", "r");
+        if(!f) {
+            f = fopen("shaders/FXAA.asm", "r");
+        }
         if(!f) {
             f = fopen("FXAA.asm", "r");
         }
@@ -348,6 +362,210 @@ m_IDirect3DPixelShader9::m_IDirect3DPixelShader9(LPDIRECT3DPIXELSHADER9 pShader9
             buff = (char*) bf2->GetBufferPointer();
             Log::Error("Unable to compile PostFx Pixel shader");
             Log::Text(buff);
+        }
+        SAFE_RELEASE(bf1);
+        SAFE_RELEASE(bf2);
+    }
+
+    if(!DOF_ps) {
+        FILE* f = nullptr;
+        UINT size = 0;
+        f = fopen("update/shaders/DOF_ps.asm", "r");
+        if(!f) {
+            f = fopen("shaders/DOF_ps.asm", "r");
+        }
+        if(!f) {
+            f = fopen("DOF_ps.asm", "r");
+        }
+        if(!f) {
+            return;
+        }
+        fseek(f, 0, SEEK_END);
+        size = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        std::vector<char> buff;
+        buff.resize(size);
+        //char* buff = new char[size];
+        //if(!buff) {
+        //    fclose(f);
+        //    return;
+        //}
+        UINT size2 = fread(buff.data(), 1, size, f);
+        fclose(f);
+        HRESULT hr2 = S_FALSE;
+        ID3DXBuffer* bf1 = nullptr;
+        ID3DXBuffer* bf2 = nullptr;
+        HRESULT hr1 = D3DXAssembleShader(buff.data(), size, 0, 0, 0, &bf1, &bf2);
+        //delete[] buff;
+        if(hr1 == S_OK) {
+            std::vector<char> p2;
+            int sz = bf1->GetBufferSize();
+            char* p = (char*) bf1->GetBufferPointer();
+            p2.resize(sz);
+            memcpy(p2.data(), p, sz);
+            hr2 = m_pDeviceEx->CreatePixelShader2((DWORD*) p, &DOF_ps, SC_NEW);
+            if(DOF_ps) {
+                ((m_IDirect3DPixelShader9*) DOF_ps)->disable = false;
+                ((m_IDirect3DPixelShader9*) DOF_ps)->oName = "DOF_ps";
+                ps_2.push_back((m_IDirect3DPixelShader9*) DOF_ps);
+            }
+        }
+        if(hr1 != S_OK || hr2 != S_OK) {
+            char* buffer = (char*) bf2->GetBufferPointer();
+            Log::Error("Unable to compile DOF Pixel shader");
+            Log::Text(buffer);
+        }
+        SAFE_RELEASE(bf1);
+        SAFE_RELEASE(bf2);
+    }
+
+    if(!SSAO_vs) {
+        FILE* f = nullptr;
+        UINT size = 0;
+        f = fopen("update/shaders/SSAO_vs.asm", "r");
+        if(!f) {
+            f = fopen("shaders/SSAO_vs.asm", "r");
+        }
+        if(!f) {
+            f = fopen("SSAO_vs.asm", "r");
+        }
+        if(!f) {
+            return;
+        }
+        fseek(f, 0, SEEK_END);
+        size = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        char* buff = new char[size];
+        if(!buff) {
+            fclose(f);
+            return;
+        }
+        UINT size2 = fread(buff, 1, size, f);
+        fclose(f);
+        HRESULT hr2 = S_FALSE;
+        ID3DXBuffer* bf1 = nullptr;
+        ID3DXBuffer* bf2 = nullptr;
+        HRESULT hr1 = D3DXAssembleShader(buff, size, 0, 0, 0, &bf1, &bf2);
+        delete[] buff;
+        if(hr1 == S_OK) {
+            int sz = bf1->GetBufferSize();
+            char* p = (char*) bf1->GetBufferPointer();
+            hr2 = m_pDeviceEx->CreateVertexShader2((DWORD*) p, &SSAO_vs, SC_NEW);
+            if(SSAO_vs) {
+                ((m_IDirect3DVertexShader9*) SSAO_vs)->disable = false;
+                ((m_IDirect3DVertexShader9*) SSAO_vs)->oName = "SSAO_vs";
+                vs_2.push_back((m_IDirect3DVertexShader9*) SSAO_vs);
+            }
+        }
+        if(hr1 != S_OK || hr2 != S_OK) {
+            buff = (char*) bf2->GetBufferPointer();
+            Log::Error("Unable to compile SSAO Vertex shader");
+            Log::Text(buff);
+        }
+        SAFE_RELEASE(bf1);
+        SAFE_RELEASE(bf2);
+    }
+    if(!SSAO_ps) {
+        FILE* f = nullptr;
+        UINT size = 0;
+        f = fopen("update/shaders/SSAO_ps.asm", "r");
+        if(!f) {
+            f = fopen("shaders/SSAO_ps.asm", "r");
+        }
+        if(!f) {
+            f = fopen("SSAO_ps.asm", "r");
+        }
+        if(!f) {
+            return;
+        }
+        fseek(f, 0, SEEK_END);
+        size = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        std::vector<char> buff;
+        buff.resize(size);
+        //char* buff = new char[size];
+        //if(!buff) {
+        //    fclose(f);
+        //    return;
+        //}
+        UINT size2 = fread(buff.data(), 1, size, f);
+        fclose(f);
+        HRESULT hr2 = S_FALSE;
+        ID3DXBuffer* bf1 = nullptr;
+        ID3DXBuffer* bf2 = nullptr;
+        HRESULT hr1 = D3DXAssembleShader(buff.data(), size, 0, 0, 0, &bf1, &bf2);
+        //delete[] buff;
+        if(hr1 == S_OK) {
+            std::vector<char> p2;
+            int sz = bf1->GetBufferSize();
+            char* p = (char*) bf1->GetBufferPointer();
+            p2.resize(sz);
+            memcpy(p2.data(), p, sz);
+            hr2 = m_pDeviceEx->CreatePixelShader2((DWORD*) p, &SSAO_ps, SC_NEW);
+            if(SSAO_ps) {
+                ((m_IDirect3DPixelShader9*) SSAO_ps)->disable = false;
+                ((m_IDirect3DPixelShader9*) SSAO_ps)->oName = "SSAO_ps";
+                ps_2.push_back((m_IDirect3DPixelShader9*) SSAO_ps);
+            }
+        }
+        if(hr1 != S_OK || hr2 != S_OK) {
+            char* buffer = (char*) bf2->GetBufferPointer();
+            Log::Error("Unable to compile SSAO Pixel shader");
+            Log::Text(buffer);
+        }
+        SAFE_RELEASE(bf1);
+        SAFE_RELEASE(bf2);
+    }
+    if(!SSAO_ps2) {
+        FILE* f = nullptr;
+        UINT size = 0;
+        f = fopen("update/shaders/SSAO_ps2.asm", "r");
+        if(!f) {
+            f = fopen("shaders/SSAO_ps2.asm", "r");
+        }
+        if(!f) {
+            f = fopen("SSAO_ps2.asm", "r");
+        }
+        if(!f) {
+            return;
+        }
+        fseek(f, 0, SEEK_END);
+        size = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        std::vector<char> buff;
+        buff.resize(size);
+        //char* buff = new char[size];
+        //if(!buff) {
+        //    fclose(f);
+        //    return;
+        //}
+        UINT size2 = fread(buff.data(), 1, size, f);
+        fclose(f);
+        HRESULT hr2 = S_FALSE;
+        ID3DXBuffer* bf1 = nullptr;
+        ID3DXBuffer* bf2 = nullptr;
+        HRESULT hr1 = D3DXAssembleShader(buff.data(), size, 0, 0, 0, &bf1, &bf2);
+        //delete[] buff;
+        if(hr1 == S_OK) {
+            std::vector<char> p2;
+            int sz = bf1->GetBufferSize();
+            char* p = (char*) bf1->GetBufferPointer();
+            p2.resize(sz);
+            memcpy(p2.data(), p, sz);
+            hr2 = m_pDeviceEx->CreatePixelShader2((DWORD*) p, &SSAO_ps2, SC_NEW);
+            if(SSAO_ps2) {
+                ((m_IDirect3DPixelShader9*) SSAO_ps2)->disable = false;
+                ((m_IDirect3DPixelShader9*) SSAO_ps2)->oName = "SSAO_ps2";
+                ps_2.push_back((m_IDirect3DPixelShader9*) SSAO_ps2);
+            }
+            else {
+                Log::Error("Unable to compile SSAO2 Pixel shader");
+            }
+        }
+        if(hr1 != S_OK || hr2 != S_OK) {
+            char* buffer = (char*) bf2->GetBufferPointer();
+            Log::Error("Unable to compile SSAO2 Pixel shader");
+            Log::Text(buffer);
         }
         SAFE_RELEASE(bf1);
         SAFE_RELEASE(bf2);
@@ -551,6 +769,25 @@ HRESULT m_IDirect3DPixelShader9::compileShaderSource(std::string source, ShaderT
                 else {
                     SAFE_RELEASE(compiledShaders[INT(use)]);
                     compiledShaders[INT(use)] = shader;
+                    {
+                        static std::vector<uint8_t> pbFunc;
+                        UINT len;
+                        shader->GetFunction(nullptr, &len);
+                        if(pbFunc.size() < len) {
+                            pbFunc.resize(len + len % 4);
+                        }
+                        shader->GetFunction(pbFunc.data(), &len);
+                        std::string source;
+                        ID3DXBuffer* pShaderAsm = NULL;
+                        HRESULT hr = D3DXDisassembleShader((DWORD*) pbFunc.data(), FALSE, NULL, &pShaderAsm);
+                        if(SUCCEEDED(hr) && pShaderAsm) {
+                            source = (char*) pShaderAsm->GetBufferPointer();
+                        }
+                        SAFE_RELEASE(pShaderAsm);
+                        if(use == SU_EASM) {
+                            this->editedAsm = source;
+                        }
+                    }
                 }
                 SAFE_RELEASE(bf1);
                 SAFE_RELEASE(bf4);
@@ -578,6 +815,25 @@ HRESULT m_IDirect3DPixelShader9::compileShaderSource(std::string source, ShaderT
                 else {
                     SAFE_RELEASE(compiledShaders[INT(use)]);
                     compiledShaders[INT(use)] = shader;
+                    {
+                        static std::vector<uint8_t> pbFunc;
+                        UINT len;
+                        shader->GetFunction(nullptr, &len);
+                        if(pbFunc.size() < len) {
+                            pbFunc.resize(len + len % 4);
+                        }
+                        shader->GetFunction(pbFunc.data(), &len);
+                        std::string source;
+                        ID3DXBuffer* pShaderAsm = NULL;
+                        HRESULT hr = D3DXDisassembleShader((DWORD*) pbFunc.data(), FALSE, NULL, &pShaderAsm);
+                        if(SUCCEEDED(hr) && pShaderAsm) {
+                            source = (char*) pShaderAsm->GetBufferPointer();
+                        }
+                        SAFE_RELEASE(pShaderAsm);
+                        if(use == SU_EFX) {
+                            this->editedAsm = source;
+                        }
+                    }
                 }
                 SAFE_RELEASE(bf1);
                 SAFE_RELEASE(bf3);

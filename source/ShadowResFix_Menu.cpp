@@ -1,4 +1,13 @@
 #include "ShadowResFix.h"
+#include "d3dcompiler.h"
+#pragma comment( lib, "d3dcompiler.lib" )
+
+extern m_IDirect3DTexture9* NormalTex;
+extern m_IDirect3DTexture9* DiffuseTex;
+extern m_IDirect3DTexture9* SpecularTex;
+extern m_IDirect3DTexture9* DepthTex;
+extern m_IDirect3DTexture9* StencilTex;
+extern m_IDirect3DTexture9* BloomTex;
 
 extern IDirect3DTexture9* pRainDropsRefractionHDRTex;
 extern std::list<m_IDirect3DTexture9*> textureList;
@@ -12,6 +21,11 @@ extern IDirect3DVertexShader9* SMAA_EdgeDetectionVS ;
 extern IDirect3DVertexShader9* SMAA_BlendingWeightsCalculationVS ;
 extern IDirect3DVertexShader9* SMAA_NeighborhoodBlendingVS ;
 
+extern IDirect3DPixelShader9* SSAO_ps;
+extern IDirect3DVertexShader9* SSAO_vs;
+
+extern bool UseSSAO;
+
 
 extern bool bDisplayFPSCounter;
 extern bool gFixRainDrops;
@@ -22,11 +36,20 @@ extern UINT gWindowWidth;
 extern UINT gWindowHeight;
 
 bool fixCoronaDepth = 1;
+int UseDebugTextures = 0;
 int UsePostFx[4] = { 0 }; // none, fxaa pre, fxaa pos, smaa, blend, edge
+
+float PostFxFog[4] = { 1,1,(-1.f/gWindowWidth)*0.5,(-1.f/gWindowHeight)*0.5 }; 
 
 long long g_id = 0;
 
 extern float shaderReturnColor[4] = { 0.f };
+
+extern float AoDistance;
+extern float FocusPoint[4] ;
+extern float FocusScale[4] ;
+
+extern int DofSamples[4];
 
 extern float DEPTHBIAS;
 extern float SLOPESCALEDEPTHBIAS;
@@ -61,6 +84,18 @@ bool* IsInInterior;
 extern bool DisableADAPTIVETESS_X;
 extern bool EnableDepthOverwrite;
 bool AlowPauseGame = 1;
+bool usePrimitiveUp = false;
+
+extern bool useDof;
+
+bool sRGB_A = false;
+bool sRGB_a = false;
+bool sRGB_B = false;
+bool sRGB_b = false;
+bool sRGB_C = false;
+bool sRGB_c = false;
+
+extern bool fixDistantOutlineUsingDXVK;
 
 
 extern LPDIRECT3DPIXELSHADER9       ImGuiPS;
@@ -540,17 +575,33 @@ void HelpMarker(const char* desc) {
     }
 }
 
+extern std::vector<HWND> windows;
+
+
 void ShadowResFix::DrawMainWindow() {
     static float shaderColor[4] = { 0 };
+    static ImVec4 bgColor(0.0549f, 0.047f, 0.0274509f, 0.333f);
     static ImVec4 textureColor(0.5f, 0.5f, 0.5f, 1.0f);
     ImGuiIO& io = ImGui::GetIO();
+
+    //RECT rc = { 0 };
+    //GetClientRect(windows[0], &rc);
 
     static char buf100[100] = { 0 };
     static bool showUnused = false;
     static bool showUnusedTex = true;
     static bool hideEmptyFXC = true;
 
-    ImGui::Begin("Shader Editor 1.0.0.6", NULL, ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoBringToFrontOnFocus);
+    ImGui::Begin("RaGeFX Editor 1.0.0.7", NULL, ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoBringToFrontOnFocus);
+
+    // semi transparent background
+    if(pRainDropsRefractionHDRTex  ) {
+        ImVec2 wsize = ImVec2(gWindowWidth, gWindowHeight);
+        ImVec2 pos = ImGui::GetCursorScreenPos();
+        ImGui::SetCursorScreenPos(ImVec2(0, 0));
+        ImGui::Image(pRainDropsRefractionHDRTex, wsize, ImVec2(0, 0), ImVec2(1, 1), bgColor); //<---warning here
+        ImGui::SetCursorScreenPos(pos);
+    }
 
     if(mWindowPos.x == 0.f)
         mWindowPos.x = 600.f;
@@ -576,21 +627,54 @@ void ShadowResFix::DrawMainWindow() {
         ImGui::Checkbox("Pause Game F5", &pauseGame);
         ImGui::EndMenuBar();
     }
-
+    //ImGui::Text("%i %i %i %i", rc.left, rc.right, rc.top, rc.bottom);
     ImGui::Checkbox("Display FPS Counter", &bDisplayFPSCounter);
+    ImGui::Checkbox("FixTreeLeavesSwayInTheWind", &gTreeLeavesSwayInTheWind);
     ImGui::Checkbox("FixRainDrops", &gFixRainDrops);
-    ImGui::Checkbox("TreeLeavesSwayInTheWind", &gTreeLeavesSwayInTheWind);
-    ImGui::Checkbox("NearFarPlane", &gNearFarPlane);
-    ImGui::Checkbox("Show Log Window", &mShowLogWindow);
-    ImGui::Checkbox("Show Editor Window", &showEditorWindow);
     ImGui::Checkbox("FixAdaptiveTess", &DisableADAPTIVETESS_X);
     ImGui::Checkbox("FixCoronaDepth", &fixCoronaDepth);
+    ImGui::Checkbox("FixDistantOutlineUsingDXVK", &fixDistantOutlineUsingDXVK);
+    ImGui::Checkbox("NearFarPlane", &gNearFarPlane);
+    ImGui::Checkbox("Show Log Window", &mShowLogWindow);
+    if(ImGui::Button("Clear Log")) {
+        Log::clear();
+    }
+    ImGui::Checkbox("Show Editor Window", &showEditorWindow);
+
+    ImGui::Checkbox("UseDof", &useDof);
+    ImGui::DragFloat4("FocusPoint", FocusPoint, 1, 0, 1500, "%.3f", ImGuiSliderFlags_Logarithmic);
+    ImGui::DragFloat4("FocusScale", FocusScale, 1, 0, 1500, "%.3f", ImGuiSliderFlags_Logarithmic);
+    ImGui::DragInt4("DofSamples", DofSamples, 1, 0, 200);
+    ImGui::Checkbox("UseSSAO", &UseSSAO);
+    ImGui::DragFloat("AoDistance", &AoDistance, 1, 0, 1500, "%.3f", ImGuiSliderFlags_Logarithmic);
 
     static const char* PostFx[] = {
-        "None", "FXAA Before PostFx", "FXAA After PostFx",
-        "SMAA After PostFx", "SMAA blend", "SMAA edges"
+        "None", "FXAA", "SMAA", "SMAA blend", "SMAA edges"
     };
-    ImGui::SliderInt("PostFx AA", UsePostFx, 0, 5, PostFx[UsePostFx[0]]);
+    static const char* DebugTextures[] = {
+        "none", 
+        "Difuse", 
+        "normal",
+        "bloom",
+        "specular", 
+        "depth", 
+        "stencil"
+    };
+    ImGui::SliderInt("DebugTextures", &UseDebugTextures, 0, 6, DebugTextures[UseDebugTextures]);
+
+    ImGui::SliderInt("PostFx AA", UsePostFx, 0, 4, PostFx[UsePostFx[0]]);
+
+
+    //ImGui::Checkbox("usePrimitiveUp", &usePrimitiveUp);
+
+    //ImGui::Checkbox("A", &sRGB_A); ImGui::SameLine();
+    //ImGui::Checkbox("a", &sRGB_a); ImGui::SameLine();
+    //ImGui::Checkbox("B", &sRGB_B); ImGui::SameLine();
+    //ImGui::Checkbox("b", &sRGB_b); ImGui::SameLine();
+    //ImGui::Checkbox("C", &sRGB_C); ImGui::SameLine();
+    //ImGui::Checkbox("c", &sRGB_c);
+
+
 
     if(ImGui::Button("Reload SMAA##1")) {
         SAFE_RELEASE( SMAA_EdgeDetection                );
@@ -699,12 +783,13 @@ void ShadowResFix::DrawMainWindow() {
         "Any rgb",
         "Any rgba float",
         "Any rgba",
-        "Screen Size2",
-        "gBuffer 2?",
-        "Screen / 2",
+        "MainPostfx",
         "Screen / 4",
+        "Screen / 2",
+        "Screen Size2",
         "Screen Size",
         "Screen",
+        "gBuffer 2?",
         "gBuffer",
         "Mirror Tex",
         "reflex",
@@ -875,8 +960,22 @@ void ShadowResFix::DrawMainWindow() {
 
                                             ID3DXBuffer* pShaderAsm = NULL;
                                             HRESULT hr = D3DXDisassembleShader((DWORD*) pbFunc.data(), FALSE, NULL, &pShaderAsm);
+
                                             if(SUCCEEDED(hr) && pShaderAsm) {
                                                 t->bs->editedAsm = (char*) pShaderAsm->GetBufferPointer();
+                                            }
+
+                                            if(0){
+                                                ID3DBlob* disShader;
+                                                hr = D3DDisassemble(pbFunc.data(), pbFunc.size(),
+                                                                    D3D_DISASM_ENABLE_DEFAULT_VALUE_PRINTS,
+                                                                    nullptr,
+                                                                    &disShader
+                                                );
+
+                                                if(SUCCEEDED(hr) && disShader) {
+                                                    t->bs->editedAsm = (char*) disShader->GetBufferPointer();
+                                                }
                                             }
 
                                             t->bs->useNewShader = true;
@@ -1875,6 +1974,8 @@ void ShadowResFix::DrawMainWindow() {
     }
 
     if(ImGui::CollapsingHeader("Debug editor")) {
+        ImGui::ColorEdit4("BgColor", (float*)&bgColor);
+
         ImGui::BeginChild("ChildDE", ImVec2(ImGui::GetContentRegionAvail().x, WindowSize.y * 2.f / 3.f), false, ImGuiWindowFlags_HorizontalScrollbar);
         int i = 0;
         for(auto t : lst) {
@@ -2093,7 +2194,7 @@ void ShadowResFix::DrawMainWindow() {
                                             pShader->GetFunction(pbFunc.data(), &len);
 
                                             ID3DXBuffer* pShaderAsm = NULL;
-                                            HRESULT hr = D3DXDisassembleShader((DWORD*) pbFunc.data(), FALSE, NULL, &pShaderAsm);
+                                            HRESULT hr = D3DXDisassembleShader((DWORD*) pbFunc.data(), FALSE, 0x00000002, &pShaderAsm);
                                             if(SUCCEEDED(hr) && pShaderAsm) {
                                                 t->bs->editedAsm = (char*) pShaderAsm->GetBufferPointer();
                                             }
@@ -2433,8 +2534,11 @@ void ShadowResFix::DrawMainWindow() {
         }
     }
 
+
     ImGui::BeginChild("##ChildDummy", ImVec2(ImGui::GetContentRegionAvail().x, WindowSize.y), false, ImGuiWindowFlags_NoScrollbar);
     ImGui::EndChild();
+
+
     ImGui::End();
 
     if(showEditorWindow) {

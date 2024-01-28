@@ -11,6 +11,7 @@ public:
     IDirect3DPixelShader9* compiledShaders[5] = { 0 };;
     IDirect3DPixelShader9* newShader = nullptr;
     static IDirect3DPixelShader9* dummyShader;
+    static float globalConstants[256][4]; // constant table, set with Set*ShaderConstantF
 
     // new methods
     std::string GetAsm();

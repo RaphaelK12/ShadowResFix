@@ -94,6 +94,12 @@ extern IDirect3DVertexShader9* SMAA_EdgeDetectionVS;
 extern IDirect3DVertexShader9* SMAA_BlendingWeightsCalculationVS;
 extern IDirect3DVertexShader9* SMAA_NeighborhoodBlendingVS;
 
+extern IDirect3DPixelShader9* DOF_ps;
+extern IDirect3DPixelShader9* SSAO_ps;
+extern IDirect3DVertexShader9* SSAO_vs;
+
+float m_IDirect3DVertexShader9::globalConstants[256][4] = { {0} }; // constant table, set with Set*ShaderConstantF
+
 m_IDirect3DVertexShader9::m_IDirect3DVertexShader9(LPDIRECT3DVERTEXSHADER9 pShader9, m_IDirect3DDevice9Ex* pDevice, ShaderCreationMode extra) :
     ProxyInterface(pShader9), m_pDeviceEx(pDevice) {
     pDevice->ProxyAddressLookupTable->SaveAddress(this, ProxyInterface);

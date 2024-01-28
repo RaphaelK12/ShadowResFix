@@ -29,6 +29,13 @@ extern UINT gWindowWidth; // see dllmain.cpp-> CreateDevice/Reset
 extern UINT gWindowHeight;
 extern UINT gWindowDivisor;
 
+extern m_IDirect3DTexture9* NormalTex;
+extern m_IDirect3DTexture9* DiffuseTex;
+extern m_IDirect3DTexture9* SpecularTex;
+extern m_IDirect3DTexture9* DepthTex;
+extern m_IDirect3DTexture9* StencilTex;
+extern m_IDirect3DTexture9* BloomTex;
+
 // Near Far Plane
 extern bool gNearFarPlane;
 extern float NearFarPlane[4];
@@ -60,6 +67,10 @@ bool UseBokeh = 0;
 bool UseMBlur = 0;
 
 float ResSSAA = 1;
+float AoDistance = 100;
+float FocusPoint[4] = { 350, 0, 0, 0 };
+float FocusScale[4] = { 300, 0, 0, 0 };
+
 
 extern uint8_t* baseAddress;
 
@@ -69,6 +80,7 @@ float SLOPESCALEDEPTHBIAS = 0.f;
 bool doPostFx = false;
 extern bool fixCoronaDepth;
 extern int UsePostFx[4]; // postfx type
+extern int UseDebugTextures ;
 
 
 struct stTextue {
@@ -199,7 +211,28 @@ IDirect3DVertexShader9* SMAA_EdgeDetectionVS = nullptr;
 IDirect3DVertexShader9* SMAA_BlendingWeightsCalculationVS = nullptr;
 IDirect3DVertexShader9* SMAA_NeighborhoodBlendingVS = nullptr;
 
+IDirect3DPixelShader9* DOF_ps = nullptr;
+
+IDirect3DPixelShader9* SSAO_ps = nullptr;
+IDirect3DPixelShader9* SSAO_ps2 = nullptr;
+IDirect3DVertexShader9* SSAO_vs = nullptr;
+
+
 std::vector<m_IDirect3DPixelShader9*> PostFxList;
+
+extern bool afterpostfx;
+IDirect3DTexture9* mainDepthTex =  nullptr; // gen
+IDirect3DTexture9* oldDepthTex =  nullptr; // gen
+IDirect3DSurface9* mainDepth =  nullptr; // gen
+IDirect3DSurface9* oldDepth =  nullptr; // gen
+
+IDirect3DTexture9* aoHalfTex = 0;
+IDirect3DTexture9* halfDepthDsTex = 0;
+
+IDirect3DPixelShader9* MSAA_CustomResolve_ps = nullptr;
+IDirect3DPixelShader9* MSAA_Render_ps = nullptr;
+
+
 
 HRESULT m_IDirect3DDevice9Ex::CreateTexture(THIS_ UINT Width, UINT Height, UINT Levels, DWORD Usage, D3DFORMAT Format, D3DPOOL Pool, IDirect3DTexture9** ppTexture, HANDLE* pSharedHandle) {
     bool addToList = false;
@@ -406,6 +439,8 @@ HRESULT m_IDirect3DDevice9Ex::CreateTexture(THIS_ UINT Width, UINT Height, UINT 
     }
 
     if((Width >= gWindowWidth - 100 && Width <= gWindowWidth + 100) && (Height >= gWindowHeight - 100 && Height <= gWindowHeight + 100)) {
+        //Width = gWindowWidth; 
+        //Height = gWindowHeight;
         addToList = true;
         name = "Screen Size2";
     }
@@ -449,9 +484,38 @@ HRESULT m_IDirect3DDevice9Ex::CreateTexture(THIS_ UINT Width, UINT Height, UINT 
         addToList = false;
     }
 
+
+    static int cc = 0;
     if(UseSSAA && Width == gWindowWidth && Height == gWindowHeight) {
-        Width *= ResSSAA;
-        Height *= ResSSAA;
+        if(ResSSAA < 1.f &&
+           (Format == D3DFMT_D24FS8 ||
+            Format == D3DFMT_D24S8 ||
+            Format == D3DFMT_D24X8 ||
+            Format == D3DFMT_D32 ||
+            Format == D3DFORMAT(1515474505u) // INTZ
+            )
+           ) {
+            //if(mainDepthTex == nullptr) {
+                 //ProxyInterface->CreateTexture(Width, Height, Levels, Usage, Format, Pool, &mainDepthTex, pSharedHandle);
+                 //std::string nm = "Screen";
+                 //mainDepthTex = new m_IDirect3DTexture9(mainDepthTex, this, Width, Height, Levels, Usage, Format, Pool, nm, true);
+                 //mainDepthTex->GetSurfaceLevel(0, &mainDepth);
+            //}
+
+            if(cc == 0) {
+                Width *= ResSSAA;
+                Height *= ResSSAA;
+                cc++;
+            }
+            else {
+                Width *= ResSSAA;
+                Height *= ResSSAA;
+            }
+        }
+        else {
+            Width *= ResSSAA;
+            Height *= ResSSAA;
+        }
     }
     HRESULT hr = ProxyInterface->CreateTexture(Width, Height, Levels, Usage, Format, Pool, ppTexture, pSharedHandle);
 
@@ -465,37 +529,74 @@ HRESULT m_IDirect3DDevice9Ex::CreateTexture(THIS_ UINT Width, UINT Height, UINT 
     if(Format == D3DFMT_A16B16G16R16F && Width == gWindowWidth / gWindowDivisor && Height == gWindowHeight / gWindowDivisor && ppTexture != 0 && (*ppTexture) != 0) {
         pRainDropsRefractionHDRTex = (*ppTexture);
     }
-    if(Format == D3DFMT_A16B16G16R16F && ppTexture && Width == (gWindowWidth * (UseSSAA? ResSSAA :1)) && Height == (gWindowHeight * (UseSSAA  ? ResSSAA : 1))) {
+    if(Format == D3DFMT_A16B16G16R16F && Width == gWindowWidth / 4 && Height == gWindowHeight / 4) {
+        BloomTex = static_cast<m_IDirect3DTexture9*>(*ppTexture);
+    }
+    if(Format == D3DFMT_A16B16G16R16F && ppTexture && Width == (gWindowWidth * (UseSSAA ? ResSSAA : 1)) && Height == (gWindowHeight * (UseSSAA ? ResSSAA : 1))) {
         pHDRTex = (*ppTexture);
+
+        // Release before, just to be sure
+        SAFE_RELEASE(pHDRTex2);
+        SAFE_RELEASE(areaTex);
+        SAFE_RELEASE(searchTex);
+        SAFE_RELEASE(edgesTex);
+        SAFE_RELEASE(blendTex);
+
+        SAFE_RELEASE(aoHalfTex);
+        SAFE_RELEASE(halfDepthDsTex);
 
         // create new texture to postfx
         HRESULT hr = ProxyInterface->CreateTexture(Width, Height, Levels, Usage, Format, Pool, &pHDRTex2, 0);
         if(SUCCEEDED(hr) && pHDRTex2) {
             m_IDirect3DTexture9* tex = nullptr;
+
             tex = new m_IDirect3DTexture9(pHDRTex2, this, Width, Height, Levels, Usage, Format, Pool, name, addToList);
-            pHDRTex2 = tex;            
+            pHDRTex2 = tex;
             tex->name = "Screen";
-            hr = D3DXCreateTextureFromFileExA(this, "shaders/AreaTex.png", 0, 0, 0, 0, D3DFMT_UNKNOWN, D3DPOOL_MANAGED, D3DX_FILTER_LINEAR, D3DX_FILTER_LINEAR, D3DCOLOR_ARGB(150, 100, 100, 100), NULL, NULL, &areaTex);
+
+            hr = D3DXCreateTextureFromFileExA(this, "update/shaders/AreaTex.png", 0, 0, 0, 0, D3DFMT_UNKNOWN, D3DPOOL_MANAGED, D3DX_FILTER_LINEAR, D3DX_FILTER_LINEAR, D3DCOLOR_ARGB(150, 100, 100, 100), NULL, NULL, &areaTex);
             if(hr != S_OK) {
-                hr = D3DXCreateTextureFromFileExA(this, "AreaTex.png", 0, 0, 0, 0, D3DFMT_UNKNOWN, D3DPOOL_MANAGED, D3DX_FILTER_LINEAR, D3DX_FILTER_LINEAR, D3DCOLOR_ARGB(150, 100, 100, 100), NULL, NULL, &areaTex);
+                hr = D3DXCreateTextureFromFileExA(this, "shaders/AreaTex.png", 0, 0, 0, 0, D3DFMT_UNKNOWN, D3DPOOL_MANAGED, D3DX_FILTER_LINEAR, D3DX_FILTER_LINEAR, D3DCOLOR_ARGB(150, 100, 100, 100), NULL, NULL, &areaTex);
+                if(hr != S_OK) {
+                    hr = D3DXCreateTextureFromFileExA(this, "AreaTex.png", 0, 0, 0, 0, D3DFMT_UNKNOWN, D3DPOOL_MANAGED, D3DX_FILTER_LINEAR, D3DX_FILTER_LINEAR, D3DCOLOR_ARGB(150, 100, 100, 100), NULL, NULL, &areaTex);
+                }
             }
-            hr = D3DXCreateTextureFromFileExA(this, "shaders/SearchTex.png", 0, 0, 0, 0, D3DFMT_UNKNOWN, D3DPOOL_MANAGED, D3DX_FILTER_LINEAR, D3DX_FILTER_LINEAR, D3DCOLOR_ARGB(150, 100, 100, 100), NULL, NULL, &searchTex);
+            hr = D3DXCreateTextureFromFileExA(this, "update/shaders/SearchTex.png", 0, 0, 0, 0, D3DFMT_UNKNOWN, D3DPOOL_MANAGED, D3DX_FILTER_LINEAR, D3DX_FILTER_LINEAR, D3DCOLOR_ARGB(150, 100, 100, 100), NULL, NULL, &searchTex);
             if(hr != S_OK) {
-                hr = D3DXCreateTextureFromFileExA(this, "SearchTex.png", 0, 0, 0, 0, D3DFMT_UNKNOWN, D3DPOOL_MANAGED, D3DX_FILTER_LINEAR, D3DX_FILTER_LINEAR, D3DCOLOR_ARGB(150, 100, 100, 100), NULL, NULL, &searchTex);
+                hr = D3DXCreateTextureFromFileExA(this, "shaders/SearchTex.png", 0, 0, 0, 0, D3DFMT_UNKNOWN, D3DPOOL_MANAGED, D3DX_FILTER_LINEAR, D3DX_FILTER_LINEAR, D3DCOLOR_ARGB(150, 100, 100, 100), NULL, NULL, &searchTex);
+                if(hr != S_OK) {
+                    hr = D3DXCreateTextureFromFileExA(this, "SearchTex.png", 0, 0, 0, 0, D3DFMT_UNKNOWN, D3DPOOL_MANAGED, D3DX_FILTER_LINEAR, D3DX_FILTER_LINEAR, D3DCOLOR_ARGB(150, 100, 100, 100), NULL, NULL, &searchTex);
+                }
+            }
+            if(searchTex) {
+                ((m_IDirect3DTexture9*) searchTex)->name = "MainPostfx";
+            }
+            if(areaTex) { 
+                ((m_IDirect3DTexture9*) areaTex)->name = "MainPostfx";
             }
             if(hr == S_OK) {
                 hr = CreateTexture(Width, Height, Levels, Usage, D3DFMT_X8R8G8B8, Pool, &edgesTex, 0);
                 if(hr == S_OK && edgesTex) {
-                    ((m_IDirect3DTexture9*) edgesTex)->name = "Screen";
+                    ((m_IDirect3DTexture9*) edgesTex)->name = "MainPostfx";
                 }
                 hr = CreateTexture(Width, Height, Levels, Usage, D3DFMT_A8R8G8B8, Pool, &blendTex, 0);
                 if(hr == S_OK && blendTex) {
-                    ((m_IDirect3DTexture9*) blendTex)->name = "Screen";
+                    ((m_IDirect3DTexture9*) blendTex)->name = "MainPostfx";
+                }
+                hr = CreateTexture(Width / 2, Height / 2, Levels, Usage, D3DFMT_X8R8G8B8, Pool, &aoHalfTex, 0);
+                if(hr == S_OK && aoHalfTex) {
+                    ((m_IDirect3DTexture9*) aoHalfTex)->name = "MainPostfx";
+                }
+                hr = CreateTexture(Width / 2, Height / 2, Levels, Usage, D3DFMT_R16F, Pool, &halfDepthDsTex, 0);
+                if(hr == S_OK && halfDepthDsTex) {
+                    ((m_IDirect3DTexture9*) halfDepthDsTex)->name = "MainPostfx";
                 }
             }
         }
     }
-
+    if(hr != S_OK) {
+        printf("as");
+    }
     return hr;
 }
 
@@ -503,6 +604,24 @@ HRESULT m_IDirect3DDevice9Ex::SetPixelShaderConstantF(THIS_ UINT StartRegister, 
     IDirect3DPixelShader9* pShader = 0;
     m_IDirect3DPixelShader9* pshader = 0;
     float vec[4] = { 0.f };
+
+    GetPixelShader(&pShader);
+    HRESULT hr = 0;
+    if(pShader) {
+        pshader = static_cast<m_IDirect3DPixelShader9*>(pShader);
+        for(int i = 0; i < (int) Vector4fCount * 4; i++) {
+            if(pConstantData[i] != 0.f)
+                m_IDirect3DPixelShader9::globalConstants[StartRegister][i] = pConstantData[i];
+        }
+        memcpy(pshader->constants[0], m_IDirect3DPixelShader9::globalConstants[0],4*4*250);
+
+        //for(int i = 0; i < Vector4fCount; i++) {
+        //	for(int j = 0; j < 4; j++) {
+        //		pshader->constants[StartRegister][i * j] = pConstantData[i * j];
+        //	}
+        //}
+    }
+
     if(!ProxyInterface) {
         return S_FALSE;
     }
@@ -519,20 +638,6 @@ HRESULT m_IDirect3DDevice9Ex::SetPixelShaderConstantF(THIS_ UINT StartRegister, 
         vec[2] = pConstantData[2] * (1.f / ResSSAA);
         vec[3] = pConstantData[3] * (1.f / ResSSAA);
         return ProxyInterface->SetPixelShaderConstantF(StartRegister, vec, Vector4fCount);
-    }
-    GetPixelShader(&pShader);
-    HRESULT hr = 0;
-    if(pShader) {
-        pshader = static_cast<m_IDirect3DPixelShader9*>(pShader);
-        for(int i = 0; i < (int) Vector4fCount * 4; i++) {
-            if(pConstantData[i] != 0.f)
-                pshader->constants[StartRegister][i] = pConstantData[i];
-        }
-        //for(int i = 0; i < Vector4fCount; i++) {
-        //	for(int j = 0; j < 4; j++) {
-        //		pshader->constants[StartRegister][i * j] = pConstantData[i * j];
-        //	}
-        //}
     }
     if(gFixCascadedShadowMapResolution) {
         if(StartRegister == 53 && Vector4fCount == 1 && oldCascadesWidth != 0 && oldCascadesHeight != 0 &&
@@ -577,9 +682,16 @@ HRESULT m_IDirect3DDevice9Ex::SetVertexShaderConstantF(THIS_ UINT StartRegister,
     if(pShader) {
         m_IDirect3DVertexShader9* pshader = static_cast<m_IDirect3DVertexShader9*>(pShader);
         if(pshader) {
+            //for(int i = 0; i < (int) Vector4fCount * 4; i++) {
+            //    pshader->constants[StartRegister][i] = pConstantData[i];
+            //}
+
             for(int i = 0; i < (int) Vector4fCount * 4; i++) {
-                pshader->constants[StartRegister][i] = pConstantData[i];
+                if(pConstantData[i] != 0.f)
+                    m_IDirect3DVertexShader9::globalConstants[StartRegister][i] = pConstantData[i];
             }
+            memcpy(pshader->constants[0], m_IDirect3DVertexShader9::globalConstants[0], 4 * 4 * 250);
+
             //if(pshader->id == 15 &&gbuffertexturesampler3) {
             //    SetTexture(0, gbuffertexturesampler3);
             //}
@@ -632,12 +744,14 @@ HRESULT m_IDirect3DDevice9Ex::SetVertexShaderConstantF(THIS_ UINT StartRegister,
 }
 
 HRESULT m_IDirect3DDevice9Ex::SetTexture(DWORD Stage, IDirect3DBaseTexture9* pTexture) {
-    if(Stage == 0 && pTexture) {
+    if(0 && Stage == 0 && pTexture) {
         IDirect3DVertexShader9* pShader = nullptr;
         m_IDirect3DVertexShader9* pShader2 = nullptr;
         GetVertexShader(&pShader);
         if(pShader) {
             pShader2 = static_cast<m_IDirect3DVertexShader9*>(pShader);
+            if(pShader2) {
+            }
         }
     }
     // fix from AssaultKifle47
@@ -661,6 +775,114 @@ HRESULT m_IDirect3DDevice9Ex::SetTexture(DWORD Stage, IDirect3DBaseTexture9* pTe
             default:
                 return D3DERR_INVALIDCALL;
         }
+        if(pTexture2 && pTexture2->Width == gWindowWidth /*&& pTexture2->Format == D3DFMT_A2B10G10R10*/) {
+            IDirect3DPixelShader9* pShader = nullptr;
+            m_IDirect3DPixelShader9* pShader2 = nullptr;
+            GetPixelShader(&pShader);
+            if(pShader) {
+                pShader2 = static_cast<m_IDirect3DPixelShader9*>(pShader);
+                if(pShader2) {
+                    // diffuse 0
+                    if((Stage == 0 && pShader2->id == 5 + 1 ) ||
+                       (Stage == 0 && pShader2->id == 5 + 2 ) ||
+                       (Stage == 0 && pShader2->id == 5 + 3 ) ||
+                       (Stage == 0 && pShader2->id == 5 + 4 ) ||
+                       (Stage == 0 && pShader2->id == 5 + 6 ) ||
+                       (Stage == 0 && pShader2->id == 5 + 7 ) ||
+                       (Stage == 0 && pShader2->id == 5 + 8 ) ||
+                       (Stage == 0 && pShader2->id == 5 + 9 ) ||
+                       (Stage == 0 && pShader2->id == 5 + 10) ||
+                       (Stage == 0 && pShader2->id == 5 + 11) ||
+                       (Stage == 0 && pShader2->id == 5 + 12) ||
+                       (Stage == 0 && pShader2->id == 5 + 14) ||
+                       (Stage == 0 && pShader2->id == 5 + 15) ||
+                       (Stage == 1 && pShader2->id == 5 + 16) ||
+                       (Stage == 1 && pShader2->id == 5 + 17) ||
+                       (Stage == 0 && pShader2->id == 5 + 31)) {
+                        DiffuseTex = pTexture2;
+                    }
+                    // normal 1
+                    if((Stage == 1 && pShader2->id == 5 + 1 ) ||
+                       (Stage == 1 && pShader2->id == 5 + 2 ) ||
+                       (Stage == 1 && pShader2->id == 5 + 3 ) ||
+                       (Stage == 1 && pShader2->id == 5 + 4 ) ||
+                       (Stage == 1 && pShader2->id == 5 + 6 ) ||
+                       (Stage == 1 && pShader2->id == 5 + 7 ) ||
+                       (Stage == 1 && pShader2->id == 5 + 8 ) ||
+                       (Stage == 1 && pShader2->id == 5 + 9 ) ||
+                       (Stage == 1 && pShader2->id == 5 + 10) ||
+                       (Stage == 1 && pShader2->id == 5 + 11) ||
+                       (Stage == 1 && pShader2->id == 5 + 12) ||
+                       (Stage == 1 && pShader2->id == 5 + 14) ||
+                       (Stage == 1 && pShader2->id == 5 + 15) ||
+                       (Stage == 2 && pShader2->id == 5 + 16) ||
+                       (Stage == 2 && pShader2->id == 5 + 17) ||
+                       (Stage == 1 && pShader2->id == 5 + 29) ||
+                       (Stage == 0 && pShader2->id == 5 + 30) ||
+                       (Stage == 0 && pShader2->id == 5 + 32)) {
+                        NormalTex = pTexture2;
+                    }
+                    // specular 2
+                    if((Stage == 2 && pShader2->id == 5 + 1 ) ||
+                       (Stage == 2 && pShader2->id == 5 + 2 ) ||
+                       (Stage == 2 && pShader2->id == 5 + 3 ) ||
+                       (Stage == 2 && pShader2->id == 5 + 4 ) ||
+                       (Stage == 2 && pShader2->id == 5 + 6 ) ||
+                       (Stage == 2 && pShader2->id == 5 + 7 ) ||
+                       (Stage == 2 && pShader2->id == 5 + 8 ) ||
+                       (Stage == 2 && pShader2->id == 5 + 9 ) ||
+                       (Stage == 2 && pShader2->id == 5 + 14) ||
+                       (Stage == 4 && pShader2->id == 5 + 16) ||
+                       (Stage == 4 && pShader2->id == 5 + 17) ||
+                       (Stage == 0 && pShader2->id == 5 + 33)) {
+                        SpecularTex = pTexture2;
+                    }
+                    // depth 3
+                    if((Stage == 4 && pShader2->id == 5 + 1 ) ||
+                       (Stage == 4 && pShader2->id == 5 + 2 ) ||
+                       (Stage == 4 && pShader2->id == 5 + 3 ) ||
+                       (Stage == 4 && pShader2->id == 5 + 4 ) ||
+                       (Stage == 4 && pShader2->id == 5 + 6 ) ||
+                       (Stage == 4 && pShader2->id == 5 + 7 ) ||
+                       (Stage == 4 && pShader2->id == 5 + 8 ) ||
+                       (Stage == 4 && pShader2->id == 5 + 9 ) ||
+                       (Stage == 2 && pShader2->id == 5 + 10) ||
+                       (Stage == 2 && pShader2->id == 5 + 11) ||
+                       (Stage == 2 && pShader2->id == 5 + 12) ||
+                       (Stage == 4 && pShader2->id == 5 + 14) ||
+                       (Stage == 2 && pShader2->id == 5 + 15) ||
+                       (Stage == 5 && pShader2->id == 5 + 16) ||
+                       (Stage == 5 && pShader2->id == 5 + 17) ||
+                       (Stage == 1 && pShader2->id == 5 + 18) ||
+                       (Stage == 1 && pShader2->id == 5 + 19) ||
+                       (Stage == 0 && pShader2->id == 5 + 20) ||
+                       (Stage == 0 && pShader2->id == 5 + 21) ||
+                       (Stage == 0 && pShader2->id == 5 + 22) ||
+                       (Stage == 0 && pShader2->id == 5 + 23) ||
+                       (Stage == 1 && pShader2->id == 5 + 28) ||
+                       (Stage == 2 && pShader2->id == 5 + 29) ||
+                       (Stage == 1 && pShader2->id == 5 + 30) ||
+                       (Stage == 1 && pShader2->id == 5 + 35) ||
+                       (Stage == 0 && pShader2->id == 5 + 36) ||
+                       (Stage == 0 && pShader2->id == 5 + 11)) {
+                        DepthTex = pTexture2;
+                    }
+                    // stencil
+                    if((Stage == 5 && pShader2->id == 5 + 2 ) ||
+                       (Stage == 5 && pShader2->id == 5 + 4 ) ||
+                       (Stage == 5 && pShader2->id == 5 + 7 ) ||
+                       (Stage == 5 && pShader2->id == 5 + 8 ) ||
+                       (Stage == 5 && pShader2->id == 5 + 9 ) ||
+                       (Stage == 4 && pShader2->id == 5 + 11) ||
+                       (Stage == 4 && pShader2->id == 5 + 12) ||
+                       (Stage == 5 && pShader2->id == 5 + 14) ||
+                       (Stage == 2 && pShader2->id == 5 + 28)) {
+                        StencilTex = pTexture2;
+                    }
+                }
+            }
+        }
+
     }
     return ProxyInterface->SetTexture(Stage, pTexture);
 }
@@ -782,7 +1004,10 @@ HRESULT m_IDirect3DDevice9Ex::SetPixelShader(THIS_ IDirect3DPixelShader9* pShade
              !SMAA_EdgeDetectionVS || !SMAA_BlendingWeightsCalculationVS || !SMAA_NeighborhoodBlendingVS)) {
         FILE* f = nullptr;
         UINT size = 0;
-        f = fopen("shaders/SMAA2.hlsl", "r");
+        f = fopen("update/shaders/SMAA2.hlsl", "r");
+        if(!f) {
+            f = fopen("shaders/SMAA2.hlsl", "r");
+        }
         if(!f) {
             f = fopen("SMAA2.hlsl", "r");
         }
@@ -982,6 +1207,66 @@ HRESULT m_IDirect3DDevice9Ex::SetPixelShader(THIS_ IDirect3DPixelShader9* pShade
         }
     }
 
+    if(1 && (!DOF_ps)) {
+        FILE* f = nullptr;
+        UINT size = 0;
+        f = fopen("update/shaders/DOF_ps.hlsl", "r");
+        if(!f) {
+            f = fopen("shaders/DOF_ps.hlsl", "r");
+        }
+        if(!f) {
+            f = fopen("DOF_ps.hlsl", "r");
+        }
+        if(!f) {
+            return hr;
+        }
+        fseek(f, 0, SEEK_END);
+        size = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        char* buff = new char[size + 5];
+        memset(buff, 0, size + 5);
+        if(!buff) {
+            fclose(f);
+            return hr;
+        }
+        UINT size2 = fread(buff, 1, size, f);
+
+        fclose(f);
+        HRESULT hr2 = S_FALSE;
+        ID3DXBuffer* bf1 = nullptr;
+        ID3DXBuffer* bf2 = nullptr;
+        ID3DXConstantTable* ppConstantTable = nullptr;
+        IDirect3DPixelShader9* shader = nullptr;
+        { // DOF_ps
+            HRESULT hr3 = D3DXCompileShader(buff, size, 0, 0, "main", "ps_3_0", 0, &bf1, &bf2, &ppConstantTable);
+            HRESULT hr2 = S_FALSE;
+            IDirect3DPixelShader9* shader = nullptr;
+            if(hr3 == S_OK) {
+                hr2 = CreatePixelShader2((DWORD*) bf1->GetBufferPointer(), &DOF_ps, SC_NEW);
+                if(hr2 != S_OK || !DOF_ps) {
+                    Log::Error("Failed to create DOF pixel shader hlsl: ");
+                    SAFE_RELEASE(DOF_ps);
+                }
+                m_IDirect3DPixelShader9* shader2 = static_cast<m_IDirect3DPixelShader9*> (DOF_ps);
+                if(DOF_ps && shader2) {
+                    shader2->oName = "DOF_ps";
+                    shader2->loadedFx = buff;
+                    ps_2.push_back(shader2);
+                }
+                SAFE_RELEASE(bf1);
+                SAFE_RELEASE(bf2);
+                SAFE_RELEASE(ppConstantTable);
+            }
+            else {
+                Log::Error("Failed to compile DOF pixel shader hlsl: ");
+                Log::Error((char*) bf2->GetBufferPointer());
+                SAFE_RELEASE(bf1);
+                SAFE_RELEASE(bf2);
+                SAFE_RELEASE(ppConstantTable);
+            }
+        }
+    }
+
     return hr;
 }
 
@@ -992,6 +1277,11 @@ HRESULT m_IDirect3DDevice9Ex::SetRenderState(D3DRENDERSTATETYPE State, DWORD Val
     if(State == D3DRS_ADAPTIVETESS_X && DisableADAPTIVETESS_X) {
         Value = 0;
     }
+
+    //if(afterpostfx == true && (State == D3DRS_ZWRITEENABLE|| State == D3DRS_ZENABLE)) {
+    //    ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE, 0);
+    //    ProxyInterface->SetRenderState(D3DRS_ZENABLE, 0);
+    //}
 
     IDirect3DPixelShader9* pShader = 0;
     m_IDirect3DPixelShader9* pShader2 = 0;
@@ -1032,7 +1322,24 @@ DWORD CoronaDepth = 0;
 const DWORD VertexFVF = D3DFVF_XYZ | D3DFVF_TEX1;
 DWORD OldFVF = D3DFVF_XYZ | D3DFVF_TEX1;
 extern VERTEX SmaaVertexArray[4];
+#define PostfxTextureCount 15
+IDirect3DBaseTexture9* prePostFx[PostfxTextureCount] = { 0 };
+DWORD Samplers[PostfxTextureCount] = { D3DTEXF_LINEAR };
+extern bool usePrimitiveUp;
 
+ bool useDof = true;
+
+extern bool sRGB_A ;
+extern bool sRGB_a ;
+extern bool sRGB_B ;
+extern bool sRGB_b ;
+extern bool sRGB_C ;
+extern bool sRGB_c ;
+
+extern float PostFxFog[4];
+
+extern bool fixDistantOutlineUsingDXVK;
+int DofSamples[4] = { 20 };
 
 HRESULT m_IDirect3DDevice9Ex::DrawPrimitive(D3DPRIMITIVETYPE PrimitiveType, UINT StartVertex, UINT PrimitiveCount) {
     m_IDirect3DPixelShader9* pShader2 = nullptr;
@@ -1046,14 +1353,13 @@ HRESULT m_IDirect3DDevice9Ex::DrawPrimitive(D3DPRIMITIVETYPE PrimitiveType, UINT
     IDirect3DSurface9* blendSurf = nullptr;
     DWORD OldSRGB = 0;
     DWORD OldSampler = 0;
-    DWORD Samplers[5] = { D3DTEXF_LINEAR };
 
-    if(UseSSAA && doPostFx) {
-        GetSamplerState(0, D3DSAMP_MAGFILTER, &OldSampler);
-        SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
-    }
 
-    if(UsePostFx[0] > 0) {
+    if(useDof && DOF_ps && doPostFx) {
+        for(int i = 0; i < PostfxTextureCount; i++) {
+            ProxyInterface->GetTexture(i, &prePostFx[i]);
+            GetSamplerState(i, D3DSAMP_MAGFILTER, &Samplers[i]);
+        }
         GetPixelShader(&pShader);
         if(pShader) {
             pShader2 = static_cast<m_IDirect3DPixelShader9*>(pShader);
@@ -1063,38 +1369,310 @@ HRESULT m_IDirect3DDevice9Ex::DrawPrimitive(D3DPRIMITIVETYPE PrimitiveType, UINT
                         SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
                     }
                     doPostFx = false; // useless?
+
                     ProxyInterface->GetRenderTarget(0, &backBuffer);
                     if(backBuffer && pHDRTex && pHDRTex2) {
-                        pHDRTex2->GetSurfaceLevel(0, &pHDRSurface2);
+                        // save sampler state
 
-                        // FXAA
-                        if((UsePostFx[0] == 1 || UsePostFx[0] == 2) && PostFxPS) {
-                            // game postfx or fxaa
-                            if(UsePostFx[0] == 2)
-                                SetPixelShader(pShader2);
-                            else
-                                SetPixelShader(PostFxPS);
+                        pHDRTex2->GetSurfaceLevel(0, &pHDRSurface2);
+                        pHDRTex->GetSurfaceLevel(0, &pHDRSurface);
+
+                        // DOF
+                        if(1) {
+                            // game postfx or DOF
+                            //SetPixelShader(pShader2);
 
                             SetRenderTarget(0, pHDRSurface2);
                             Clear(0, 0, D3DCLEAR_TARGET, 0, 0, 0);
                             hr = ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
 
-                            if(UsePostFx[0] == 2)
-                                SetPixelShader(PostFxPS);
-                            else
-                                SetPixelShader(pShader2);
+                            SetPixelShader(DOF_ps);
+
+                            //vec4[0] = ((gWindowWidth * 1) * (UseSSAA ? ResSSAA : 1));
+                            //vec4[1] = ((gWindowHeight * 1) * (UseSSAA ? ResSSAA : 1));
+                            //vec4[2] = 1.f / ((gWindowWidth * 1) * (UseSSAA ? ResSSAA : 1));
+                            //vec4[3] = 1.f / ((gWindowHeight * 1) * (UseSSAA ? ResSSAA : 1));
+                            //ProxyInterface->SetPixelShaderConstantF(210, vec4, 1);
+                            //vec4[1] = AoDistance;
+                            //ProxyInterface->SetPixelShaderConstantF(211, vec4, 1);
+
+                            ProxyInterface->SetPixelShaderConstantF(212, FocusPoint, 1);
+                            ProxyInterface->SetPixelShaderConstantF(213, FocusScale, 1);
+                            ProxyInterface->SetPixelShaderConstantI(4, DofSamples, 1);
+                            //if(gNearFarPlane) {
+                            //    ProxyInterface->SetPixelShaderConstantF(128, NearFarPlane, 1);
+                            //}
+                            //SetTexture(1, 0);
+                            //SetTexture(1, 0);
+                            ProxyInterface->SetTexture(2, 0);
 
                             ProxyInterface->SetRenderTarget(0, backBuffer);
                             SetTexture(2, pHDRTex2);
+                            //SetTexture(1, DiffuseTex);
+                            //SetTexture(2, NormalTex);
+                            //SetTexture(3, BloomTex);
+                            //SetTexture(4, SpecularTex);
+                            //SetTexture(5, DepthTex);
+                            //SetTexture(6, StencilTex);
+                            
 
+                            ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+
+                            //ProxyInterface->SetTexture(0, 0);
+                            ProxyInterface->SetTexture(1, 0);
+                            ProxyInterface->SetTexture(2, 0);
+                            //ProxyInterface->SetTexture(3, 0);
+
+                            SetPixelShader(pShader);
+                        }
+
+
+                        SAFE_RELEASE(backBuffer);
+                        SAFE_RELEASE(pHDRSurface2);
+                        SAFE_RELEASE(pHDRSurface);
+                        if(UseSSAA && doPostFx) {
+                            SetSamplerState(0, D3DSAMP_MAGFILTER, OldSampler);
+                        }
+
+                        // restore sampler state
+                        for(int i = 0; i < PostfxTextureCount; i++) {
+                            if(prePostFx[i]) {
+                                ProxyInterface->SetTexture(i, prePostFx[i]);
+                                SetSamplerState(i, D3DSAMP_MAGFILTER, Samplers[i]);
+                                SAFE_RELEASE(prePostFx[i]);
+                            }
+                        }
+
+                        return hr;
+                    }
+                    SAFE_RELEASE(backBuffer);
+                }
+            }
+        }
+        for(int i = 0; i < PostfxTextureCount; i++) {
+            if(prePostFx[i]) {
+                ProxyInterface->SetTexture(i, prePostFx[i]);
+                SetSamplerState(i, D3DSAMP_MAGFILTER, Samplers[i]);
+                SAFE_RELEASE(prePostFx[i]);
+            }
+        }
+    }
+
+    if(UseSSAO && SSAO_ps && SSAO_vs && doPostFx) {
+        for(int i = 0; i < PostfxTextureCount; i++) {
+            ProxyInterface->GetTexture(i, &prePostFx[i]);
+            GetSamplerState(i, D3DSAMP_MAGFILTER, &Samplers[i]);
+        }
+        GetPixelShader(&pShader);
+        if(pShader) {
+            pShader2 = static_cast<m_IDirect3DPixelShader9*>(pShader);
+            if(pShader2) {
+                if(isShaderPostFx(pShader2)) {
+                    if(UseSSAA) {
+                        SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+                    }
+                    doPostFx = false; // useless?
+
+                    ProxyInterface->GetRenderTarget(0, &backBuffer);
+                    if(backBuffer && pHDRTex && pHDRTex2) {
+                        // save sampler state
+
+                        pHDRTex2->GetSurfaceLevel(0, &pHDRSurface2);
+                        pHDRTex->GetSurfaceLevel(0, &pHDRSurface);
+
+                        // SSAO
+                        if(1) {
+                            // game postfx or SSAO
+                            //SetPixelShader(pShader2);
+
+                            SetRenderTarget(0, pHDRSurface2);
+                            Clear(0, 0, D3DCLEAR_TARGET, 0, 0, 0);
                             hr = ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
 
+                            SetPixelShader(SSAO_ps);
+
+                            vec4[0] = ((gWindowWidth * 1) * (UseSSAA ? ResSSAA : 1));
+                            vec4[1] = ((gWindowHeight * 1) * (UseSSAA ? ResSSAA : 1));
+                            vec4[2] = 1.f / ((gWindowWidth * 1) * (UseSSAA ? ResSSAA : 1));
+                            vec4[3] = 1.f / ((gWindowHeight * 1) * (UseSSAA ? ResSSAA : 1));
+                            ProxyInterface->SetPixelShaderConstantF(210, vec4, 1);
+                            vec4[1] = AoDistance;
+                            ProxyInterface->SetPixelShaderConstantF(211, vec4, 1);
+                            //SetTexture(1, 0);
+                            //SetTexture(1, 0);
+                            ProxyInterface->SetTexture(2, 0);
+
+                            SetRenderTarget(0, pHDRSurface);
+                            //SetTexture(2, pHDRTex2);
+
+                            ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+
+                            //ProxyInterface->SetTexture(0, 0);
+                            ProxyInterface->SetTexture(1, 0);
+                            ProxyInterface->SetTexture(2, 0);
+                            //ProxyInterface->SetTexture(3, 0);
+
+                            SetPixelShader(SSAO_ps2);
+
+                            ProxyInterface->SetRenderTarget(0, backBuffer);
+                            switch(UseDebugTextures) {
+
+                                //"None", 
+                                //"Difuse", 
+                                //"normal",
+                                //"specular", 
+                                //"depth", 
+                                //"SMAA edges", 
+                                //"stencil"
+
+                                case 0:
+                                    SetTexture(2, pHDRTex2);
+                                    break;
+                                case 1:
+                                    SetTexture(2, DiffuseTex);
+                                    break;
+                                case 2:
+                                    SetTexture(2, NormalTex);
+                                    break;
+                                case 3:
+                                    SetTexture(2, BloomTex);
+                                    break;
+                                case 4:
+                                    SetTexture(2, SpecularTex);
+                                    break;
+                                case 5:
+                                    SetTexture(2, DepthTex);
+                                    break;
+                                case 6:
+                                    SetTexture(2, StencilTex);
+                                    break;
+                                default:
+                                    SetTexture(2, pHDRTex2);
+                                    break;
+                            }
+                            SetTexture(1, pHDRTex);
+
+                            ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+
+                            ProxyInterface->SetTexture(1, 0);
                             ProxyInterface->SetTexture(2, 0);
                             SetPixelShader(pShader);
                         }
 
+
+                        SAFE_RELEASE(backBuffer);
+                        SAFE_RELEASE(pHDRSurface2);
+                        SAFE_RELEASE(pHDRSurface);
+                        if(UseSSAA && doPostFx) {
+                            SetSamplerState(0, D3DSAMP_MAGFILTER, OldSampler);
+                        }
+                        //ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE, 0);
+                        //ProxyInterface->SetRenderState(D3DRS_ZENABLE, 0);
+                        //hr = ProxyInterface->GetDepthStencilSurface(&oldDepth);
+                        //Clear(0, 0, D3DCLEAR_ZBUFFER, 0, 0, 0);
+
+                        //hr = ProxyInterface->SetDepthStencilSurface(mainDepth);
+                        //Clear(0, 0, D3DCLEAR_ZBUFFER, 0, 0, 0);
+
+                        //afterpostfx = true;
+
+                        // restore sampler state
+                        for(int i = 0; i < PostfxTextureCount; i++) {
+                            if(prePostFx[i]) {
+                                ProxyInterface->SetTexture(i, prePostFx[i]);
+                                SetSamplerState(i, D3DSAMP_MAGFILTER, Samplers[i]);
+                                SAFE_RELEASE(prePostFx[i]);
+                            }
+                        }
+
+                        return hr;
+                    }
+                    SAFE_RELEASE(backBuffer);
+                }
+            }
+        }
+        for(int i = 0; i < PostfxTextureCount; i++) {
+            if(prePostFx[i]) {
+                ProxyInterface->SetTexture(i, prePostFx[i]);
+                SetSamplerState(i, D3DSAMP_MAGFILTER, Samplers[i]);
+                SAFE_RELEASE(prePostFx[i]);
+            }
+        }
+    }
+
+    if(fixDistantOutlineUsingDXVK) {
+        GetPixelShader(&pShader);
+        if(pShader) {
+            pShader2 = static_cast<m_IDirect3DPixelShader9*>(pShader);
+            if(pShader2 && pShader2->id == 822 || pShader2->id == 823) {
+                DWORD oldSampler = 0;
+                GetSamplerState(0, D3DSAMP_MAGFILTER, &oldSampler);
+                SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_POINT);
+                hr = ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+                SetSamplerState(0, D3DSAMP_MAGFILTER, oldSampler);
+                return hr;
+            }
+        }
+    }
+
+    if(UseSSAA && doPostFx) {
+        GetSamplerState(0, D3DSAMP_MAGFILTER, &OldSampler);
+        SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+    }
+
+    if(UsePostFx[0] > 0 && doPostFx) {
+        GetPixelShader(&pShader);
+        if(pShader) {
+            pShader2 = static_cast<m_IDirect3DPixelShader9*>(pShader);
+            if(pShader2) {
+                if(isShaderPostFx(pShader2)) {
+                    if(UseSSAA) {
+                        SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+                    }
+                    doPostFx = false; // useless?
+
+                    ProxyInterface->GetRenderTarget(0, &backBuffer);
+                    if(backBuffer && pHDRTex && pHDRTex2) {
+                        // save sampler state
+                        //for(int i = 0; i < PostfxTextureCount; i++) {
+                        //    GetTexture(i, &prePostFx[i]);
+                        //    GetSamplerState(i, D3DSAMP_MAGFILTER, &Samplers[i]);
+                        //}
+
+                        pHDRTex2->GetSurfaceLevel(0, &pHDRSurface2);
+
+                        // FXAA
+                        if((UsePostFx[0] == 1 ) && PostFxPS) {
+                            // game postfx
+                            GetRenderState(D3DRS_SRGBWRITEENABLE, &OldSRGB); // save srgb state
+                            //SetPixelShader(pShader2);
+
+                            SetRenderTarget(0, pHDRSurface2);
+                            Clear(0, 0, D3DCLEAR_TARGET, 0, 0, 0);
+                                SetRenderState(D3DRS_SRGBWRITEENABLE, (sRGB_A==true?1:0));
+                                SetSamplerState(2, D3DSAMP_SRGBTEXTURE, (sRGB_a == true ? 1 : 0));
+                            hr = ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+
+                            SetPixelShader(PostFxPS);
+
+                            ProxyInterface->SetRenderTarget(0, backBuffer);
+                            SetTexture(2, pHDRTex2);
+
+                                SetRenderState(D3DRS_SRGBWRITEENABLE, (sRGB_C == true ? 1 : 0));
+                                SetSamplerState(2, D3DSAMP_SRGBTEXTURE, (sRGB_c == true ? 1 : 0));
+
+                            hr = ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+
+                            SetSamplerState(2, D3DSAMP_SRGBTEXTURE, 0);
+
+                            ProxyInterface->SetTexture(2, 0);
+                            SetPixelShader(pShader);
+                            SetRenderState(D3DRS_SRGBWRITEENABLE, OldSRGB);// restore srgb state
+
+                        }
+
                         // SMAA
-                        if(UsePostFx[0] > 2 &&
+                        if(UsePostFx[0] > 1 &&
                            SMAA_EdgeDetection && SMAA_BlendingWeightsCalculation && SMAA_NeighborhoodBlending &&
                            SMAA_EdgeDetectionVS && SMAA_BlendingWeightsCalculationVS && SMAA_NeighborhoodBlendingVS &&
                            areaTex && searchTex && edgesTex && blendTex && pHDRSurface2
@@ -1109,9 +1687,6 @@ HRESULT m_IDirect3DDevice9Ex::DrawPrimitive(D3DPRIMITIVETYPE PrimitiveType, UINT
                                 edgesTex->GetSurfaceLevel(0, &edgesSurf);
                                 blendTex->GetSurfaceLevel(0, &blendSurf);
 
-                                // save sampler state
-                                for(int i = 0; i < 5; i++)
-                                    GetSamplerState(i, D3DSAMP_MAGFILTER, &Samplers[i]);
 
                                 // game postfx
                                 //SetPixelShader(pShader2);
@@ -1124,7 +1699,8 @@ HRESULT m_IDirect3DDevice9Ex::DrawPrimitive(D3DPRIMITIVETYPE PrimitiveType, UINT
                                 GetRenderState(D3DRS_SRGBWRITEENABLE, &OldSRGB); // save srgb state
                                 SetRenderState(D3DRS_SRGBWRITEENABLE, 0);
                                 ProxyInterface->GetFVF(&OldFVF);
-                                ProxyInterface->SetFVF(VertexFVF);
+                                if(usePrimitiveUp)
+                                    ProxyInterface->SetFVF(VertexFVF);
                                 SetPixelShader(SMAA_EdgeDetection);
                                 SetVertexShader(SMAA_EdgeDetectionVS);
                                 ProxyInterface->SetPixelShaderConstantF(24, vec4, 1);
@@ -1139,8 +1715,10 @@ HRESULT m_IDirect3DDevice9Ex::DrawPrimitive(D3DPRIMITIVETYPE PrimitiveType, UINT
 
                                 Clear(0, 0, D3DCLEAR_TARGET, 0, 0, 0);
                                 SetSamplerState(0, D3DSAMP_SRGBTEXTURE, 1);
-                                //ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
-                                ProxyInterface->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, SmaaVertexArray, sizeof(VERTEX));
+                                if(usePrimitiveUp)
+                                    ProxyInterface->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, SmaaVertexArray, sizeof(VERTEX));
+                                else
+                                    ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
                                 SetSamplerState(0, D3DSAMP_SRGBTEXTURE, 0);
 
                                 ProxyInterface->SetTexture(0, 0);
@@ -1157,8 +1735,10 @@ HRESULT m_IDirect3DDevice9Ex::DrawPrimitive(D3DPRIMITIVETYPE PrimitiveType, UINT
                                 SetTexture(2, areaTex);
                                 SetTexture(3, searchTex);
                                 Clear(0, 0, D3DCLEAR_TARGET, 0, 0, 0);
-                                //ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
-                                ProxyInterface->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, SmaaVertexArray, sizeof(VERTEX));
+                                if(usePrimitiveUp)
+                                    ProxyInterface->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, SmaaVertexArray, sizeof(VERTEX));
+                                else
+                                    ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
 
                                 ProxyInterface->SetTexture(1, 0);
                                 ProxyInterface->SetTexture(2, 0);
@@ -1173,9 +1753,9 @@ HRESULT m_IDirect3DDevice9Ex::DrawPrimitive(D3DPRIMITIVETYPE PrimitiveType, UINT
                                 ProxyInterface->SetPixelShaderConstantF(24, vec4, 1);
                                 ProxyInterface->SetVertexShaderConstantF(24, vec4, 1);
                                 vec4[0] = UsePostFx[0];
-                                vec4[1] = 2;
-                                vec4[2] = 4;
-                                vec4[3] = 5;
+                                vec4[1] = 1;
+                                vec4[2] = 3;
+                                vec4[3] = 4;
                                 ProxyInterface->SetPixelShaderConstantF(5, vec4, 1);
                                 ProxyInterface->SetRenderTarget(0, backBuffer);
                                 //Clear(0, 0, D3DCLEAR_TARGET, 0, 0, 0);
@@ -1184,10 +1764,12 @@ HRESULT m_IDirect3DDevice9Ex::DrawPrimitive(D3DPRIMITIVETYPE PrimitiveType, UINT
                                 SetTexture(1, edgesTex);
                                 SetTexture(4, blendTex);
 
-                                //ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
                                 SetRenderState(D3DRS_SRGBWRITEENABLE, 0);
 
-                                ProxyInterface->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, SmaaVertexArray, sizeof(VERTEX));
+                                if(usePrimitiveUp)
+                                    ProxyInterface->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, SmaaVertexArray, sizeof(VERTEX));
+                                else
+                                    ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
 
                                 ProxyInterface->SetTexture(1, 0);
                                 ProxyInterface->SetTexture(4, 0);
@@ -1195,9 +1777,6 @@ HRESULT m_IDirect3DDevice9Ex::DrawPrimitive(D3DPRIMITIVETYPE PrimitiveType, UINT
                                 SetPixelShader(pShader);
                                 ProxyInterface->SetFVF(OldFVF);
 
-                                // restore sampler state
-                                for(int i = 0; i < 5; i++)
-                                    SetSamplerState(i, D3DSAMP_MAGFILTER, Samplers[i]);
 
                                 SAFE_RELEASE(edgesSurf);
                                 SAFE_RELEASE(blendSurf);
@@ -1209,9 +1788,26 @@ HRESULT m_IDirect3DDevice9Ex::DrawPrimitive(D3DPRIMITIVETYPE PrimitiveType, UINT
                         if(UseSSAA && doPostFx) {
                             SetSamplerState(0, D3DSAMP_MAGFILTER, OldSampler);
                         }
+                        //ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE, 0);
+                        //ProxyInterface->SetRenderState(D3DRS_ZENABLE, 0);
+                        //hr = ProxyInterface->GetDepthStencilSurface(&oldDepth);
+                        //Clear(0, 0, D3DCLEAR_ZBUFFER, 0, 0, 0);
+                        //hr = ProxyInterface->SetDepthStencilSurface(mainDepth);
+                        //Clear(0, 0, D3DCLEAR_ZBUFFER, 0, 0, 0);
+                        //afterpostfx = true;
+                        // restore sampler state
+                        for(int i = 0; i < PostfxTextureCount; i++) {
+                            if(prePostFx[i]) {
+                                SetTexture(i, prePostFx[i]);
+                                //SetSamplerState(i, D3DSAMP_MAGFILTER, Samplers[i]);
+                                SAFE_RELEASE(prePostFx[i]);
+                            }
+                            SetSamplerState(i, D3DSAMP_MAGFILTER, Samplers[i]);
+                        }
 
                         return hr;
                     }
+                    SAFE_RELEASE(backBuffer);
                 }
             }
         }

@@ -32,7 +32,7 @@ END
 //
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 1,0,0,6
+ FILEVERSION 1,0,0,7
  PRODUCTVERSION 5,0,0,0
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
@@ -50,12 +50,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "FixingIV"
             VALUE "FileDescription", "https://github.com/RaphaelK12/ShadowResFix"
-            VALUE "FileVersion", "1.0.0.6"
-            VALUE "InternalName", "ShadowResFix"
+            VALUE "FileVersion", "1.0.0.7"
+            VALUE "InternalName", "RaGeFX Editor"
             VALUE "LegalCopyright", "MIT License"
-            VALUE "OriginalFilename", "d3d9.dll"
+            VALUE "OriginalFilename", "RaGeFX Editor.asi"
             VALUE "ProductName", "ShadowResFix"
-            VALUE "ProductVersion", "1.0.0.6"
+            VALUE "ProductVersion", "1.0.0.7"
             VALUE "UpdateUrl", "https://github.com/RaphaelK12/ShadowResFix"
         END
     END

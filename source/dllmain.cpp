@@ -31,6 +31,7 @@ bool Log::isDirt = true;
 
 extern float ResSSAA;
 
+const char* title = "RaGeFX Edition IV 1.0.0.7";
 
 HWND g_hFocusWindow = NULL;
 
@@ -58,8 +59,18 @@ UINT gWindowHeight = 0;
 UINT gWindowDivisor = 4; // rain drops blur
 IDirect3DTexture9* pRainDropsRefractionHDRTex = 0;
 
+m_IDirect3DTexture9* NormalTex = nullptr;
+m_IDirect3DTexture9* DiffuseTex = nullptr;
+m_IDirect3DTexture9* SpecularTex = nullptr;
+m_IDirect3DTexture9* DepthTex = nullptr;
+m_IDirect3DTexture9* StencilTex = nullptr;
+m_IDirect3DTexture9* BloomTex = nullptr;
+
+extern IDirect3DTexture9* aoHalfTex;
+extern IDirect3DTexture9* halfDepthDsTex;
+
 bool gNearFarPlane = 1;
-float NearFarPlane[4] = { 0 };
+float NearFarPlane[4] = { 1,1,1,1 };
 
 extern bool DisableADAPTIVETESS_X;
 extern bool EnableDepthOverwrite;
@@ -73,7 +84,7 @@ BOOL gFixWashedMirror = 0;
 UINT gFixEmissiveTransparency = 0;
 UINT gReflectionResMult = 1;
 UINT gLightResMult = 1;
-
+bool fixDistantOutlineUsingDXVK = false;
 
 extern std::vector<m_IDirect3DPixelShader9*> ps;
 extern std::vector<m_IDirect3DVertexShader9*> vs;
@@ -388,6 +399,12 @@ DInput8DeviceAcquireT* o_DInput8DeviceAcquire = nullptr;
 ClipCursor_Ptr    o_ClipCursor = nullptr;
 
 bool UsePresentToRenderUI = false;
+bool afterpostfx = false;
+
+extern IDirect3DTexture9* mainDepthTex  ; // gen
+extern IDirect3DTexture9* oldDepthTex  ; // gen
+extern IDirect3DSurface9* mainDepth  ; // gen
+extern IDirect3DSurface9* oldDepth  ; // gen
 
 // SMAA vertex array
 void CreateSmaaVertexArray() {
@@ -423,6 +440,7 @@ void CreateSmaaVertexArray() {
 }
 
 HRESULT m_IDirect3DDevice9Ex::Present(CONST RECT* pSourceRect, CONST RECT* pDestRect, HWND hDestWindowOverride, CONST RGNDATA* pDirtyRegion) {
+    afterpostfx = false;
     if(mFPSLimitMode == FrameLimiter::FPSLimitMode::FPS_REALTIME)
         while(!FrameLimiter::Sync_RT());
     else if(mFPSLimitMode == FrameLimiter::FPSLimitMode::FPS_ACCURATE)
@@ -478,10 +496,24 @@ HRESULT m_IDirect3DDevice9Ex::Present(CONST RECT* pSourceRect, CONST RECT* pDest
             gFixEmissiveTransparency++;
             gFixEmissiveTransparency = gFixEmissiveTransparency % 3;
         }
-        ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE, 1);
+        //ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE, 1);
     }
+    auto hr = ProxyInterface->Present(pSourceRect, pDestRect, hDestWindowOverride, pDirtyRegion);
+    //if(oldDepth) {
+        //Clear(0, 0, D3DCLEAR_ZBUFFER, 0, 0, 0);
 
-    return ProxyInterface->Present(pSourceRect, pDestRect, hDestWindowOverride, pDirtyRegion);
+        //IDirect3DSurface9* oldDepth2 = 0; 
+
+        //ProxyInterface->GetDepthStencilSurface(&oldDepth2);
+
+        //ProxyInterface->SetDepthStencilSurface(mainDepth);
+        //ProxyInterface->SetDepthStencilSurface(0);
+        //Clear(0, 0, D3DCLEAR_ZBUFFER, 0, 0, 0);
+
+        //SAFE_RELEASE(oldDepth);
+    //}
+
+    return hr;
 }
 
 HRESULT m_IDirect3DDevice9Ex::PresentEx(THIS_ CONST RECT* pSourceRect, CONST RECT* pDestRect, HWND hDestWindowOverride, CONST RGNDATA* pDirtyRegion, DWORD dwFlags) {
@@ -547,9 +579,11 @@ HRESULT m_IDirect3DDevice9Ex::PresentEx(THIS_ CONST RECT* pSourceRect, CONST REC
 }
 
 HRESULT m_IDirect3DDevice9Ex::BeginScene() {
-    auto hr = ProxyInterface->BeginScene();
+    return ProxyInterface->BeginScene();
     //ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE, 1);
-    return hr;
+    //Clear(0, 0, D3DCLEAR_ZBUFFER, 0, 0, 0);
+
+    //return hr;
 }
 
 HRESULT m_IDirect3DDevice9Ex::EndScene() {
@@ -699,7 +733,6 @@ void ForceFullScreenRefreshRateInHz(D3DPRESENT_PARAMETERS* pPresentationParamete
 
 HRESULT m_IDirect3D9Ex::CreateDevice(UINT Adapter, D3DDEVTYPE DeviceType, HWND hFocusWindow, DWORD BehaviorFlags, D3DPRESENT_PARAMETERS* pPresentationParameters, IDirect3DDevice9** ppReturnedDeviceInterface) {
     pRainDropsRefractionHDRTex = 0;
-    pRainDropsRefractionHDRTex = 0;
     if(bForceWindowedMode) {
         g_hFocusWindow = hFocusWindow;
         ForceWindowed(pPresentationParameters);
@@ -759,7 +792,18 @@ HRESULT m_IDirect3D9Ex::CreateDeviceEx(THIS_ UINT Adapter, D3DDEVTYPE DeviceType
 }
 
 HRESULT m_IDirect3DDevice9Ex::Reset(D3DPRESENT_PARAMETERS* pPresentationParameters) {
-    pRainDropsRefractionHDRTex = 0;
+    //RECT rc = { 0 };
+    //GetClientRect(pPresentationParameters->hDeviceWindow, &rc);
+    //pPresentationParameters->BackBufferHeight = rc.bottom - rc.top;
+    //pPresentationParameters->BackBufferWidth = rc.right - rc.left;
+
+    pRainDropsRefractionHDRTex = nullptr;
+    NormalTex = nullptr;
+    DiffuseTex = nullptr;
+    SpecularTex = nullptr;
+    StencilTex = nullptr;
+    BloomTex = nullptr;
+    DepthTex = nullptr;
     textureList.remove(rainDepth);
     textureList.remove((m_IDirect3DTexture9*) pHDRTex);
     textureList.remove((m_IDirect3DTexture9*) pHDRTex2);
@@ -768,13 +812,22 @@ HRESULT m_IDirect3DDevice9Ex::Reset(D3DPRESENT_PARAMETERS* pPresentationParamete
     textureList.remove((m_IDirect3DTexture9*) edgesTex);
     textureList.remove((m_IDirect3DTexture9*) blendTex);
 
+    textureList.remove((m_IDirect3DTexture9*) aoHalfTex);
+    textureList.remove((m_IDirect3DTexture9*) halfDepthDsTex);
+
     SAFE_RELEASE(rainDepth);
-    SAFE_RELEASE(pHDRTex);
+    //SAFE_RELEASE(pHDRTex);
     SAFE_RELEASE(pHDRTex2);
     SAFE_RELEASE(areaTex);
     SAFE_RELEASE(searchTex);
     SAFE_RELEASE(edgesTex);
     SAFE_RELEASE(blendTex);
+
+    SAFE_RELEASE(aoHalfTex);
+    SAFE_RELEASE(halfDepthDsTex);
+
+    //SAFE_RELEASE(mainDepth);
+    //SAFE_RELEASE(mainDepthTex);
 
     if(bForceWindowedMode)
         ForceWindowed(pPresentationParameters);
@@ -789,12 +842,27 @@ HRESULT m_IDirect3DDevice9Ex::Reset(D3DPRESENT_PARAMETERS* pPresentationParamete
 
     gShadowResFix->OnBeforeD3D9DeviceReset(this);
 
-    auto hRet = ProxyInterface->Reset(pPresentationParameters);
 
-    gShadowResFix->OnAfterD3D9DeviceReset();
+    //0x8876086c
+    //HRESULT r = S_FALSE;
+    //while((r = TestCooperativeLevel()) != D3DERR_DEVICENOTRESET) {
+    //    printf("0");
+    //}
+
+    auto hRet = ProxyInterface->Reset(pPresentationParameters);
+    //while(hRet != S_OK) {
+    //    hRet = ProxyInterface->Reset(pPresentationParameters);
+    //}
+
+    if(hRet == S_OK)
+     gShadowResFix->OnAfterD3D9DeviceReset();
 
     gWindowWidth = pPresentationParameters->BackBufferWidth;
     gWindowHeight = pPresentationParameters->BackBufferHeight;
+
+    if(gWindowHeight == 0 || gWindowWidth == 0) {
+        MessageBoxA(0, "gWindowHeight == 0 || gWindowWidth == 0", "Zero screen size", MB_ICONWARNING);
+    }
 
     if(SUCCEEDED(hRet)) {
         if(FrameLimiter::pFPSFont)
@@ -821,7 +889,7 @@ HRESULT m_IDirect3DDevice9Ex::ResetEx(THIS_ D3DPRESENT_PARAMETERS* pPresentation
     textureList.remove((m_IDirect3DTexture9*)blendTex);
 
     SAFE_RELEASE(rainDepth);
-    SAFE_RELEASE(pHDRTex);
+    //SAFE_RELEASE(pHDRTex);
     SAFE_RELEASE(pHDRTex2);
 
     SAFE_RELEASE(areaTex);
@@ -1079,6 +1147,7 @@ bool Initialize() {
 
     if(!o_WndProc) {
         o_WndProc = (WNDPROC) SetWindowLongPtr(windows[windows.size()-1] /*FindWindowA("grcWindow", "GTAIV")*/, GWL_WNDPROC, (LONG_PTR) WndProcH);
+        SetWindowTextA(windows[windows.size() - 1], title);
 
         if(!o_WndProc) {
             return false;
@@ -1177,13 +1246,13 @@ HRESULT WINAPI DebugSetLevel(DWORD dw1) {
     return o_pDebugSetLevel(dw1);
 }
 
-void WINAPI DebugSetMute() {
-    if(!o_pDebugSetMute) {
-        return;
-    }
-
-    return o_pDebugSetMute();
-}
+//void WINAPI DebugSetMute() {
+//    if(!o_pDebugSetMute) {
+//        return;
+//    }
+//
+//    return o_pDebugSetMute();
+//}
 
 HRESULT WINAPI PSGPError() {
     if(!o_pPSGPError) {
@@ -1282,7 +1351,7 @@ bool WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved) {
 
             *strrchr(path, '\\') = '\0';
             strcat_s(path, "\\shadowresfix.ini");
-            int rescale = 1;
+            char rescale[100] = { 0 };
             // read ini
             {
                 bForceWindowedMode = GetPrivateProfileInt("MAIN", "ForceWindowedMode", 0, path) != 0;
@@ -1315,9 +1384,10 @@ bool WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved) {
                 EnableDepthOverwrite = GetPrivateProfileInt("SHADOWRESFIX", "EnableDepthOverwrite", 0, path) != 0;
                 UsePresentToRenderUI = GetPrivateProfileInt("SHADOWRESFIX", "UsePresentToRenderUI", 0, path) != 0;
                 AlowPauseGame = GetPrivateProfileInt("SHADOWRESFIX", "AlowPauseGame", 0, path) != 0;
-                UseSSAA = GetPrivateProfileInt("SHADOWRESFIX", "UseSSAA", 0, path) != 0;
+                UseSSAA = GetPrivateProfileIntA("SHADOWRESFIX", "UseSSAA", 0, path) != 0;
 
-                rescale = GetPrivateProfileInt("SHADOWRESFIX", "ResolutionScale", 1, path) ;
+                //rescale = 
+                    GetPrivateProfileStringA("SHADOWRESFIX", "ResolutionScale", "1", rescale, 99, path);
 
                 hookWait = GetPrivateProfileInt("SHADOWRESFIX", "hookDelayMS", 0, path);
 
@@ -1334,11 +1404,11 @@ bool WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved) {
                 }
             }
 
-            ResSSAA = rescale;
-            if(rescale == 0)
-                ResSSAA = 1;
-            if(rescale < 0)
-                ResSSAA = 1.f/ abs(rescale);
+            (void) sscanf(rescale, "%f", &ResSSAA);
+            //if(rescale == 0)
+            //    ResSSAA = 1;
+            //if(rescale < 0)
+            //    ResSSAA = 1.f/ abs(rescale);
 
             // validate values
             switch(gReflectionResMult) {
@@ -1508,7 +1578,7 @@ bool WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved) {
                 Iat_hook::detour_iat_ptr("D3DPERF_SetRegion"                         , (void*) D3DPERF_SetRegion                         );
                 Iat_hook::detour_iat_ptr("D3DPERF_EndEvent"                          , (void*) D3DPERF_EndEvent                          );
                 Iat_hook::detour_iat_ptr("DebugSetLevel"                             , (void*) DebugSetLevel                             );
-                Iat_hook::detour_iat_ptr("DebugSetMute"                              , (void*) DebugSetMute                              );
+                //Iat_hook::detour_iat_ptr("DebugSetMute"                              , (void*) DebugSetMute                              );
                 Iat_hook::detour_iat_ptr("PSGPError"                                 , (void*) PSGPError                                 );
                 
             }

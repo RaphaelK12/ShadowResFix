@@ -47,6 +47,9 @@ public:
     static size_t length() {
         return LogText.length();
     }
+    static void clear() {
+        LogText.clear();
+    }
     static bool isDirt;
 private:
     static std::string LogText;
