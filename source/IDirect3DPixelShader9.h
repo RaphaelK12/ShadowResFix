@@ -4,10 +4,10 @@
 
 class m_IDirect3DPixelShader9 : public IDirect3DPixelShader9, public AddressLookupTableObject, public basicShader {
 private:
+public:
     LPDIRECT3DPIXELSHADER9 ProxyInterface;
     m_IDirect3DDevice9Ex* m_pDeviceEx = nullptr;
 
-public:
     IDirect3DPixelShader9* compiledShaders[5] = { 0 };;
     IDirect3DPixelShader9* newShader = nullptr;
     static IDirect3DPixelShader9* dummyShader;

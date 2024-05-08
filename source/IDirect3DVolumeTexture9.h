@@ -6,6 +6,18 @@ private:
 	m_IDirect3DDevice9Ex* m_pDeviceEx = nullptr;
 
 public:
+	UINT Width;
+	UINT Height;
+	UINT Levels;
+	DWORD Usage;
+	D3DFORMAT Format;
+	D3DPOOL Pool;
+	const char* FormatName;
+	std::string name;
+	UINT useCounter = 0;
+
+
+
 	m_IDirect3DVolumeTexture9(LPDIRECT3DVOLUMETEXTURE9 pTexture8, m_IDirect3DDevice9Ex* pDevice) : ProxyInterface(pTexture8), m_pDeviceEx(pDevice) {
 		pDevice->ProxyAddressLookupTable->SaveAddress(this, ProxyInterface);
 	}

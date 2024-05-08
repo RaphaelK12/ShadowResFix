@@ -46,6 +46,12 @@
     add r2.xy, r1.xwzw, c3.x
     texld r3, r1.wxzw, s1
 	
+		// rcp r30.w, c128.x
+		// mul r30.w, r30.w, c128.y		
+	
+		// pow r30.x, r30.w, r3.x
+		// mul r30.x, r30.x, c128.y
+	
         rcp r20.x, c128.x
         mul r20.x, r20.x, c128.y
         pow r20.x, r20.x, r3.x

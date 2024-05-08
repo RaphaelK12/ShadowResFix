@@ -30,9 +30,22 @@ enum ShaderCreationMode {
     SC_NEW,     // my asm
 };
 
-extern long long g_id;
+struct crc_name {
+    uint32_t crc32;
+    std::string name;
+    int id;
+    crc_name(std::string _name, uint32_t _crc32, int _id) {
+        name = _name;
+        crc32 = _crc32;
+        id = _id;
+    }
+};
 
-extern std::list<std::string> shadowGen;
+extern std::vector<crc_name*> crclist_ps;
+extern std::vector<crc_name*> crclist_vs;
+
+
+extern long long g_id;
 
 extern HRESULT SaveFX(std::string fxname, std::string shadername, std::string source, ShaderType shaderType);
 extern HRESULT SaveASM(std::string fxname, std::string shadername, std::string source, ShaderType shaderType);
@@ -52,12 +65,15 @@ public:
     std::string oName;	            // original name, shader_names_ps[id]
     std::string fxName;	            // name of fcx file without extension
 
-    std::string fxcAsm;	            // original asm from fxc, use GetAsm()
+    std::string fxcAsm;	            // original asm from fxc, use GetAsm() or asm file read
     std::string loadedAsm;	        // loaded asm from shaders/asm/.
     std::string editedAsm;	        // edited asm, temp asm
 
     std::string loadedFx;	        // fx shader source loaded from update/shader/fx/%oName
     std::string editedFx;	        // edited fx
+
+    std::string entryFunction;	    // entry point to compile the shader
+    std::string fileName;	        // file name to load this shader, if this shader is a loaded shader
     UINT crc32 = 0;
 
     bool useNewShader = false;	    // if use new edited/recompiled shader in place

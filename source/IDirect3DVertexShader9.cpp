@@ -17,11 +17,10 @@
 #include "d3d9.h"
 #include "D3DX9Mesh.h"
 
-extern std::vector<uint8_t> patternZS;
 extern std::vector<uint8_t> patternFF;
-extern std::vector<uint8_t> pattern2;
 extern std::vector<m_IDirect3DVertexShader9*> vs;
 extern std::vector<m_IDirect3DVertexShader9*> vs_2;
+extern std::vector<m_IDirect3DVertexShader9*> vs_4;
 extern std::vector<const char*> shader_names_ps;
 extern std::vector<const char*> shader_names_vs;
 extern std::vector<const char*> shader_names_fxc;
@@ -100,6 +99,65 @@ extern IDirect3DVertexShader9* SSAO_vs;
 
 float m_IDirect3DVertexShader9::globalConstants[256][4] = { {0} }; // constant table, set with Set*ShaderConstantF
 
+static int loadCounter = 0;
+
+std::string getNameFromCRC_vs(UINT crc32) {
+    for(int i = 0; i < (int) crclist_vs.size(); i++) {
+        if(crclist_vs[i]->crc32 == crc32) {
+            return crclist_vs[i]->name;
+        }
+    }
+    return "";
+}
+
+int getIdFromCRC_vs(UINT crc32) {
+    int id = -1;
+    auto name = getNameFromCRC_vs(crc32);
+    for(int i = 0; i < (int) shader_names_vs.size(); i++) {
+        if(name == shader_names_vs[i]) {
+            id = i+2000;
+            break;
+        }
+    }
+    return id;
+}
+
+int getIdFromOrderCRC_vs(int cnt, UINT crc32) {
+    int id = -1;
+    if(cnt < (int) crclist_vs.size()) {
+        // exact cnt, precise
+        if(crclist_vs[cnt]->crc32 == crc32)
+            return crclist_vs[cnt]->id+2000;
+        // cnt ahead, less precise, but generaly works
+        else {
+            for(int i = max(0, cnt - 1); i < (int) crclist_vs.size(); i++) {
+                if(crclist_vs[i]->crc32 == crc32) {
+                    loadCounter = i;
+                    return crclist_vs[i]->id+2000;
+                }
+            }
+        }
+    }
+
+    // just another way to get the id, does this work?
+    for(int i = 0; i < (int) crclist_vs.size(); i++) {
+        if(crclist_vs[i]->crc32 == crc32) {
+            return crclist_vs[i]->id+2000;
+        }
+    }
+
+    // just a brute way to get the id, sometimes works
+    auto name = getNameFromCRC_vs(crc32);
+    for(int i = 0; i < (int) shader_names_vs.size(); i++) {
+        if(name == shader_names_vs[i]) {
+            id = i+2000;
+            break;
+        }
+    }
+    return id;
+}
+
+
 m_IDirect3DVertexShader9::m_IDirect3DVertexShader9(LPDIRECT3DVERTEXSHADER9 pShader9, m_IDirect3DDevice9Ex* pDevice, ShaderCreationMode extra) :
     ProxyInterface(pShader9), m_pDeviceEx(pDevice) {
     pDevice->ProxyAddressLookupTable->SaveAddress(this, ProxyInterface);
@@ -107,14 +165,21 @@ m_IDirect3DVertexShader9::m_IDirect3DVertexShader9(LPDIRECT3DVERTEXSHADER9 pShad
     id = getSignature(this, patternFF);
     crc32 = getCRC32(this);
     sprintf(buf100, "vs_%x.asm", crc32);
-    if(id == -1)
-        id = getSignature(this, patternZS);
+    if(id == -1) {
+        id = getIdFromOrderCRC_vs(loadCounter, crc32);
+        //getNameFromCRC(crc32);
+    }
+    if(id == -1) {
+        id = getIdFromCRC_vs(crc32);
+    }
+    else
+        loadCounter++;
 
     fxcAsm = GetAsm();
     if(id >= 0 && id - 2000 >= (int) shader_names_vs.size()) {
         Log::Error("illegal vs id: " + std::to_string(id));
     }
-    if(id >= 0 && id - 2000 < (int) shader_names_vs.size()) {
+    if(id >= 0 && id - 2000 >= 0 && id - 2000 < (int) shader_names_vs.size()) {
         id = id - 2000;
         oName = shader_names_vs[id];
         fxid = getfxid(id, oName);
@@ -166,7 +231,7 @@ m_IDirect3DVertexShader9::m_IDirect3DVertexShader9(LPDIRECT3DVERTEXSHADER9 pShad
     else {
         fxName = "nonamed";
         oName = buf100;
-        if(extra != SC_NEW){
+        if(extra != SC_NEW) {
             vs_2.push_back(this);
             loadedFx = LoadFX(fxName, oName);
             loadedAsm = LoadASM(fxName, oName);
@@ -190,7 +255,7 @@ m_IDirect3DVertexShader9::m_IDirect3DVertexShader9(LPDIRECT3DVERTEXSHADER9 pShad
             }
         }
     }
-    if(!dummyShader ) {
+    if(!dummyShader) {
         HRESULT hr2 = S_FALSE;
         ID3DXBuffer* bf1 = nullptr;
         ID3DXBuffer* bf2 = nullptr;
@@ -220,8 +285,6 @@ m_IDirect3DVertexShader9::m_IDirect3DVertexShader9(LPDIRECT3DVERTEXSHADER9 pShad
     id = getSignature(this, patternFF);
     crc32 = getCRC32(this);
     sprintf(buf100, "vs_%x.asm", crc32);
-    if(id == -1)
-        id = getSignature(this, patternZS);
 
     fxcAsm = GetAsm();
     if(id >= 0 && id - 2000 >= (int) shader_names_vs.size()) {
@@ -478,13 +541,16 @@ ULONG m_IDirect3DVertexShader9::AddRef(THIS) {
 }
 
 ULONG m_IDirect3DVertexShader9::Release(THIS) {
-    for(int i = 0; i < (int) vs_2.size(); i++) {
-        if(vs_2[i] == this) {
-            //vs_2[i] = 0;
+    ULONG cnt = ProxyInterface->Release();
+    if(cnt == 0) {
+        for(int i = 0; i < (int) vs_2.size(); i++) {
+            if(vs_2[i] == this) {
+                vs_2[i] = 0;
+                //delete this;
+            }
         }
     }
-
-    return ProxyInterface->Release();
+    return cnt;
 }
 
 HRESULT m_IDirect3DVertexShader9::GetDevice(THIS_ IDirect3DDevice9** ppDevice) {

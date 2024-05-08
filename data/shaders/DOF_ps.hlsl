@@ -46,7 +46,10 @@ float getBlurSize(float depth, float focusPoint, float focusScale)
 }
 
 float logToLinear(float w){
-	float z = log(w/znearfar.x) / log(znearfar.y/znearfar.x);
+	// float z = log(w/znearfar.x) / log(znearfar.y/znearfar.x);
+	//float z = log2(w/znearfar.y) / log2(znearfar.x/znearfar.y);
+	//float z = (znearfar.y*(w-znearfar.x))/(w*(znearfar.y-znearfar.x));
+	float z = pow(znearfar.y/znearfar.x, w);
 	return z;
 }
 
@@ -81,6 +84,9 @@ float4 depthOfField(float2 texCoord, float focusPoint, float focusScale)
 float4 main(float2 texcoord : TEXCOORD) : COLOR
 {
 	return depthOfField(texcoord, FocusPoint, FocusScale);
+	//float depth = logToLinear(tex2D(Depth, texcoord).r) ;
+	//depth = depth ;
+	//return (float4(depth, depth, depth, 1))/znearfar.y;
 };
 
 float4 main2(float2 texcoord : TEXCOORD) : COLOR

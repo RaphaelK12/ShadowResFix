@@ -19,7 +19,7 @@ workspace "ShadowResFix"
    
    defines { "rsc_CompanyName=\"FixingIV\"" }
    defines { "rsc_LegalCopyright=\"MIT License\""} 
-   defines { "rsc_FileVersion=\"1.0.0.6\"", "rsc_ProductVersion=\"1.0.0.6\"" }
+   defines { "rsc_FileVersion=\"1.0.0.8\"", "rsc_ProductVersion=\"1.0.0.8\"" }
    defines { "rsc_InternalName=\"%{prj.name} IM\"", "rsc_ProductName=\"%{prj.name} IM\"", "rsc_OriginalFilename=\"d3d9.dll\"" }
    defines { "rsc_FileDescription=\"https://github.com/RaphaelK12/%{prj.name}\"" }
    defines { "rsc_UpdateUrl=\"https://github.com/RaphaelK12/%{prj.name}\"" }

@@ -19,6 +19,7 @@
 #include "d3dx9.h"
 #include "iathook.h"
 #include <Windows.h>
+#include <xinput.h>
 #include "ShadowResFix.h"
 #include "Log.h"
 
@@ -31,7 +32,7 @@ bool Log::isDirt = true;
 
 extern float ResSSAA;
 
-const char* title = "RaGeFX Edition IV 1.0.0.7";
+const char* title = "RaGeFX Edition IV 1.0.0.8";
 
 HWND g_hFocusWindow = NULL;
 
@@ -57,6 +58,7 @@ bool gFixRainDrops = 0;
 UINT gWindowWidth = 0;
 UINT gWindowHeight = 0;
 UINT gWindowDivisor = 4; // rain drops blur
+
 IDirect3DTexture9* pRainDropsRefractionHDRTex = 0;
 
 m_IDirect3DTexture9* NormalTex = nullptr;
@@ -66,8 +68,35 @@ m_IDirect3DTexture9* DepthTex = nullptr;
 m_IDirect3DTexture9* StencilTex = nullptr;
 m_IDirect3DTexture9* BloomTex = nullptr;
 
+extern IDirect3DTexture9* aoTex;
 extern IDirect3DTexture9* aoHalfTex;
 extern IDirect3DTexture9* halfDepthDsTex;
+
+extern IDirect3DTexture9* pHDRTex;
+extern IDirect3DTexture9* pHDRTex2;
+extern IDirect3DTexture9* pHalfHDRTex;
+extern IDirect3DTexture9* pQuarterHDRTex;
+
+extern std::list<m_IDirect3DTexture9*> textureList;
+extern m_IDirect3DTexture9* rainDepth;
+extern IDirect3DTexture9* pHDRTex;
+extern IDirect3DTexture9* pHDRTex2;
+extern IDirect3DTexture9* areaTex;
+extern IDirect3DTexture9* searchTex;
+extern IDirect3DTexture9* edgesTex;
+extern IDirect3DTexture9* blendTex;
+extern IDirect3DVolumeTexture9* bluenoisevolume;
+
+extern IDirect3DTexture9* mainDepthTex; // gen
+extern IDirect3DTexture9* oldDepthTex; // gen
+extern IDirect3DSurface9* mainDepth; // gen
+extern IDirect3DSurface9* oldDepth; // gen
+
+extern IDirect3DTexture9* stencilDownsampled; // gen
+extern IDirect3DTexture9* pHDRDownsampleTex; // gen
+extern IDirect3DTexture9* pHDRDownsampleTex2; // gen
+extern IDirect3DTexture9* depthStenciltex; // gen
+
 
 bool gNearFarPlane = 1;
 float NearFarPlane[4] = { 1,1,1,1 };
@@ -85,6 +114,14 @@ UINT gFixEmissiveTransparency = 0;
 UINT gReflectionResMult = 1;
 UINT gLightResMult = 1;
 bool fixDistantOutlineUsingDXVK = false;
+
+bool UsePresentToRenderUI = false;
+bool afterpostfx = false;
+BOOL b_ShowCursor = 0; // if game want to show cursor
+int hookWait = 10;
+extern int UseSunShafts;
+
+
 
 extern std::vector<m_IDirect3DPixelShader9*> ps;
 extern std::vector<m_IDirect3DVertexShader9*> vs;
@@ -322,17 +359,6 @@ uint8_t* baseAddress = nullptr;
 
 FrameLimiter::FPSLimitMode mFPSLimitMode = FrameLimiter::FPSLimitMode::FPS_NONE;
 
-extern IDirect3DTexture9* pHDRTex ;
-extern IDirect3DTexture9* pHDRTex2;
-
-extern std::list<m_IDirect3DTexture9*> textureList;
-extern m_IDirect3DTexture9* rainDepth  ;
-extern IDirect3DTexture9* pHDRTex      ;
-extern IDirect3DTexture9* pHDRTex2     ;
-extern IDirect3DTexture9* areaTex      ;
-extern IDirect3DTexture9* searchTex    ;
-extern IDirect3DTexture9* edgesTex     ;
-extern IDirect3DTexture9* blendTex     ;
 
 
 
@@ -356,6 +382,16 @@ typedef HMODULE(WINAPI* LoadLibraryExA_Ptr)(LPCSTR lpLibFileName, HANDLE hFile, 
 typedef FARPROC(WINAPI* GetProcAddress_Ptr)(HMODULE hModule, LPCSTR lpProcName);
 
 typedef HRESULT(WINAPI* DirectInput8Create_ptr)(HINSTANCE hinst, DWORD dwVersion, REFIID riidltf, LPVOID* ppvOut, LPUNKNOWN punkOuter);
+typedef DWORD(WINAPI* XInputGetState_ptr)(DWORD dwUserIndex, XINPUT_STATE* pState);
+
+
+typedef  SHORT(WINAPI* GetKeyState_Ptr)(int nVirtKey);
+typedef  SHORT(WINAPI* GetAsyncKeyState_Ptr)(int vKey);
+typedef  BOOL (WINAPI* GetKeyboardState_Ptr)(PBYTE lpKeyState);
+typedef  BOOL (WINAPI* SetKeyboardState_Ptr)(LPBYTE lpKeyState);
+
+typedef int (WINAPI* ShowCursor_ptr)(BOOL bShow);
+
 
 
 Direct3DShaderValidatorCreate9Proc              o_pDirect3DShaderValidatorCreate9 = nullptr;
@@ -375,7 +411,14 @@ Direct3DCreate9Proc                             o_pDirect3DCreate9 = nullptr;
 Direct3DCreate9ExProc                           o_pDirect3DCreate9Ex = nullptr;
 
 DirectInput8Create_ptr                          o_DirectInput8Create = nullptr;
+XInputGetState_ptr                              o_XInputGetState = nullptr;
 
+
+
+GetKeyState_Ptr                                 o_GetKeyState      = nullptr;
+GetAsyncKeyState_Ptr                            o_GetAsyncKeyState = nullptr;
+GetKeyboardState_Ptr                            o_GetKeyboardState = nullptr;
+SetKeyboardState_Ptr                            o_SetKeyboardState = nullptr;
 
 RegisterClassA_fn o_RegisterClassA = nullptr;
 RegisterClassW_fn o_RegisterClassW = nullptr;
@@ -388,6 +431,7 @@ LoadLibraryExW_Ptr	           o_LoadLibraryExW = nullptr;
 LoadLibraryExA_Ptr	           o_LoadLibraryExA = nullptr;
 GetProcAddress_Ptr             o_GetProcAddress = nullptr;
 
+
 WNDPROC o_WndProc = nullptr;
 WNDPROC WndProc = nullptr;
 
@@ -397,14 +441,8 @@ SHGetFolderPathW_Ptr o_SHGetFolderPathW = nullptr;
 DInput8DeviceGetDeviceStateT* o_DInput8DeviceGetDeviceState = nullptr;
 DInput8DeviceAcquireT* o_DInput8DeviceAcquire = nullptr;
 ClipCursor_Ptr    o_ClipCursor = nullptr;
+ShowCursor_ptr    o_ShowCursor = nullptr;
 
-bool UsePresentToRenderUI = false;
-bool afterpostfx = false;
-
-extern IDirect3DTexture9* mainDepthTex  ; // gen
-extern IDirect3DTexture9* oldDepthTex  ; // gen
-extern IDirect3DSurface9* mainDepth  ; // gen
-extern IDirect3DSurface9* oldDepth  ; // gen
 
 // SMAA vertex array
 void CreateSmaaVertexArray() {
@@ -492,10 +530,10 @@ HRESULT m_IDirect3DDevice9Ex::Present(CONST RECT* pSourceRect, CONST RECT* pDest
         ProxyInterface->SetRenderState(D3DRS_DESTBLENDALPHA, (DWORD) _D3DRS_DESTBLENDALPHA);
         ProxyInterface->SetRenderState(D3DRS_SCISSORTESTENABLE, (DWORD) _D3DRS_SCISSORTESTENABLE);
 
-        if(GetAsyncKeyState(VK_F3) & 0x01) {
-            gFixEmissiveTransparency++;
-            gFixEmissiveTransparency = gFixEmissiveTransparency % 3;
-        }
+        //if(GetAsyncKeyState(VK_F3) & 0x01) {
+        //    gFixEmissiveTransparency++;
+        //    gFixEmissiveTransparency = gFixEmissiveTransparency % 3;
+        //}
         //ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE, 1);
     }
     auto hr = ProxyInterface->Present(pSourceRect, pDestRect, hDestWindowOverride, pDirtyRegion);
@@ -513,8 +551,16 @@ HRESULT m_IDirect3DDevice9Ex::Present(CONST RECT* pSourceRect, CONST RECT* pDest
         //SAFE_RELEASE(oldDepth);
     //}
 
+    //if(o_ShowCursor) {
+    //    if(gShadowResFix->mShowWindow) {
+    //        o_ShowCursor(TRUE);
+    //    }
+    //    o_ShowCursor(b_ShowCursor);
+    //}
+
     return hr;
 }
+
 
 HRESULT m_IDirect3DDevice9Ex::PresentEx(THIS_ CONST RECT* pSourceRect, CONST RECT* pDestRect, HWND hDestWindowOverride, CONST RGNDATA* pDirtyRegion, DWORD dwFlags) {
     if(mFPSLimitMode == FrameLimiter::FPSLimitMode::FPS_REALTIME)
@@ -633,10 +679,10 @@ HRESULT m_IDirect3DDevice9Ex::EndScene() {
         ProxyInterface->SetRenderState(D3DRS_DESTBLENDALPHA, (DWORD) _D3DRS_DESTBLENDALPHA);
         ProxyInterface->SetRenderState(D3DRS_SCISSORTESTENABLE, (DWORD) _D3DRS_SCISSORTESTENABLE);
 
-        if(GetAsyncKeyState(VK_F3) & 0x01) {
-            gFixEmissiveTransparency++;
-            gFixEmissiveTransparency = gFixEmissiveTransparency % 3;
-        }
+        //if(GetAsyncKeyState(VK_F3) & 0x01) {
+        //    gFixEmissiveTransparency++;
+        //    gFixEmissiveTransparency = gFixEmissiveTransparency % 3;
+        //}
         ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE, 1);
     }
 
@@ -806,25 +852,41 @@ HRESULT m_IDirect3DDevice9Ex::Reset(D3DPRESENT_PARAMETERS* pPresentationParamete
     DepthTex = nullptr;
     textureList.remove(rainDepth);
     textureList.remove((m_IDirect3DTexture9*) pHDRTex);
+    textureList.remove((m_IDirect3DTexture9*) pHalfHDRTex);
+    textureList.remove((m_IDirect3DTexture9*) pQuarterHDRTex);
     textureList.remove((m_IDirect3DTexture9*) pHDRTex2);
     textureList.remove((m_IDirect3DTexture9*) areaTex);
     textureList.remove((m_IDirect3DTexture9*) searchTex);
     textureList.remove((m_IDirect3DTexture9*) edgesTex);
     textureList.remove((m_IDirect3DTexture9*) blendTex);
+    textureList.remove((m_IDirect3DTexture9*) bluenoisevolume);
 
+    textureList.remove((m_IDirect3DTexture9*) aoTex);
     textureList.remove((m_IDirect3DTexture9*) aoHalfTex);
     textureList.remove((m_IDirect3DTexture9*) halfDepthDsTex);
+    textureList.remove((m_IDirect3DTexture9*) stencilDownsampled);
+    textureList.remove((m_IDirect3DTexture9*) pHDRDownsampleTex);
+    textureList.remove((m_IDirect3DTexture9*) pHDRDownsampleTex2);
+    textureList.remove((m_IDirect3DTexture9*) depthStenciltex);
 
+    pHalfHDRTex = nullptr;
+    pQuarterHDRTex = nullptr;
     SAFE_RELEASE(rainDepth);
-    //SAFE_RELEASE(pHDRTex);
+    //SAFE_RELEASE(pHDRTex); // the game will release this
     SAFE_RELEASE(pHDRTex2);
     SAFE_RELEASE(areaTex);
     SAFE_RELEASE(searchTex);
     SAFE_RELEASE(edgesTex);
     SAFE_RELEASE(blendTex);
+    SAFE_RELEASE(bluenoisevolume);
 
+    SAFE_RELEASE(aoTex);
     SAFE_RELEASE(aoHalfTex);
     SAFE_RELEASE(halfDepthDsTex);
+    SAFE_RELEASE(stencilDownsampled);
+    SAFE_RELEASE(pHDRDownsampleTex);
+    SAFE_RELEASE(pHDRDownsampleTex2);
+    SAFE_RELEASE(depthStenciltex);
 
     //SAFE_RELEASE(mainDepth);
     //SAFE_RELEASE(mainDepthTex);
@@ -850,6 +912,7 @@ HRESULT m_IDirect3DDevice9Ex::Reset(D3DPRESENT_PARAMETERS* pPresentationParamete
     //}
 
     auto hRet = ProxyInterface->Reset(pPresentationParameters);
+
     //while(hRet != S_OK) {
     //    hRet = ProxyInterface->Reset(pPresentationParameters);
     //}
@@ -1041,20 +1104,83 @@ FARPROC WINAPI hk_GetProcAddress(HMODULE hModule, LPCSTR lpProcName) {
     return hr;
 }
 
- //IDirectInputA *diA = nullptr;
- //IDirectInputW *diW = nullptr;
+
+
+
+
+
+ IDirectInputA *diA = nullptr;
+ IDirectInputW *diW = nullptr;
+ LPDIRECTINPUT8 di = nullptr;
+
+ //class m_IDirectInput8A: public IDirectInput8A {
+ //public:
+ //    /*** IUnknown methods ***/
+ //    STDMETHOD(QueryInterface)(THIS_ REFIID riid, LPVOID * ppvObj) PURE;
+ //    STDMETHOD_(ULONG, AddRef)(THIS) PURE;
+ //    STDMETHOD_(ULONG, Release)(THIS) PURE;
+
+ //    /*** IDirectInput8A methods ***/
+ //    STDMETHOD(CreateDevice)(THIS_ REFGUID, LPDIRECTINPUTDEVICE8A*, LPUNKNOWN) PURE;
+ //    STDMETHOD(EnumDevices)(THIS_ DWORD, LPDIENUMDEVICESCALLBACKA, LPVOID, DWORD) PURE;
+ //    STDMETHOD(GetDeviceStatus)(THIS_ REFGUID) PURE;
+ //    STDMETHOD(RunControlPanel)(THIS_ HWND, DWORD) PURE;
+ //    STDMETHOD(Initialize)(THIS_ HINSTANCE, DWORD) PURE;
+ //    STDMETHOD(FindDevice)(THIS_ REFGUID, LPCSTR, LPGUID) PURE;
+ //    STDMETHOD(EnumDevicesBySemantics)(THIS_ LPCSTR, LPDIACTIONFORMATA, LPDIENUMDEVICESBYSEMANTICSCBA, LPVOID, DWORD) PURE;
+ //    STDMETHOD(ConfigureDevices)(THIS_ LPDICONFIGUREDEVICESCALLBACK, LPDICONFIGUREDEVICESPARAMSA, DWORD, LPVOID) PURE;
+ //    IDirectInput8A* proxy;
+ //};
+
+ //ULONG m_IDirectInput8A::AddRef(THIS) {
+ //    return proxy->AddRef();
+ //};
+ //ULONG m_IDirectInput8A::Release(THIS) {
+ //    return proxy->Release();
+ //};
+ //HRESULT m_IDirectInput8A::QueryInterface(THIS_ REFIID riid, LPVOID* ppvObj) {
+ //    return proxy->QueryInterface(  riid,  ppvObj);
+ //};
+ //HRESULT m_IDirectInput8A::CreateDevice(THIS_ REFGUID, LPDIRECTINPUTDEVICE8A*, LPUNKNOWN) {
+ //    return proxy->CreateDevice( REFGUID, LPDIRECTINPUTDEVICE8A*, LPUNKNOWN);
+ //};
+ //HRESULT m_IDirectInput8A::EnumDevices(THIS_ DWORD, LPDIENUMDEVICESCALLBACKA, LPVOID, DWORD) {
+ //    return proxy->EnumDevices(THIS_ DWORD, LPDIENUMDEVICESCALLBACKA, LPVOID, DWORD);
+ //};
+ //HRESULT m_IDirectInput8A::GetDeviceStatus(THIS_ REFGUID) {
+ //    return proxy->GetDeviceStatus(THIS_ REFGUID);
+ //};
+ //HRESULT m_IDirectInput8A::RunControlPanel(THIS_ HWND, DWORD) {
+ //    return proxy->RunControlPanel(THIS_ HWND, DWORD);
+ //};
+ //HRESULT m_IDirectInput8A::Initialize(THIS_ HINSTANCE, DWORD) {
+ //    return proxy->Initialize(THIS_ HINSTANCE, DWORD);
+ //};
+ //HRESULT m_IDirectInput8A::FindDevice(THIS_ REFGUID, LPCSTR, LPGUID) {
+ //    return proxy->FindDevice(THIS_ REFGUID, LPCSTR, LPGUID);
+ //};
+ //HRESULT m_IDirectInput8A::EnumDevicesBySemantics(THIS_ LPCSTR, LPDIACTIONFORMATA, LPDIENUMDEVICESBYSEMANTICSCBA, LPVOID, DWORD) {
+ //    return proxy->EnumDevicesBySemantics(THIS_ LPCSTR, LPDIACTIONFORMATA, LPDIENUMDEVICESBYSEMANTICSCBA, LPVOID, DWORD);
+ //};
+ //HRESULT m_IDirectInput8A::ConfigureDevices(THIS_ LPDICONFIGUREDEVICESCALLBACK, LPDICONFIGUREDEVICESPARAMSA, DWORD, LPVOID) {
+ //    return proxy->ConfigureDevices(THIS_ LPDICONFIGUREDEVICESCALLBACK, LPDICONFIGUREDEVICESPARAMSA, DWORD, LPVOID);
+ //};
+
+
 
 HRESULT WINAPI hk_DirectInput8Create(HINSTANCE hinst, DWORD dwVersion, REFIID riidltf, LPVOID* ppvOut, LPUNKNOWN punkOuter) {
     HRESULT hr = S_FALSE;
     if(o_DirectInput8Create) {
         hr = o_DirectInput8Create(hinst, dwVersion, riidltf, ppvOut, punkOuter);
-        //if(hr == S_OK) {
-        //    diA = (IDirectInputA*) ppvOut;
-        //    diW = (IDirectInputW*) ppvOut;
-        //}
+        if(hr == S_OK) {
+            diA = (IDirectInputA*) ppvOut;
+            di = (LPDIRECTINPUT8) ppvOut;
+            diW = (IDirectInputW*) ppvOut;
+        }
     }
     return hr;
 }
+
 
 BOOL WINAPI hk_ClipCursor(const RECT* lpRect) {
     lpRect = nullptr;
@@ -1063,39 +1189,175 @@ BOOL WINAPI hk_ClipCursor(const RECT* lpRect) {
     return ClipCursor(lpRect);
 }
 
-
 LRESULT CALLBACK WndProcH(const HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-    if(gShadowResFix->OnWndProc(hWnd, uMsg, wParam, lParam))
-        return true;
+
+    if(uMsg == WM_KEYDOWN || uMsg == WM_SYSKEYDOWN) {
+        if(wParam == VK_F5) {
+            gShadowResFix->pauseGame = !gShadowResFix->pauseGame;
+        }
+        if(wParam == VK_F10) {
+            gShadowResFix->mShowWindow = !gShadowResFix->mShowWindow;
+            if(gShadowResFix->mShowWindow) {
+                gShadowResFix->LoadSettings();
+                ImGui::GetIO().FontGlobalScale = gShadowResFix->mFontScale;
+
+                gShadowResFix->mDisableMouseControl = true;
+                ImGui::GetIO().MouseDrawCursor = 1;
+            }
+            else {
+                gShadowResFix->mDisableMouseControl = false;
+                ImGui::GetIO().MouseDrawCursor = 0;
+            }
+        }
+    }
+    //XInputGetState()
+
+    switch(uMsg) {
+        case WM_MOUSEMOVE:
+        case WM_NCMOUSEMOVE:
+        {
+            gShadowResFix->OnWndProc(hWnd, uMsg, wParam, lParam);
+            if(!gShadowResFix->mShowWindow) {
+                return CallWindowProc(o_WndProc, hWnd, uMsg, wParam, lParam);
+            }
+            return true;
+        }
+        case WM_INPUTLANGCHANGE:
+        case WM_DEVICECHANGE:
+        case WM_SETFOCUS:
+        case WM_KILLFOCUS:
+        {
+            gShadowResFix->OnWndProc(hWnd, uMsg, wParam, lParam);
+            return CallWindowProc(o_WndProc, hWnd, uMsg, wParam, lParam);
+
+        }
+        case WM_MOUSELEAVE:
+        case WM_NCMOUSELEAVE:        
+        case WM_LBUTTONDOWN: case WM_LBUTTONDBLCLK:
+        case WM_RBUTTONDOWN: case WM_RBUTTONDBLCLK:
+        case WM_MBUTTONDOWN: case WM_MBUTTONDBLCLK:
+        case WM_XBUTTONDOWN: case WM_XBUTTONDBLCLK:        
+        case WM_LBUTTONUP:
+        case WM_RBUTTONUP:
+        case WM_MBUTTONUP:
+        case WM_XBUTTONUP:        
+        case WM_MOUSEWHEEL:
+        case WM_MOUSEHWHEEL:
+        case WM_KEYDOWN:
+        case WM_KEYUP:
+        case WM_SYSKEYDOWN:
+        case WM_SYSKEYUP:        
+        case WM_CHAR:
+        case WM_SETCURSOR:
+        {
+            if(gShadowResFix->mShowWindow) {
+                gShadowResFix->OnWndProc(hWnd, uMsg, wParam, lParam);
+                return true;
+            }
+        }
+    }
+
+
+
     //if(gShadowResFix->mShowWindow) {
-    //    return true;
+    //    if(gShadowResFix->OnWndProc(hWnd, uMsg, wParam, lParam)) {
+    //        return true;
+    //    }
     //}
     return CallWindowProc(o_WndProc, hWnd, uMsg, wParam, lParam);
 }
 
+
+
 // maybe not the best way to do this but it works, its simple and doesn't cause any issues with the GtaIV
 // but it doesn't work for other games
+
+IDirectInputDevice8* keyb = 0;
+IDirectInputDevice8* keym = 0;
 HRESULT __stdcall DInput8DeviceGetDeviceStateH(IDirectInputDevice8* This, DWORD cbData, LPVOID lpvData) {
     HRESULT hr = o_DInput8DeviceGetDeviceState(This, cbData, lpvData);
 
     if(gShadowResFix->mDisableMouseControl) {
         if(cbData == sizeof(DIMOUSESTATE) || cbData == sizeof(DIMOUSESTATE2)) {
             This->Unacquire();
+            keym = This;
         }
     }
-
+    if(gShadowResFix->mShowWindow) {
+        if(cbData == 256) {
+            This->Unacquire();
+            keyb = This;
+        }
+    }
     return hr;
 }
 
 HRESULT __stdcall DInput8DeviceAcquireH(IDirectInputDevice8* This) {
-    if(gShadowResFix->mDisableMouseControl) {
+    if(gShadowResFix->mDisableMouseControl && keym == This) {
         return DI_OK;
     }
-
+    if(gShadowResFix->mShowWindow && keyb == This) {
+        return DI_OK;
+    }
     return o_DInput8DeviceAcquire(This);
 }
 
-int hookWait = 10;
+
+SHORT WINAPI hk_GetKeyState(int nVirtKey) {
+    return o_GetKeyState(nVirtKey);
+}
+
+SHORT WINAPI hk_GetAsyncKeyState(int vKey) {
+    return o_GetAsyncKeyState(vKey);
+}
+
+BOOL  WINAPI hk_GetKeyboardState(_Out_writes_(256) PBYTE lpKeyState) {
+    BYTE KS[256] = { 0 };
+    BOOL hr = 0;
+    memset(lpKeyState, 0, 256);
+    if(gShadowResFix->mShowWindow) {
+        hr = o_GetKeyboardState(KS);
+    }
+    else {
+        hr = o_GetKeyboardState(lpKeyState);
+    }
+    return hr;
+}
+
+DWORD WINAPI hk_XInputGetState(DWORD dwUserIndex, XINPUT_STATE* pState) {
+    Log::Info("XInputGetState");
+    if(o_XInputGetState && !gShadowResFix->mShowWindow) {
+        return o_XInputGetState(dwUserIndex, pState);
+    }
+    return ERROR_SUCCESS;
+}
+
+BOOL  WINAPI hk_SetKeyboardState(_In_reads_(256) LPBYTE lpKeyState) {
+    return o_SetKeyboardState(lpKeyState);
+}
+
+int WINAPI hk_ShowCursor(BOOL bShow) {
+    int cnt = 0;
+    b_ShowCursor = bShow;
+    if(gShadowResFix->mShowWindow) {
+        cnt = o_ShowCursor(TRUE);
+        while(cnt<0) {
+            cnt = o_ShowCursor(TRUE);
+        }
+    }
+    else {
+        cnt = o_ShowCursor(b_ShowCursor);
+        if(b_ShowCursor == FALSE) {
+            while(cnt >= 0) {
+                cnt = o_ShowCursor(FALSE);
+            }
+        }
+    }
+    return cnt;
+}
+
+
+
 
 bool Initialize() {
     if(!gWindowWidth || !gWindowHeight)
@@ -1147,7 +1409,7 @@ bool Initialize() {
 
     if(!o_WndProc) {
         o_WndProc = (WNDPROC) SetWindowLongPtr(windows[windows.size()-1] /*FindWindowA("grcWindow", "GTAIV")*/, GWL_WNDPROC, (LONG_PTR) WndProcH);
-        SetWindowTextA(windows[windows.size() - 1], title);
+        //SetWindowTextA(windows[windows.size() - 1], title);
 
         if(!o_WndProc) {
             return false;
@@ -1319,11 +1581,27 @@ void WINAPI D3DPERF_SetRegion(D3DCOLOR col, LPCWSTR wszName) {
 }
 
 
+//struct crc_name {
+//    uint32_t crc32;
+//    std::string name;
+//    crc_name(std::string _name, uint32_t _crc32) {
+//        name = _name;
+//        crc32 = _crc32;
+//    }
+//};
+
+std::vector<crc_name*> crclist_ps;
+std::vector<crc_name*> crclist_vs;
+
+extern int read_crc_name_ps(int version);
+extern int read_crc_name_vs(int version);
+
 bool WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved) {
     static HMODULE d3d9dll = nullptr;
     static HMODULE SHELL32_dll = nullptr;
     static HMODULE kernel32_dll = nullptr;
     static HMODULE dinput8_dll = nullptr;
+    static HMODULE xinput1_3_dll = nullptr;
     static HMODULE user32_dll = nullptr;
 
     //bool isAsi = false;
@@ -1354,10 +1632,10 @@ bool WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved) {
             char rescale[100] = { 0 };
             // read ini
             {
-                bForceWindowedMode = GetPrivateProfileInt("MAIN", "ForceWindowedMode", 0, path) != 0;
                 fFPSLimit = static_cast<float>(GetPrivateProfileInt("MAIN", "FPSLimit", 0, path));
                 nFullScreenRefreshRateInHz = GetPrivateProfileInt("MAIN", "FullScreenRefreshRateInHz", 0, path);
-                bDisplayFPSCounter = GetPrivateProfileInt("MAIN", "DisplayFPSCounter", 0, path);
+                bDisplayFPSCounter = GetPrivateProfileInt("MAIN", "DisplayFPSCounter", 1, path) != 0;
+                bForceWindowedMode = GetPrivateProfileInt("MAIN", "ForceWindowedMode", 0, path) != 0;
 
                 bUsePrimaryMonitor = GetPrivateProfileInt("FORCEWINDOWED", "UsePrimaryMonitor", 0, path) != 0;
                 bCenterWindow = GetPrivateProfileInt("FORCEWINDOWED", "CenterWindow", 1, path) != 0;
@@ -1375,8 +1653,8 @@ bool WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved) {
                 gFixWashedMirror = GetPrivateProfileInt("SHADOWRESFIX", "FixWashedMirror", 0, path) != 0;
                 gWindowDivisor = GetPrivateProfileInt("SHADOWRESFIX", "RainDropsBlur", 4, path);
                 gNearFarPlane = GetPrivateProfileInt("SHADOWRESFIX", "FixNearFarPlane", 0, path) != 0;
-                gReflectionResMult = GetPrivateProfileInt("SHADOWRESFIX", "ReflectionResMult", 2, path);
-                bHook_SHGetFolderPath = GetPrivateProfileInt("SHADOWRESFIX", "ProfileOnGameFolder", 0, path) != 0;
+                gReflectionResMult = GetPrivateProfileInt("SHADOWRESFIX", "ReflectionResMult", 1, path);
+                bHook_SHGetFolderPath = GetPrivateProfileInt("SHADOWRESFIX", "ProfileOnGameFolder", 1, path) != 0;
                 gLightResMult = GetPrivateProfileInt("SHADOWRESFIX", "LightResolutionMult", 1, path);
                 bSaveSettingsOnExit = GetPrivateProfileInt("SHADOWRESFIX", "SaveSettingsOnExit", 0, path) != 0;
 
@@ -1384,6 +1662,7 @@ bool WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved) {
                 EnableDepthOverwrite = GetPrivateProfileInt("SHADOWRESFIX", "EnableDepthOverwrite", 0, path) != 0;
                 UsePresentToRenderUI = GetPrivateProfileInt("SHADOWRESFIX", "UsePresentToRenderUI", 0, path) != 0;
                 AlowPauseGame = GetPrivateProfileInt("SHADOWRESFIX", "AlowPauseGame", 0, path) != 0;
+                UseSunShafts = GetPrivateProfileInt("SHADOWRESFIX", "UseSunShafts", 1, path);
                 UseSSAA = GetPrivateProfileIntA("SHADOWRESFIX", "UseSSAA", 0, path) != 0;
 
                 //rescale = 
@@ -1457,18 +1736,40 @@ bool WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved) {
             // profile on game folder
             if(bHook_SHGetFolderPath) {
                 //SHELL32_dll = LoadLibraryA("SHELL32.dll");
-                SHELL32_dll = GetModuleHandleA("SHELL32.dll");
+                if(!SHELL32_dll)
+                    SHELL32_dll = GetModuleHandleA("SHELL32.dll");
                 if(SHELL32_dll) {
                     o_SHGetFolderPathA = (SHGetFolderPathA_Ptr) GetProcAddress(SHELL32_dll, "SHGetFolderPathA");
                     o_SHGetFolderPathW = (SHGetFolderPathW_Ptr) GetProcAddress(SHELL32_dll, "SHGetFolderPathW");
                     
-                    /*o_SHGetFolderPathA = (SHGetFolderPathA_Ptr)*/ Iat_hook::detour_iat_ptr("SHGetFolderPathA", (void*) hk_SHGetFolderPathA);
-                    /*o_SHGetFolderPathW = (SHGetFolderPathW_Ptr)*/ Iat_hook::detour_iat_ptr("SHGetFolderPathW", (void*) hk_SHGetFolderPathW);
+                    if(o_SHGetFolderPathA) { Iat_hook::detour_iat_ptr("SHGetFolderPathA", (void*) hk_SHGetFolderPathA); }
+                    if(o_SHGetFolderPathW) { Iat_hook::detour_iat_ptr("SHGetFolderPathW", (void*) hk_SHGetFolderPathW); }
                 }
             }
-            {
-                //dinput8_dll = GetModuleHandleA("DINPUT8.dll");
-                dinput8_dll = LoadLibraryA("DINPUT8.dll");
+
+            //if(true){
+            //    user32_dll = GetModuleHandleA("user32.dll");
+            //    if(user32_dll) {
+            //        o_ShowCursor = (ShowCursor_ptr) GetProcAddress(user32_dll, "ShowCursor");
+            //        if(o_ShowCursor) {
+            //            Iat_hook::detour_iat_ptr("ShowCursor", (void*) hk_ShowCursor, 0);
+            //        }
+            //    }
+            //}
+            if(true){
+                if(!xinput1_3_dll) 
+                xinput1_3_dll = GetModuleHandleA("xinput1_3.dll");
+                if(xinput1_3_dll) {
+                    o_XInputGetState = (XInputGetState_ptr) GetProcAddress(xinput1_3_dll, "XInputGetState");
+                    if(o_XInputGetState) {
+                        Iat_hook::detour_iat_ptr("XInputGetState", (void*) hk_XInputGetState, 0);
+                    }
+                }
+            }
+            if(true){
+                if(!dinput8_dll) 
+                dinput8_dll = GetModuleHandleA("DINPUT8.dll");
+                //dinput8_dll = LoadLibraryA("DINPUT8.dll");
                 if(dinput8_dll) {
                     o_DirectInput8Create = (DirectInput8Create_ptr) GetProcAddress(dinput8_dll, "DirectInput8Create");
                     if(o_DirectInput8Create) {
@@ -1476,22 +1777,34 @@ bool WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved) {
                     }
                 }
             }
+            if(true){
+                if(!user32_dll) 
+                user32_dll = GetModuleHandleA("user32.dll");
+                if(user32_dll) {
+                    o_GetKeyState      = (GetKeyState_Ptr) GetProcAddress(user32_dll, "GetKeyState");
+                    o_GetAsyncKeyState = (GetAsyncKeyState_Ptr) GetProcAddress(user32_dll, "GetAsyncKeyState");
+                    o_GetKeyboardState = (GetKeyboardState_Ptr) GetProcAddress(user32_dll, "GetKeyboardState");
+                    o_SetKeyboardState = (SetKeyboardState_Ptr) GetProcAddress(user32_dll, "SetKeyboardState");
+                    if(o_GetKeyState     ) { Iat_hook::detour_iat_ptr("GetKeyState", (void*) hk_GetKeyState     , 0); }
+                    if(o_GetAsyncKeyState) { Iat_hook::detour_iat_ptr("GetAsyncKeyState", (void*) hk_GetAsyncKeyState, 0); }
+                    if(o_GetKeyboardState) { Iat_hook::detour_iat_ptr("GetKeyboardState", (void*) hk_GetKeyboardState, 0); }
+                    if(o_SetKeyboardState) { Iat_hook::detour_iat_ptr("SetKeyboardState", (void*) hk_SetKeyboardState, 0); }
+                }
+            }
              //window aways on top
             if(bDoNotNotifyOnTaskSwitch) {
-                HMODULE user32 = GetModuleHandleA("user32.dll");
-                //if(!user32) {
-                //    user32 = LoadLibraryA("user32.dll");
-                //}
-                if(user32) {
-                    o_RegisterClassA   = (RegisterClassA_fn)   GetProcAddress(user32, "RegisterClassA"  );
-                    o_RegisterClassW   = (RegisterClassW_fn)   GetProcAddress(user32, "RegisterClassW"  );
-                    o_RegisterClassExA = (RegisterClassExA_fn) GetProcAddress(user32, "RegisterClassExA");
-                    o_RegisterClassExW = (RegisterClassExW_fn) GetProcAddress(user32, "RegisterClassExW");
+                if(!user32_dll) 
+                user32_dll = GetModuleHandleA("user32.dll");
+                if(user32_dll) {
+                    o_RegisterClassA   = (RegisterClassA_fn)   GetProcAddress(user32_dll, "RegisterClassA"  );
+                    o_RegisterClassW   = (RegisterClassW_fn)   GetProcAddress(user32_dll, "RegisterClassW"  );
+                    o_RegisterClassExA = (RegisterClassExA_fn) GetProcAddress(user32_dll, "RegisterClassExA");
+                    o_RegisterClassExW = (RegisterClassExW_fn) GetProcAddress(user32_dll, "RegisterClassExW");
 
-                    /*o_RegisterClassA   = (RegisterClassA_fn)   */ Iat_hook::detour_iat_ptr("RegisterClassA"  , (void*) hk_RegisterClassA  );
-                    /*o_RegisterClassW   = (RegisterClassW_fn)   */ Iat_hook::detour_iat_ptr("RegisterClassW"  , (void*) hk_RegisterClassW  );
-                    /*o_RegisterClassExA = (RegisterClassExA_fn) */ Iat_hook::detour_iat_ptr("RegisterClassExA", (void*) hk_RegisterClassExA);
-                    /*o_RegisterClassExW = (RegisterClassExW_fn) */ Iat_hook::detour_iat_ptr("RegisterClassExW", (void*) hk_RegisterClassExW);
+                    if(o_RegisterClassA   ){ Iat_hook::detour_iat_ptr("RegisterClassA"  , (void*) hk_RegisterClassA  );}
+                    if(o_RegisterClassW   ){ Iat_hook::detour_iat_ptr("RegisterClassW"  , (void*) hk_RegisterClassW  );}
+                    if(o_RegisterClassExA ){ Iat_hook::detour_iat_ptr("RegisterClassExA", (void*) hk_RegisterClassExA);}
+                    if(o_RegisterClassExW ){ Iat_hook::detour_iat_ptr("RegisterClassExW", (void*) hk_RegisterClassExW);}
                 }
             }
 
@@ -1536,13 +1849,25 @@ bool WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved) {
                     }
                 }
             }
-            
+                        
             {
-                //user32_dll = GetModuleHandleA("user32.dll");
-                //if(user32_dll) {
-                //    o_ClipCursor = (ClipCursor_Ptr) GetProcAddress(user32_dll, "ClipCursor" );
-                //    Iat_hook::detour_iat_ptr("ClipCursor" ,  (void*) hk_ClipCursor);
-                //}
+                user32_dll = GetModuleHandleA("user32.dll");
+                if(user32_dll) {
+                    o_ClipCursor = (ClipCursor_Ptr) GetProcAddress(user32_dll, "ClipCursor" );
+                    Iat_hook::detour_iat_ptr("ClipCursor" ,  (void*) hk_ClipCursor);
+                }
+            }
+
+            if(!d3d9dll) {
+                // system d3d9
+                GetSystemDirectoryA(path, MAX_PATH);
+                strcat_s(path, "\\d3d9.dll");
+                d3d9dll = LoadLibraryA(path);
+                if(!d3d9dll) {
+                    char buff[1000] = { 0 };
+                    sprintf(buff, "Unable to open:\n\"%s\"", path);
+                    MessageBox(0, TEXT(buff), TEXT("Shader Editor"), MB_ICONWARNING);
+                }
             }
 
             // hook d3d9
@@ -1566,7 +1891,6 @@ bool WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved) {
 
                 Iat_hook::detour_iat_ptr("Direct3DCreate9Ex"                         , (void*) Direct3DCreate9Ex                         );
                 Iat_hook::detour_iat_ptr("Direct3DCreate9"                           , (void*) Direct3DCreate9                           );
-
                 Iat_hook::detour_iat_ptr("Direct3D9EnableMaximizedWindowedModeShim"  , (void*) Direct3D9EnableMaximizedWindowedModeShim  );
                 Iat_hook::detour_iat_ptr("Direct3DShaderValidatorCreate9"            , (void*) Direct3DShaderValidatorCreate9            );
                 Iat_hook::detour_iat_ptr("D3DPERF_QueryRepeatFrame"                  , (void*) D3DPERF_QueryRepeatFrame                  );
@@ -1584,7 +1908,7 @@ bool WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved) {
             }
 
             // create module list
-            if(false) {
+            if(true) {
                 HMODULE kernel32_dll = GetModuleHandleA("kernel32.dll");
                 if(kernel32_dll) {
                     o_LoadLibraryA   = (LoadLibraryA_Ptr  ) GetProcAddress(kernel32_dll, "o_LoadLibraryA"  );
@@ -1593,11 +1917,11 @@ bool WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved) {
                     o_LoadLibraryExA = (LoadLibraryExA_Ptr) GetProcAddress(kernel32_dll, "o_LoadLibraryExA");
                     o_GetProcAddress = (GetProcAddress_Ptr) GetProcAddress(kernel32_dll, "o_GetProcAddress");
 
-                    Iat_hook::detour_iat_ptr("o_LoadLibraryA"  , (void*) hk_LoadLibraryA   );
-                    Iat_hook::detour_iat_ptr("o_LoadLibraryW"  , (void*) hk_LoadLibraryW   );
-                    Iat_hook::detour_iat_ptr("o_LoadLibraryExW", (void*) hk_LoadLibraryExW );
-                    Iat_hook::detour_iat_ptr("o_LoadLibraryExA", (void*) hk_LoadLibraryExA );
-                    Iat_hook::detour_iat_ptr("o_GetProcAddress", (void*) hk_GetProcAddress );
+                    if(o_LoadLibraryA  ) { Iat_hook::detour_iat_ptr("o_LoadLibraryA",   (void*) hk_LoadLibraryA); }
+                    if(o_LoadLibraryW  ) { Iat_hook::detour_iat_ptr("o_LoadLibraryW",   (void*) hk_LoadLibraryW); }
+                    if(o_LoadLibraryExW) { Iat_hook::detour_iat_ptr("o_LoadLibraryExW", (void*) hk_LoadLibraryExW); }
+                    if(o_LoadLibraryExA) { Iat_hook::detour_iat_ptr("o_LoadLibraryExA", (void*) hk_LoadLibraryExA); }
+                    if(o_GetProcAddress) { Iat_hook::detour_iat_ptr("o_GetProcAddress", (void*) hk_GetProcAddress );}
                 }
             }
 
@@ -1615,6 +1939,11 @@ bool WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved) {
                 }
 
                 logStream << "Game Version: " << gameVersion << "\n";
+
+                int c1 = read_crc_name_ps(gameVersion);
+                int c2 = read_crc_name_vs(gameVersion);
+
+                logStream << "CRC32 ps vs shaders loaded from list: " << c1 << ", " << c2;
 
                 MH_STATUS mhStatus = MH_Initialize();
                 if(mhStatus != MH_OK) {

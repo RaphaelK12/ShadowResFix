@@ -1,5 +1,12 @@
 #include "ShadowResFix.h"
 #include "d3dcompiler.h"
+#include <iostream>
+#include <ostream>
+#include <istream>
+#include <stdlib.h>
+
+#include "var2.hpp"
+
 #pragma comment( lib, "d3dcompiler.lib" )
 
 extern m_IDirect3DTexture9* NormalTex;
@@ -37,7 +44,7 @@ extern UINT gWindowHeight;
 
 bool fixCoronaDepth = 1;
 int UseDebugTextures = 0;
-int UsePostFx[4] = { 0 }; // none, fxaa pre, fxaa pos, smaa, blend, edge
+int UsePostFxAA[4] = { 0 }; // none, fxaa pre, fxaa pos, smaa, blend, edge
 
 float PostFxFog[4] = { 1,1,(-1.f/gWindowWidth)*0.5,(-1.f/gWindowHeight)*0.5 }; 
 
@@ -48,6 +55,10 @@ extern float shaderReturnColor[4] = { 0.f };
 extern float AoDistance;
 extern float FocusPoint[4] ;
 extern float FocusScale[4] ;
+
+extern float SunCentre[4] ;
+extern float SunColor [4] ;
+extern float SunDirection[4] ;
 
 extern int DofSamples[4];
 
@@ -64,6 +75,9 @@ const char* TexNames[] = {
 };
 
 // name, src, editor
+
+extern IDirect3DPixelShader9* CompilePixelShaderFromFile(const char* filename, const char* mainFunction, const char* name, m_IDirect3DDevice9Ex* m_pDeviceEx, bool isAsm, bool addToList);
+extern IDirect3DVertexShader9* CompileVertexShaderFromFile(const char* filename, const char* mainFunction, const char* name, m_IDirect3DDevice9Ex* m_pDeviceEx, bool isAsm, bool addToList);
 
 struct stShaderEditor {
     bool show;
@@ -87,13 +101,10 @@ bool AlowPauseGame = 1;
 bool usePrimitiveUp = false;
 
 extern bool useDof;
-
-bool sRGB_A = false;
-bool sRGB_a = false;
-bool sRGB_B = false;
-bool sRGB_b = false;
-bool sRGB_C = false;
-bool sRGB_c = false;
+extern int UseSunShafts;
+extern bool useDepthOfField ;
+extern bool useDepthOfField2;
+extern bool useStippleFilter;
 
 extern bool fixDistantOutlineUsingDXVK;
 
@@ -106,7 +117,7 @@ ShadowResFix::ShadowResFix() :
     mIsImGuiInitialized(false),
     mSettingsFileMajorVersion(1),
     mSettingsFileMinorVersion(1),
-    mShowWindow(true),
+    mShowWindow(false),
     mShowEditor(false),
     showEditorWindow(false),
     mShowLogWindow(true),
@@ -475,24 +486,24 @@ void ShadowResFix::Update() {
     ImGuiIO& io = ImGui::GetIO();
 
     if(ImGui::IsKeyPressed(mOpenWindowKey)) {
-        mShowWindow = !mShowWindow;
+        //mShowWindow = !mShowWindow;
 
-        if(mShowWindow) {
-            LoadSettings();
-            ImGui::GetIO().FontGlobalScale = mFontScale;
+        //if(mShowWindow) {
+        //    LoadSettings();
+        //    ImGui::GetIO().FontGlobalScale = mFontScale;
 
-            mDisableMouseControl = true;
-            ImGui::GetIO().MouseDrawCursor = 1;
-        }
-        else {
-            mDisableMouseControl = false;
-            ImGui::GetIO().MouseDrawCursor = 0;
-        }
+        //    mDisableMouseControl = true;
+        //    ImGui::GetIO().MouseDrawCursor = 1;
+        //}
+        //else {
+        //    mDisableMouseControl = false;
+        //    ImGui::GetIO().MouseDrawCursor = 0;
+        //}
     }
 
-    if(ImGui::IsKeyPressed(ImGuiKey_F5)) {
-        pauseGame = !pauseGame;
-    }
+    //if(ImGui::IsKeyPressed(ImGuiKey_F5)) {
+    //    pauseGame = !pauseGame;
+    //}
 
     if(mShowWindow) {
         if(ImGui::IsKeyPressed(mToggleCameraControlKey)) {
@@ -576,6 +587,313 @@ void HelpMarker(const char* desc) {
 }
 
 extern std::vector<HWND> windows;
+extern std::vector<float> mtx;
+
+
+extern bool downsampleStencil;
+
+extern float parametersAA[4];
+extern float NoiseSale[4];
+extern float SS_params[4];
+extern float SS_params2[4];
+
+//struct crc_name {
+//    uint32_t crc32;
+//    std::string name;
+//    crc_name(std::string _name, uint32_t _crc32) {
+//        name = _name;
+//        crc32 = _crc32;
+//    }
+//};
+
+extern std::vector<crc_name*> crclist_ps;
+extern std::vector<crc_name*> crclist_vs;
+
+struct source_name {
+    std::string name;
+    std::string source;
+    int id;
+    source_name(std::string _name, std::string _source, int _id) {
+        name = _name;
+        source = _source;
+        id = _id;
+    }
+};
+
+int GenShaderList_ps(int version) {
+    //std::vector<crc_name*> crclist_ps;
+    std::vector<source_name*> shadersSources;
+    int cnt = 0;
+    for(int i = 0; i < (int) shader_names_ps.size(); i++) {
+        std::string fname = std::string("common/shaders/win32_30_atidx10/") + shader_names_ps[i];
+        FILE* f = fopen(fname.c_str(), "r");
+        if(f) {
+            fseek(f, 0, SEEK_END);
+            uint32_t size = ftell(f);
+            fseek(f, 0, SEEK_SET);
+            char* c = new char[size + 1];
+            fread(c, 1, size, f);
+            shadersSources.push_back(new source_name(shader_names_ps[i], c, -1));
+            fclose(f);
+        }
+    }
+    FILE* fo = 0;
+    if(version >= 1060)
+        fo = fopen("crc_name_1070_PS.txt", "w+b");
+    else
+        fo = fopen("crc_name_1040_PS.txt", "w+b");
+    if(fo == NULL) {
+        printf("erro");
+        return 0;
+    }
+    for(int i = 0; i < (int) ps_4.size(); i++) {
+        if(ps_4[i] && ps_4[i] != ImGuiPS) {
+            uint32_t crc = ps_4[i]->crc32;
+            std::string shaderasm = ps_4[i]->GetAsm();
+            for(int sh = 0; sh < (int) shadersSources.size(); sh++) {
+                if(shaderasm.length() == shadersSources[sh]->source.length()) {
+                    if(shaderasm == shadersSources[sh]->source) {
+                        crclist_ps.push_back(new crc_name(shadersSources[sh]->name, crc, -1));
+                        fprintf(fo, "%i, %i, %.8x, %s\n",i , ps_4[i]->id, crc, shadersSources[sh]->name.c_str());
+                        cnt++;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    if(fo)
+        fclose(fo);
+    return cnt;
+}
+int read_crc_name_ps(int version) {
+    int cnt = 0;
+    FILE* file = 0;
+    if(version >= 1060)
+        file = fopen("crc_name_1070_PS.txt", "r");
+    else
+        file = fopen("crc_name_1040_PS.txt", "r");
+    if(file != NULL) {
+        char line[128];
+        while(fgets(line, sizeof line, file) != NULL) {
+            UINT crc = 0;
+            char str[128] = { 0 };
+            int id = -1;
+            int any = 0;
+            int c = sscanf(line, "%i, %i, %x, %s",&any, &id, &crc, str);
+            crclist_ps.push_back(new crc_name(str, crc, id));
+            cnt++;
+        }
+        fclose(file);
+    }
+    return cnt;
+}
+int GenShaderList_vs(int version) {
+    //std::vector<crc_name*> crclist_vs;
+    std::vector<source_name*> shadersSources;
+    int cnt = 0;
+    for(int i = 0; i < (int) shader_names_vs.size(); i++) {
+        std::string fname = std::string("common/shaders/win32_30_atidx10/") + shader_names_vs[i];
+        FILE* f = fopen(fname.c_str(), "r");
+        if(f) {
+            fseek(f, 0, SEEK_END);
+            uint32_t size = ftell(f);
+            fseek(f, 0, SEEK_SET);
+            char* c = new char[size + 1];
+            fread(c, 1, size, f);
+            shadersSources.push_back(new source_name(shader_names_vs[i], c, -1));
+            fclose(f);
+        }
+    }
+    FILE* fo = 0;
+    if(version >= 1060)
+        fo = fopen("crc_name_1070_VS.txt", "w+b");
+    else
+        fo = fopen("crc_name_1040_VS.txt", "w+b");
+    if(fo == NULL) {
+        printf("erro");
+        return 0;
+    }
+    for(int i = 0; i < (int) vs_4.size(); i++) {
+        if(vs_4[i] && vs_4[i] != ImGuiVS) {
+            uint32_t crc = vs_4[i]->crc32;
+            std::string shaderasm = vs_4[i]->GetAsm();
+            for(int sh = 0; sh < (int) shadersSources.size(); sh++) {
+                if(shaderasm.length() == shadersSources[sh]->source.length()) {
+                    if(shaderasm == shadersSources[sh]->source) {
+                        crclist_vs.push_back(new crc_name(shadersSources[sh]->name, crc, shadersSources[sh]->id));
+                        fprintf(fo, "%i, %i, %.8x, %s\n", i, vs_4[i]->id, crc, shadersSources[sh]->name.c_str());
+                        cnt++;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    if(fo)
+        fclose(fo);
+    return cnt;
+}
+int read_crc_name_vs(int version) {
+    int cnt = 0;
+    FILE* file = 0;
+    if(version >= 1060)
+        file = fopen("crc_name_1070_VS.txt", "r");
+    else
+        file = fopen("crc_name_1040_VS.txt", "r");
+    if(file != NULL) {
+        char line[128];
+        while(fgets(line, sizeof line, file) != NULL) {
+            UINT crc = 0;
+            char str[128] = { 0 };
+            int id = -1;
+            int loadN = 0;
+            int c = sscanf(line, "%i, %i, %x, %s", &loadN, &id, &crc, str);
+            crclist_vs.push_back(new crc_name(str, crc, id));
+            cnt++;
+        }
+        fclose(file);
+    }
+    return cnt;
+}
+
+int GenShaderList_ps2(int version) {
+    //std::vector<crc_name*> crclist_ps;
+    std::vector<source_name*> shadersSources;
+    int cnt = 0;
+    for(int i = 0; i < (int) shader_names_ps.size(); i++) {
+        std::string fname = std::string("common/shaders/win32_30_atidx10/") + shader_names_ps[i];
+        FILE* f = fopen(fname.c_str(), "r");
+        if(f) {
+            fseek(f, 0, SEEK_END);
+            uint32_t size = ftell(f);
+            fseek(f, 0, SEEK_SET);
+            char* c = new char[size + 1];
+            fread(c, 1, size, f);
+            shadersSources.push_back(new source_name(shader_names_ps[i], c, -1));
+            fclose(f);
+        }
+    }
+    FILE* fo = 0;
+    if(version >= 1060)
+        fo = fopen("crc_name_1070_PS.txt", "w+b");
+    else
+        fo = fopen("crc_name_1040_PS.txt", "w+b");
+    if(fo == NULL) {
+        printf("erro");
+        return 0;
+    }
+    for(int i = 0; i < (int) ps_4.size(); i++) {
+        if(ps_4[i] && ps_4[i] != ImGuiPS) {
+            uint32_t crc = ps_4[i]->crc32;
+            std::string shaderasm = ps_4[i]->GetAsm();
+            //for(int sh = 0; sh < (int) shadersSources.size(); sh++) {
+            //    if(shaderasm.length() == shadersSources[sh]->source.length()) {
+            //        if(shaderasm == shadersSources[sh]->source) {
+            //            crclist_ps.push_back(new crc_name(shadersSources[sh]->name, crc, -1));
+            fprintf(fo, "%i, %i, %.8x, %s/%s\n", i, ps_4[i]->id, crc, ps_4[i]->fxName.c_str(), ps_4[i]->oName.c_str());
+            //            cnt++;
+            //            break;
+            //        }
+            //    }
+            //}
+        }
+    }
+    if(fo)
+        fclose(fo);
+    return cnt;
+}
+int read_crc_name_ps2(int version) {
+    int cnt = 0;
+    FILE* file = 0;
+    if(version >= 1060)
+        file = fopen("crc_name_1070_PS.txt", "r");
+    else
+        file = fopen("crc_name_1040_PS.txt", "r");
+    if(file != NULL) {
+        char line[128];
+        while(fgets(line, sizeof line, file) != NULL) {
+            UINT crc = 0;
+            char str[128] = { 0 };
+            int id = -1;
+            int any = 0;
+            int c = sscanf(line, "%i, %i, %x, %s", &any, &id, &crc, str);
+            crclist_ps.push_back(new crc_name(str, crc, id));
+            cnt++;
+        }
+        fclose(file);
+    }
+    return cnt;
+}
+int GenShaderList_vs2(int version) {
+    //std::vector<crc_name*> crclist_vs;
+    std::vector<source_name*> shadersSources;
+    int cnt = 0;
+    for(int i = 0; i < (int) shader_names_vs.size(); i++) {
+        std::string fname = std::string("common/shaders/win32_30_atidx10/") + shader_names_vs[i];
+        FILE* f = fopen(fname.c_str(), "r");
+        if(f) {
+            fseek(f, 0, SEEK_END);
+            uint32_t size = ftell(f);
+            fseek(f, 0, SEEK_SET);
+            char* c = new char[size + 1];
+            fread(c, 1, size, f);
+            shadersSources.push_back(new source_name(shader_names_vs[i], c, -1));
+            fclose(f);
+        }
+    }
+    FILE* fo = 0;
+    if(version >= 1060)
+        fo = fopen("crc_name_1070_VS.txt", "w+b");
+    else
+        fo = fopen("crc_name_1040_VS.txt", "w+b");
+    if(fo == NULL) {
+        printf("erro");
+        return 0;
+    }
+    for(int i = 0; i < (int) vs_4.size(); i++) {
+        if(vs_4[i] && vs_4[i] != ImGuiVS) {
+            uint32_t crc = vs_4[i]->crc32;
+            std::string shaderasm = vs_4[i]->GetAsm();
+            //for(int sh = 0; sh < (int) shadersSources.size(); sh++) {
+            //    if(shaderasm.length() == shadersSources[sh]->source.length()) {
+            //        if(shaderasm == shadersSources[sh]->source) {
+            //            crclist_vs.push_back(new crc_name(shadersSources[sh]->name, crc, shadersSources[sh]->id));
+            fprintf(fo, "%i, %i, %.8x, %s/%s\n", i, vs_4[i]->id, crc, vs_4[i]->fxName.c_str(), vs_4[i]->oName.c_str());
+            //            cnt++;
+            //            break;
+            //        }
+            //    }
+            //}
+        }
+    }
+    if(fo)
+        fclose(fo);
+    return cnt;
+}
+int read_crc_name_vs2(int version) {
+    int cnt = 0;
+    FILE* file = 0;
+    if(version >= 1060)
+        file = fopen("crc_name_1070_VS.txt", "r");
+    else
+        file = fopen("crc_name_1040_VS.txt", "r");
+    if(file != NULL) {
+        char line[128];
+        while(fgets(line, sizeof line, file) != NULL) {
+            UINT crc = 0;
+            char str[128] = { 0 };
+            int id = -1;
+            int any = 0;
+            int c = sscanf(line, "%i, %i, %x, %s", &any, &id, &crc, str);
+            crclist_vs.push_back(new crc_name(str, crc, id));
+            cnt++;
+        }
+        fclose(file);
+    }
+    return cnt;
+}
+
 
 
 void ShadowResFix::DrawMainWindow() {
@@ -587,12 +905,12 @@ void ShadowResFix::DrawMainWindow() {
     //RECT rc = { 0 };
     //GetClientRect(windows[0], &rc);
 
-    static char buf100[100] = { 0 };
+    static char buf100[200] = { 0 };
     static bool showUnused = false;
     static bool showUnusedTex = true;
     static bool hideEmptyFXC = true;
 
-    ImGui::Begin("RaGeFX Editor 1.0.0.7", NULL, ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoBringToFrontOnFocus);
+    ImGui::Begin("RaGeFX 1.0.0.8", NULL, ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoBringToFrontOnFocus);
 
     // semi transparent background
     if(pRainDropsRefractionHDRTex  ) {
@@ -641,49 +959,81 @@ void ShadowResFix::DrawMainWindow() {
     }
     ImGui::Checkbox("Show Editor Window", &showEditorWindow);
 
-    ImGui::Checkbox("UseDof", &useDof);
-    ImGui::DragFloat4("FocusPoint", FocusPoint, 1, 0, 1500, "%.3f", ImGuiSliderFlags_Logarithmic);
-    ImGui::DragFloat4("FocusScale", FocusScale, 1, 0, 1500, "%.3f", ImGuiSliderFlags_Logarithmic);
-    ImGui::DragInt4("DofSamples", DofSamples, 1, 0, 200);
-    ImGui::Checkbox("UseSSAO", &UseSSAO);
-    ImGui::DragFloat("AoDistance", &AoDistance, 1, 0, 1500, "%.3f", ImGuiSliderFlags_Logarithmic);
 
-    static const char* PostFx[] = {
-        "None", "FXAA", "SMAA", "SMAA blend", "SMAA edges"
-    };
-    static const char* DebugTextures[] = {
-        "none", 
-        "Difuse", 
-        "normal",
-        "bloom",
-        "specular", 
-        "depth", 
-        "stencil"
-    };
-    ImGui::SliderInt("DebugTextures", &UseDebugTextures, 0, 6, DebugTextures[UseDebugTextures]);
+    if(ImGui::CollapsingHeader("Main Post Process")) {
+        ImGui::Checkbox("downsampleStencil", &downsampleStencil);
+        ImGui::Checkbox("UseSSAO", &UseSSAO);
+        ImGui::DragFloat("AoDistance", &AoDistance, 1, 0, 1500, "%.3f", ImGuiSliderFlags_Logarithmic);
+        static const char* PostFx[] = {
+            "None", "FXAA", "SMAA", "SMAA blend", "SMAA edges"
+        };
+        static const char* DebugTextures[] = {
+            "none",
+            "Difuse",
+            "normal",
+            "bloom",
+            "specular",
+            "depth",
+            "stencil"
+        };
+        ImGui::SliderInt("DebugTextures", &UseDebugTextures, 0, 6, DebugTextures[UseDebugTextures]);
+        ImGui::Checkbox("useStippleFilter", &useStippleFilter);
+        ImGui::DragFloat4("NoiseSale", NoiseSale, 0.001, -1, 1, "%.3f", ImGuiSliderFlags_Logarithmic);
 
-    ImGui::SliderInt("PostFx AA", UsePostFx, 0, 4, PostFx[UsePostFx[0]]);
+        if(ImGui::Checkbox("useDepthOfField", &useDepthOfField) && useDepthOfField) {
+            useDepthOfField2 = false;
+        };
+
+        if(ImGui::Checkbox("useDepthOfField 2", &useDepthOfField2) && useDepthOfField2) {
+            useDepthOfField = false;
+        };
+        ImGui::Checkbox("UseDof 2", &useDof);
+
+        ImGui::DragFloat4("FocusPoint", FocusPoint, 1, 0, 1500, "%.3f", ImGuiSliderFlags_Logarithmic);
+        ImGui::DragFloat4("FocusScale", FocusScale, 1, 0, 1500, "%.3f", ImGuiSliderFlags_Logarithmic);
+        ImGui::DragInt4("DofSamples", DofSamples, 1, 0, 200);
+
+        ImGui::SliderInt("PostFx AA", UsePostFxAA, 0, 4, PostFx[UsePostFxAA[0]]);
+        if(UsePostFxAA[0] == 1) {
+            ImGui::DragFloat("FXAA Subpix", &parametersAA[0], 0.001, 0, 1, "%.3f");
+            ImGui::DragFloat("FXAA EdgeThreshold", &parametersAA[1], 0.001, 0, 1, "%.3f");
+            ImGui::DragFloat("FXAA EdgeThresholdMin", &parametersAA[2], 0.001, 0, 1, "%.3f");
+        }
+
+        //if(ImGui::Button("Reload SMAA##1")) {
+        //    SAFE_RELEASE(SMAA_EdgeDetection);
+        //    SAFE_RELEASE(SMAA_BlendingWeightsCalculation);
+        //    SAFE_RELEASE(SMAA_NeighborhoodBlending);
+        //    SAFE_RELEASE(SMAA_EdgeDetectionVS);
+        //    SAFE_RELEASE(SMAA_BlendingWeightsCalculationVS);
+        //    SAFE_RELEASE(SMAA_NeighborhoodBlendingVS);
+        //}
 
 
-    //ImGui::Checkbox("usePrimitiveUp", &usePrimitiveUp);
+        //ImGui::Checkbox("SunShafts", &UseSunShafts);
 
-    //ImGui::Checkbox("A", &sRGB_A); ImGui::SameLine();
-    //ImGui::Checkbox("a", &sRGB_a); ImGui::SameLine();
-    //ImGui::Checkbox("B", &sRGB_B); ImGui::SameLine();
-    //ImGui::Checkbox("b", &sRGB_b); ImGui::SameLine();
-    //ImGui::Checkbox("C", &sRGB_C); ImGui::SameLine();
-    //ImGui::Checkbox("c", &sRGB_c);
+        static const char* SSTypes[] = {
+            "None", "Simple", "Simple 2 WIP"
+        };
+        ImGui::SliderInt("SunShafts Type", &UseSunShafts, 0, 2, SSTypes[UseSunShafts]);
 
+        ImGui::DragFloat4("Weight Density, Exposure, Decay", SS_params, 0.001, -2, 2, "%.3f");
+        ImGui::DragFloat4("SunSize, pow, depth, power", SS_params2, 0.01, -0.01, 16, "%.3f");
 
+        ImGui::Text("SunDirection = %f, %f, %f, %f", SunDirection[0], SunDirection[1], SunDirection[2], SunDirection[3]);
+        ImGui::Text("SunCentre = %f, %f, %f, %f", SunCentre[0], SunCentre[1], SunCentre[2], SunCentre[3]);
+        ImGui::Text("SunColor  = %f, %f, %f, %f", SunColor [0], SunColor [1], SunColor [2], SunColor [3]);
 
-    if(ImGui::Button("Reload SMAA##1")) {
-        SAFE_RELEASE( SMAA_EdgeDetection                );
-        SAFE_RELEASE( SMAA_BlendingWeightsCalculation   );
-        SAFE_RELEASE( SMAA_NeighborhoodBlending         );
-        SAFE_RELEASE( SMAA_EdgeDetectionVS              );
-        SAFE_RELEASE( SMAA_BlendingWeightsCalculationVS );
-        SAFE_RELEASE( SMAA_NeighborhoodBlendingVS       );
+        if(ImGui::TreeNode("MTX")) {
+            for(int i = 0; i < (int) mtx.size(); i+=4) {
+                ImGui::Text("%i = %.5f, %.5f, %.5f, %.5f", i, mtx[i+0], mtx[i+1], mtx[i+2], mtx[i+3]);
+
+            }
+
+            ImGui::TreePop();
+        }
     }
+
 
     ImGui::Checkbox("EnableDepthOverwrite", &EnableDepthOverwrite);
     ImGui::SameLine();
@@ -810,6 +1160,7 @@ void ShadowResFix::DrawMainWindow() {
         }
 
         ImGui::BeginChild("ChildTex", ImVec2(ImGui::GetContentRegionAvail().x, WindowSize.y * 2.f / 3.f), false, ImGuiWindowFlags_HorizontalScrollbar);
+        int i = 0;
         for(auto& tname : nameList) {
             if(ImGui::TreeNode(tname.c_str())) {
                 for(auto tex : textureList) {
@@ -817,6 +1168,7 @@ void ShadowResFix::DrawMainWindow() {
                         if(tname == "Screen") {
                             printf("");
                         }
+                        i++;
                         ImVec2 uv_min = ImVec2(0.0f, 0.0f);                 // Top-left
                         ImVec2 uv_max = ImVec2(1.0f, 1.0f);                 // Lower-right
                         ImVec4 tint_col = ImVec4(0.5f, 0.5f, 0.5f, 1.0f);   // No tint
@@ -853,13 +1205,32 @@ void ShadowResFix::DrawMainWindow() {
                         ImGui::Text("Name: %s\nFormat: %s\nWidth: %i\nHeight: %i\nLevels: %i\nUsage: %i\nPool: %i\nUseCnt: %ui",
                                     tex->name.c_str(), tex->FormatName, tex->Width, tex->Height, tex->Levels, (UINT) tex->Usage, (UINT) tex->Pool, tex->useCounter);
 
-                        //ImGui::Text("Name: %s", tex->name.c_str());
-                        //ImGui::Text("Format: %s %x", tex->FormatName, (UINT) tex->Format);
-                        //ImGui::Text("Width: %i", (UINT) tex->Width);
-                        //ImGui::Text("Height: %i", (UINT) tex->Height);
-                        //ImGui::Text("Levels: %i", (UINT) tex->Levels);
-                        //ImGui::Text("Usage: %i", (UINT) tex->Usage);
-                        //ImGui::Text("Pool: %i", (UINT) tex->Pool);
+                        //ImGui::SameLine();
+                        const char* formats[] = { "BMP", "JPG", "TGA", "PNG", "DDS",
+                            "PPM", "DIB", "HDR", "PFM", "\0\0" };
+                            
+                        static _D3DXIMAGE_FILEFORMAT fmt = D3DXIFF_PNG;
+
+                        sprintf(buf100, "SaveTextureToFile##%s##ps%i %i %i %i", tex->name.c_str(), tex->Format, tex->Height, tex->Width, i);
+                        if(ImGui::Button(buf100)) {
+                            SYSTEMTIME lt;
+                            GetLocalTime(&lt);
+                            std::string t = "";
+                            for(int i = 0; i < tex->name.length(); i++) {
+                                if((tex->name[i] >= '0' && tex->name[i] <= '9') || (tex->name[i] >= 'a' && tex->name[i] <= 'z') || (tex->name[i] >= 'A' && tex->name[i] <= 'Z') || tex->name[i] == '_'|| tex->name[i] == ' ') {
+                                    t.push_back(tex->name[i]);
+                                }
+                            }
+                            auto r = CreateDirectoryA("SavedTextures", 0);
+                            sprintf(buf100, "SavedTextures/%s_%i%i%i%i%i%i.%s", t.c_str(), (int) lt.wYear, (int) lt.wMonth, (int) lt.wHour, (int) lt.wMinute, (int) lt.wSecond, (int) lt.wMilliseconds, formats[fmt]);
+                            D3DXSaveTextureToFileA(buf100, fmt, tex->GetProxyInterface(), 0);
+                        }
+
+                        ImGui::SameLine();
+                        ImGui::SetNextItemWidth(80);
+                        sprintf(buf100, "Format##%s##ps%i %i %i %i", tex->name.c_str(), tex->Format, tex->Height, tex->Width, i);
+                        ImGui::Combo(buf100, (int*) &fmt,
+                                     formats[0]);
                     }
                 }
                 ImGui::TreePop();
@@ -871,6 +1242,7 @@ void ShadowResFix::DrawMainWindow() {
     if(ImGui::CollapsingHeader("Pixel shaders")) {
         ImGui::Checkbox("Show Unused", &showUnused);
         ImGui::Checkbox("Hide Empty FXC##ps", &hideEmptyFXC);
+
         if(ImGui::Button("Reset Use##ps")) {
             for(int i = 0; i < (int) fx_ps.size(); i++) {
                 for(int j = 0; j < (int) fx_ps[i].size(); j++) {
@@ -929,7 +1301,7 @@ void ShadowResFix::DrawMainWindow() {
                             std::string nameasm = fx_ps[i][j]->oName;
 
                             //ImGui::Text("PS ID %i ##%i_%i_%i", fx_ps[i][j]->id, i, j, fx_ps[i][j]->id);
-                            ImGui::Text("CRC_32:  %x ##vs%i_%i_%i", fx_ps[i][j]->id, i, j, fx_ps[i][j]->id);
+                            ImGui::Text("CRC_32:  %x ##vs%i_%i_%i", fx_ps[i][j]->crc32, i, j, fx_ps[i][j]->id);
                             ImGui::Text("Use Counter: %i ##%i_%i_%i", fx_ps[i][j]->used, i, j, fx_ps[i][j]->id);
 
                             sprintf(buf100, "Compile PS asm ##%i_%i_%i", i, j, fx_ps[i][j]->id);
@@ -965,7 +1337,7 @@ void ShadowResFix::DrawMainWindow() {
                                                 t->bs->editedAsm = (char*) pShaderAsm->GetBufferPointer();
                                             }
 
-                                            if(0){
+                                            if(0) {
                                                 ID3DBlob* disShader;
                                                 hr = D3DDisassemble(pbFunc.data(), pbFunc.size(),
                                                                     D3D_DISASM_ENABLE_DEFAULT_VALUE_PRINTS,
@@ -1127,21 +1499,59 @@ void ShadowResFix::DrawMainWindow() {
                             ImGui::Checkbox(buf100, &fx_ps[i][j]->depthWrite);
 
                             sprintf(buf100, "Original PS ASM ##%i_%i_%i", i, j, fx_ps[i][j]->id);
-                            if(fx_ps[i][j]->fxcAsm.length() > 1 && ImGui::TreeNode(buf100)) { ImGui::Text(fx_ps[i][j]->fxcAsm.c_str()); ImGui::TreePop(); }
+                            if(fx_ps[i][j]->fxcAsm.length() > 1 && ImGui::TreeNode(buf100)) {
+                                sprintf(buf100, "PS fxcAsm ##%i_%i_%i", i, j, fx_ps[i][j]->id);
+                                ImGui::BeginChild(buf100, ImVec2(ImGui::GetContentRegionAvail().x, WindowSize.y * 0.5f), false, ImGuiWindowFlags_HorizontalScrollbar);
+                                ImGui::TextUnformatted(fx_ps[i][j]->fxcAsm.c_str());
+                                ImGui::EndChild();
+                                ImGui::TreePop();
+                            }
                             sprintf(buf100, "Loaded PS ASM ##%i_%i_%i", i, j, fx_ps[i][j]->id);
-                            if(fx_ps[i][j]->editedFx.length() > 1 && ImGui::TreeNode(buf100)) { ImGui::Text(fx_ps[i][j]->loadedAsm.c_str()); ImGui::TreePop(); }
+                            if(fx_ps[i][j]->loadedAsm.length() > 1 && ImGui::TreeNode(buf100)) {
+                                sprintf(buf100, "PS loadedAsm ##%i_%i_%i", i, j, fx_ps[i][j]->id);
+                                ImGui::BeginChild(buf100, ImVec2(ImGui::GetContentRegionAvail().x, WindowSize.y * 0.5f), false, ImGuiWindowFlags_HorizontalScrollbar);
+                                ImGui::TextUnformatted(fx_ps[i][j]->loadedAsm.c_str());
+                                ImGui::EndChild();
+                                ImGui::TreePop();
+                            }
                             sprintf(buf100, "Edited PS ASM ##%i_%i_%i", i, j, fx_ps[i][j]->id);
-                            if(fx_ps[i][j]->editedFx.length() > 1 && ImGui::TreeNode(buf100)) { ImGui::Text(fx_ps[i][j]->editedAsm.c_str()); ImGui::TreePop(); }
+                            if(fx_ps[i][j]->editedAsm.length() > 1 && ImGui::TreeNode(buf100)) {
+                                sprintf(buf100, "PS editedAsm ##%i_%i_%i", i, j, fx_ps[i][j]->id);
+                                ImGui::BeginChild(buf100, ImVec2(ImGui::GetContentRegionAvail().x, WindowSize.y * 0.5f), false, ImGuiWindowFlags_HorizontalScrollbar);
+                                ImGui::TextUnformatted(fx_ps[i][j]->editedAsm.c_str());
+                                ImGui::EndChild();
+                                ImGui::TreePop();
+                            }
                             sprintf(buf100, "Loaded PS HLSL ##%i_%i_%i", i, j, fx_ps[i][j]->id);
-                            if(fx_ps[i][j]->editedAsm.length() > 1 && ImGui::TreeNode(buf100)) { ImGui::Text(fx_ps[i][j]->loadedFx.c_str()); ImGui::TreePop(); }
+                            if(fx_ps[i][j]->loadedFx.length() > 1 && ImGui::TreeNode(buf100)) {
+                                sprintf(buf100, "PS loadedFx ##%i_%i_%i", i, j, fx_ps[i][j]->id);
+                                ImGui::BeginChild(buf100, ImVec2(ImGui::GetContentRegionAvail().x, WindowSize.y * 0.5f), false, ImGuiWindowFlags_HorizontalScrollbar);
+                                ImGui::TextUnformatted(fx_ps[i][j]->loadedFx.c_str());
+                                ImGui::EndChild();
+                                ImGui::TreePop();
+                            }
                             sprintf(buf100, "Edited PS HLSL ##%i_%i_%i", i, j, fx_ps[i][j]->id);
-                            if(fx_ps[i][j]->loadedFx.length() > 1 && ImGui::TreeNode(buf100)) { ImGui::Text(fx_ps[i][j]->editedFx.c_str()); ImGui::TreePop(); }
+                            if(fx_ps[i][j]->editedFx.length() > 1 && ImGui::TreeNode(buf100)) {
+                                sprintf(buf100, "PS editedFx ##%i_%i_%i", i, j, fx_ps[i][j]->id);
+                                ImGui::BeginChild(buf100, ImVec2(ImGui::GetContentRegionAvail().x, WindowSize.y * 0.5f), false, ImGuiWindowFlags_HorizontalScrollbar);
+                                ImGui::TextUnformatted(fx_ps[i][j]->editedFx.c_str());
+                                ImGui::EndChild();
+                                ImGui::TreePop();
+                            }
 
                             sprintf(buf100, "Last PS Constants ##%i_%i_%i", i, j, fx_ps[i][j]->id);
                             if(ImGui::TreeNode(buf100)) {
+                                sprintf(buf100, "PS Constants ##%i_%i_%i", i, j, fx_ps[i][j]->id);
+                                ImGui::BeginChild(buf100, ImVec2(ImGui::GetContentRegionAvail().x, WindowSize.y * 0.5f), false, ImGuiWindowFlags_HorizontalScrollbar);
+
+                                auto& cntnt = (fx_ps[i][j]->usingShader != SU_FXC && fx_ps[i][j]->compiledShaders[fx_ps[i][j]->usingShader] != nullptr) ? static_cast<m_IDirect3DPixelShader9*>(fx_ps[i][j]->compiledShaders[fx_ps[i][j]->usingShader])->constants : fx_ps[i][j]->constants;
+
                                 for(int c = 0; c < 255; c++) {
-                                    ImGui::Text("c%i, %f, %f, %f, %f", c, fx_ps[i][j]->constants[c][0], fx_ps[i][j]->constants[c][1], fx_ps[i][j]->constants[c][2], fx_ps[i][j]->constants[c][3]);
+                                    ImGui::Text("c%i, %f, %f, %f, %f", c, cntnt[c][0], cntnt[c][1], cntnt[c][2], cntnt[c][3]);
                                 }
+
+                                ImGui::EndChild();
+
                                 ImGui::TreePop();
                             }
                             ImGui::TreePop();
@@ -1400,21 +1810,60 @@ void ShadowResFix::DrawMainWindow() {
                             //ImGui::Checkbox(buf100, &fx_vs[i][j]->disableDepthWrite);
 
                             sprintf(buf100, "Original VS ASM ##%i_%i_%i", i, j, fx_vs[i][j]->id);
-                            if(fx_vs[i][j]->fxcAsm.length() > 1 && ImGui::TreeNode(buf100)) { ImGui::Text(fx_vs[i][j]->fxcAsm.c_str()); ImGui::TreePop(); }
+                            if(fx_vs[i][j]->fxcAsm.length() > 1 && ImGui::TreeNode(buf100)) {
+                                sprintf(buf100, "VS fxcAsm ##%i_%i_%i", i, j, fx_vs[i][j]->id);
+                                ImGui::BeginChild(buf100, ImVec2(ImGui::GetContentRegionAvail().x, WindowSize.y * 0.5f), false, ImGuiWindowFlags_HorizontalScrollbar);
+                                ImGui::TextUnformatted(fx_vs[i][j]->fxcAsm.c_str());
+                                ImGui::EndChild();
+                                ImGui::TreePop();
+                            }
                             sprintf(buf100, "Loaded VS ASM ##%i_%i_%i", i, j, fx_vs[i][j]->id);
-                            if(fx_vs[i][j]->editedFx.length() > 1 && ImGui::TreeNode(buf100)) { ImGui::Text(fx_vs[i][j]->loadedAsm.c_str()); ImGui::TreePop(); }
+                            if(fx_vs[i][j]->loadedAsm.length() > 1 && ImGui::TreeNode(buf100)) {
+                                sprintf(buf100, "VS loadedAsm ##%i_%i_%i", i, j, fx_vs[i][j]->id);
+                                ImGui::BeginChild(buf100, ImVec2(ImGui::GetContentRegionAvail().x, WindowSize.y * 0.5f), false, ImGuiWindowFlags_HorizontalScrollbar);
+                                ImGui::TextUnformatted(fx_vs[i][j]->loadedAsm.c_str());
+                                ImGui::EndChild();
+                                ImGui::TreePop();
+                            }
                             sprintf(buf100, "Edited VS ASM ##%i_%i_%i", i, j, fx_vs[i][j]->id);
-                            if(fx_vs[i][j]->editedFx.length() > 1 && ImGui::TreeNode(buf100)) { ImGui::Text(fx_vs[i][j]->editedAsm.c_str()); ImGui::TreePop(); }
+                            if(fx_vs[i][j]->editedAsm.length() > 1 && ImGui::TreeNode(buf100)) {
+                                sprintf(buf100, "VS editedAsm ##%i_%i_%i", i, j, fx_vs[i][j]->id);
+                                ImGui::BeginChild(buf100, ImVec2(ImGui::GetContentRegionAvail().x, WindowSize.y * 0.5f), false, ImGuiWindowFlags_HorizontalScrollbar);
+                                ImGui::TextUnformatted(fx_vs[i][j]->editedAsm.c_str());
+                                ImGui::EndChild();
+                                ImGui::TreePop();
+                            }
                             sprintf(buf100, "Loaded VS HLSL ##%i_%i_%i", i, j, fx_vs[i][j]->id);
-                            if(fx_vs[i][j]->editedAsm.length() > 1 && ImGui::TreeNode(buf100)) { ImGui::Text(fx_vs[i][j]->loadedFx.c_str()); ImGui::TreePop(); }
+                            if(fx_vs[i][j]->loadedFx.length() > 1 && ImGui::TreeNode(buf100)) {
+                                sprintf(buf100, "VS loadedFx ##%i_%i_%i", i, j, fx_vs[i][j]->id);
+                                ImGui::BeginChild(buf100, ImVec2(ImGui::GetContentRegionAvail().x, WindowSize.y * 0.5f), false, ImGuiWindowFlags_HorizontalScrollbar);
+                                ImGui::TextUnformatted(fx_vs[i][j]->loadedFx.c_str());
+                                ImGui::EndChild();
+                                ImGui::TreePop();
+                            }
                             sprintf(buf100, "Edited VS HLSL ##%i_%i_%i", i, j, fx_vs[i][j]->id);
-                            if(fx_vs[i][j]->loadedFx.length() > 1 && ImGui::TreeNode(buf100)) { ImGui::Text(fx_vs[i][j]->editedFx.c_str()); ImGui::TreePop(); }
+                            if(fx_vs[i][j]->editedFx.length() > 1 && ImGui::TreeNode(buf100)) {
+                                sprintf(buf100, "VS editedFx ##%i_%i_%i", i, j, fx_vs[i][j]->id);
+                                ImGui::BeginChild(buf100, ImVec2(ImGui::GetContentRegionAvail().x, WindowSize.y * 0.5f), false, ImGuiWindowFlags_HorizontalScrollbar);
+                                ImGui::TextUnformatted(fx_vs[i][j]->editedFx.c_str());
+                                ImGui::EndChild();
+                                ImGui::TreePop();
+                            }
 
                             sprintf(buf100, "Last VS Constants ##%i_%i_%i", i, j, fx_vs[i][j]->id);
                             if(ImGui::TreeNode(buf100)) {
+                                sprintf(buf100, "Last VS Constants ##%i_%i_%i", i, j, fx_vs[i][j]->id);
+                                ImGui::BeginChild(buf100, ImVec2(ImGui::GetContentRegionAvail().x, WindowSize.y * 0.5f), false, ImGuiWindowFlags_HorizontalScrollbar);
+
+                                //for(int c = 0; c < 255; c++) {
+                                //    ImGui::Text("c%i, %f, %f, %f, %f", c, fx_vs[i][j]->constants[c][0], fx_vs[i][j]->constants[c][1], fx_vs[i][j]->constants[c][2], fx_vs[i][j]->constants[c][3]);
+                                //}
+                                auto& cntnt = (fx_vs[i][j]->usingShader != SU_FXC && fx_vs[i][j]->compiledShaders[fx_vs[i][j]->usingShader] != nullptr) ? static_cast<m_IDirect3DVertexShader9*>(fx_vs[i][j]->compiledShaders[fx_vs[i][j]->usingShader])->constants : fx_vs[i][j]->constants;
                                 for(int c = 0; c < 255; c++) {
-                                    ImGui::Text("c%i, %f, %f, %f, %f", c, fx_vs[i][j]->constants[c][0], fx_vs[i][j]->constants[c][1], fx_vs[i][j]->constants[c][2], fx_vs[i][j]->constants[c][3]);
+                                    ImGui::Text("c%i, %f, %f, %f, %f", c, cntnt[c][0], cntnt[c][1], cntnt[c][2], cntnt[c][3]);
                                 }
+
+                                ImGui::EndChild();
                                 ImGui::TreePop();
                             }
                             ImGui::TreePop();
@@ -1484,14 +1933,46 @@ void ShadowResFix::DrawMainWindow() {
 
                     sprintf(buf100, "%s #ps2%i %i", ps_2[i]->oName.c_str(), i, ps_2[i]->id);
                     if(ImGui::TreeNode(buf100)) {
-                        sprintf(buf100, "ps_%x.fx", ps_2[i]->crc32);
-                        std::string namefx = buf100;
-                        sprintf(buf100, "ps_%x.asm", ps_2[i]->crc32);
-                        std::string nameasm = buf100;
-                        //ps_2[i]->oName;
+                        std::string fname = ps_2[i]->fileName;
+                        if(fname.length() < 2)
+                            fname = ps_2[i]->oName;
+                        fname = fname.substr(0, fname.find_last_of("."));
+                        std::string namefx;
+                        std::string nameasm;
+
+                        if(ps_2[i]->entryFunction.length() > 2)
+                            fname = fname + "_" + ps_2[i]->entryFunction;
+
+
+                        sprintf(buf100, "%s.fx", fname.c_str());
+                        namefx = buf100;
+                        sprintf(buf100, "%s.asm", fname.c_str());
+                        nameasm = buf100;
+
+                        //if(fname != nameasm && fname != namefx) {
+                        //    if(fname.find_last_of(".fx") == fname.npos) {
+                        //        sprintf(buf100, "%s.fx", fname.c_str());
+                        //        namefx = buf100;
+                        //    }
+                        //    else
+                        //        namefx = fname.c_str();;
+
+                        //    if(fname.find_last_of(".asm") == fname.npos) {
+                        //        sprintf(buf100, "%s.asm", fname.c_str());
+                        //        nameasm = buf100;
+                        //    }
+                        //    else
+                        //        nameasm = fname.c_str();;
+                        //}
+
+                        //fname;
 
                         //ImGui::Text("PS ID %i ##%i", ps_2[i]->id, i);
                         ImGui::Text("Use Counter: %i ##%i_%i", ps_2[i]->used, i, ps_2[i]->id);
+                        if(ps_2[i]->fileName.length() > 1)
+                            ImGui::Text("Filename: %s ##%i_%i", ps_2[i]->fileName.c_str(), i, ps_2[i]->id);
+                        if(ps_2[i]->entryFunction.length() > 1)
+                            ImGui::Text("Function: %s ##%i_%i", ps_2[i]->entryFunction.c_str(), i, ps_2[i]->id);
 
                         sprintf(buf100, "Compile PS asm ##%i_%i", i, ps_2[i]->id);
                         if(ps_2[i]->editedAsm.length() > 3 && ImGui::Button(buf100)) {
@@ -1575,7 +2056,10 @@ void ShadowResFix::DrawMainWindow() {
                                 //}
                                 stShaderEditor* s = new stShaderEditor(name, PS_ASM, new TextEditor(), ps_2[i]);
                                 s->editor->SetShowWhitespaces(0);
-                                s->editor->SetText(s->bs->GetAsm());
+                                if(s->bs->fxcAsm.length() > 1)
+                                    s->editor->SetText(s->bs->fxcAsm);
+                                else
+                                    s->editor->SetText(s->bs->GetAsm());
                                 lst.push_back(s);
                                 showEditorWindow = true;
                             }
@@ -1607,7 +2091,7 @@ void ShadowResFix::DrawMainWindow() {
                         sprintf(buf100, "Edit PS Loaded hlsl ##%i_%i", i, ps_2[i]->id);
                         if(ps_2[i]->loadedFx.length() > 0 && ImGui::Button(buf100)) {
                             bool isInEditor = false;
-                            sprintf(buf100, "%s#LFX##%i_%i", nameasm.c_str(), i, ps_2[i]->id);
+                            sprintf(buf100, "%s#LFX##%i_%i", namefx.c_str(), i, ps_2[i]->id);
                             std::string name = buf100;
                             for(auto t : lst) {
                                 basicShader* bs = static_cast<basicShader*> (ps_2[i]);
@@ -1628,10 +2112,34 @@ void ShadowResFix::DrawMainWindow() {
                                 showEditorWindow = true;
                             }
                         }
+                        sprintf(buf100, "Edit PS Edited asm ##%i_%i", i, ps_2[i]->id);
+                        if(ps_2[i]->editedAsm.length() > 0 && ImGui::Button(buf100)) {
+                            bool isInEditor = false;
+                            sprintf(buf100, "%s#EASM##%i_%i", nameasm.c_str(), i, ps_2[i]->id);
+                            std::string name = buf100;
+                            for(auto t : lst) {
+                                basicShader* bs = static_cast<basicShader*> (ps_2[i]);
+                                if(bs && t->bs == bs && t->name == name) {
+                                    isInEditor = true;
+                                    t->show = true;
+                                    showEditorWindow = true;
+                                }
+                            }
+                            if(isInEditor == false) {
+                                //if(ps_2[i]->editedAsm.length() < 3) {
+                                //	ps_2[i]->editedAsm = ps_2[i]->loadedAsm;
+                                //}
+                                stShaderEditor* s = new stShaderEditor(name, PS_ASM, new TextEditor(), ps_2[i]);
+                                s->editor->SetShowWhitespaces(0);
+                                s->editor->SetText(s->bs->editedAsm);
+                                lst.push_back(s);
+                                showEditorWindow = true;
+                            }
+                        }
                         sprintf(buf100, "Edit PS Edited hlsl ##%i_%i", i, ps_2[i]->id);
                         if(ps_2[i]->editedFx.length() > 0 && ImGui::Button(buf100)) {
                             bool isInEditor = false;
-                            sprintf(buf100, "%s#EFX##%i_%i", nameasm.c_str(), i, ps_2[i]->id);
+                            sprintf(buf100, "%s#EFX##%i_%i", namefx.c_str(), i, ps_2[i]->id);
                             std::string name = buf100;
                             for(auto t : lst) {
                                 basicShader* bs = static_cast<basicShader*> (ps_2[i]);
@@ -1653,6 +2161,75 @@ void ShadowResFix::DrawMainWindow() {
                             }
                         }
 
+                        sprintf(buf100, "Load Shader fx ##%i_%i", i, ps_2[i]->id);
+                        if(ImGui::Button(buf100)) {
+                            ps_2[i]->editedFx = LoadFX(ps_2[i]->fxName, fname);
+                            //std::string src = LoadFX(ps_2[i]->fxName, ps_2[i]->fileName);
+                            //std::string src2 = LoadASM(ps_2[i]->fxName, ps_2[i]->fileName);
+                            //std::string src3 = LoadFX(ps_2[i]->fxName, fname);
+                            //std::string src4 = LoadASM(ps_2[i]->fxName, fname);
+                            //printf("%s %s %s %s", src.c_str(), src2.c_str(), src3.c_str(), src4.c_str());
+                        }
+
+                        sprintf(buf100, "Load Shader asm ##%i_%i", i, ps_2[i]->id);
+                        if(ImGui::Button(buf100)) {
+                            //std::string src = LoadFX(ps_2[i]->fxName, ps_2[i]->fileName);
+                            //std::string src2 = LoadASM(ps_2[i]->fxName, ps_2[i]->fileName);
+                            //std::string src3 = LoadFX(ps_2[i]->fxName, fname);
+                            ps_2[i]->editedAsm = LoadASM(ps_2[i]->fxName, fname);
+                            //printf("%s %s %s %s", src.c_str(), src2.c_str(), src3.c_str(), src4.c_str());
+                        }
+
+                        sprintf(buf100, "Reload Shader ##%i_%i", i, ps_2[i]->id);
+                        if(ImGui::Button(buf100)) {
+                            m_IDirect3DPixelShader9* reloadedShader = nullptr;
+                            if(ps_2[i]->fileName.length() > 1 && ps_2[i]->entryFunction.length() > 1) {
+                                reloadedShader = static_cast<m_IDirect3DPixelShader9*>(CompilePixelShaderFromFile(ps_2[i]->fileName.c_str(), ps_2[i]->entryFunction.c_str(), ps_2[i]->oName.c_str(), ps_2[i]->m_pDeviceEx, false, false));
+                            }
+                            else {
+                                reloadedShader = static_cast<m_IDirect3DPixelShader9*>(CompilePixelShaderFromFile(ps_2[i]->fileName.c_str(), ps_2[i]->entryFunction.c_str(), ps_2[i]->oName.c_str(), ps_2[i]->m_pDeviceEx, true, false));
+                            }
+                            if(reloadedShader) {
+                                for(int k = 0; k < 5; k++) {
+                                    if(reloadedShader->compiledShaders[k]) {
+                                        SAFE_RELEASE(ps_2[k]->compiledShaders[k]);
+                                        ps_2[k]->compiledShaders[k] = reloadedShader->compiledShaders[k];
+                                    }
+                                }
+
+                                if(reloadedShader->newShader) {
+                                    SAFE_RELEASE(ps_2[i]->newShader);
+                                    ps_2[i]->newShader = reloadedShader->newShader;
+                                }
+
+                                //memcpy(ps_2[i]->compiledShaders, reloadedShader->compiledShaders, sizeof(reloadedShader->compiledShaders));
+                                //memcpy(ps_2[i]->globalConstants, reloadedShader->globalConstants, sizeof(reloadedShader->globalConstants)); // constant table, set with Set*ShaderConstantF
+                                //memcpy(ps_2[i]->constants, reloadedShader->constants, sizeof(reloadedShader->constants)); // constant table, set with Set*ShaderConstantF
+
+                                //ps_2[i]->id = reloadedShader->id;
+                                //ps_2[i]->fxid = reloadedShader->fxid;
+                                //ps_2[i]->gid = reloadedShader->gid;
+                                ps_2[i]->usingShader = reloadedShader->usingShader;
+                                ps_2[i]->oName = reloadedShader->oName;
+                                ps_2[i]->fxName = reloadedShader->fxName;
+                                ps_2[i]->fxcAsm = reloadedShader->fxcAsm;
+                                ps_2[i]->loadedAsm = reloadedShader->loadedAsm;
+                                ps_2[i]->editedAsm = reloadedShader->editedAsm;
+                                ps_2[i]->loadedFx = reloadedShader->loadedFx;
+                                ps_2[i]->editedFx = reloadedShader->editedFx;
+                                //ps_2[i]->entryFunction = reloadedShader->entryFunction;
+                                //ps_2[i]->fileName = reloadedShader->fileName;
+                                ps_2[i]->crc32 = reloadedShader->crc32;
+                                ps_2[i]->useNewShader = reloadedShader->useNewShader;
+                                //ps_2[i]->disable           = reloadedShader->disable             ;
+                                ps_2[i]->dirt = reloadedShader->dirt;
+                                ps_2[i]->pixel = reloadedShader->pixel;
+                                ps_2[i]->useBias = reloadedShader->useBias;
+                                ps_2[i]->overwriteDepth = reloadedShader->overwriteDepth;
+                                ps_2[i]->depthWrite = reloadedShader->depthWrite;
+                            }
+                        }
+
                         if(!ps_2[i]->newShader)
                             ps_2[i]->useNewShader = false;
                         else {
@@ -1662,8 +2239,8 @@ void ShadowResFix::DrawMainWindow() {
                         static int e = 0;
                         ImGui::RadioButton("FXC", (int*) &ps_2[i]->usingShader, 0); ImGui::SameLine();
                         if(ps_2[i]->compiledShaders[SU_LASM]) { ImGui::RadioButton("Loaded ASM", (int*) &ps_2[i]->usingShader, 1); ImGui::SameLine(); }
-                        if(ps_2[i]->compiledShaders[SU_EASM]) { ImGui::RadioButton("Edited ASM", (int*) &ps_2[i]->usingShader, 2); }
-                        if(ps_2[i]->compiledShaders[SU_LFX]) { ImGui::RadioButton("Loaded HLSL", (int*) &ps_2[i]->usingShader, 3); ImGui::SameLine(); }
+                        if(ps_2[i]->compiledShaders[SU_LFX]) { ImGui::RadioButton("Loaded HLSL", (int*) &ps_2[i]->usingShader, 2); }
+                        if(ps_2[i]->compiledShaders[SU_EASM]) { ImGui::RadioButton("Edited ASM", (int*) &ps_2[i]->usingShader, 3); ImGui::SameLine(); }
                         if(ps_2[i]->compiledShaders[SU_EFX]) { ImGui::RadioButton("Edited HLSL", (int*) &ps_2[i]->usingShader, 4); ImGui::SameLine(); }
 
                         ImGui::Text("");
@@ -1674,21 +2251,60 @@ void ShadowResFix::DrawMainWindow() {
                         ImGui::Checkbox(buf100, &ps_2[i]->depthWrite);
 
                         sprintf(buf100, "Original PS ASM ##%i_%i", i, ps_2[i]->id);
-                        if(ps_2[i]->fxcAsm.length() > 1 && ImGui::TreeNode(buf100)) { ImGui::Text(ps_2[i]->fxcAsm.c_str()); ImGui::TreePop(); }
+                        if(ps_2[i]->fxcAsm.length() > 1 && ImGui::TreeNode(buf100)) {
+                            sprintf(buf100, "PS2 fxcAsm ##%i_%i", i, ps_2[i]->id);
+                            ImGui::BeginChild(buf100, ImVec2(ImGui::GetContentRegionAvail().x, WindowSize.y * 0.5f), false, ImGuiWindowFlags_HorizontalScrollbar);
+                            ImGui::TextUnformatted(ps_2[i]->fxcAsm.c_str());
+                            ImGui::EndChild();
+                            ImGui::TreePop();
+                        }
                         sprintf(buf100, "Loaded PS ASM ##%i_%i", i, ps_2[i]->id);
-                        if(ps_2[i]->editedFx.length() > 1 && ImGui::TreeNode(buf100)) { ImGui::Text(ps_2[i]->loadedAsm.c_str()); ImGui::TreePop(); }
-                        sprintf(buf100, "Edited PS ASM ##%i_%i", i, ps_2[i]->id);
-                        if(ps_2[i]->editedFx.length() > 1 && ImGui::TreeNode(buf100)) { ImGui::Text(ps_2[i]->editedAsm.c_str()); ImGui::TreePop(); }
+                        if(ps_2[i]->loadedAsm.length() > 1 && ImGui::TreeNode(buf100)) {
+                            sprintf(buf100, "PS2 loadedAsm ##%i_%i", i, ps_2[i]->id);
+                            ImGui::BeginChild(buf100, ImVec2(ImGui::GetContentRegionAvail().x, WindowSize.y * 0.5f), false, ImGuiWindowFlags_HorizontalScrollbar);
+                            ImGui::TextUnformatted(ps_2[i]->loadedAsm.c_str());
+                            ImGui::EndChild();
+                            ImGui::TreePop();
+                        }
                         sprintf(buf100, "Loaded PS HLSL ##%i_%i", i, ps_2[i]->id);
-                        if(ps_2[i]->editedAsm.length() > 1 && ImGui::TreeNode(buf100)) { ImGui::Text(ps_2[i]->loadedFx.c_str()); ImGui::TreePop(); }
+                        if(ps_2[i]->loadedFx.length() > 1 && ImGui::TreeNode(buf100)) {
+                            sprintf(buf100, "PS2 loadedFx ##%i_%i", i, ps_2[i]->id);
+                            ImGui::BeginChild(buf100, ImVec2(ImGui::GetContentRegionAvail().x, WindowSize.y * 0.5f), false, ImGuiWindowFlags_HorizontalScrollbar);
+                            ImGui::TextUnformatted(ps_2[i]->loadedFx.c_str());
+                            ImGui::EndChild();
+                            ImGui::TreePop();
+                        }
+                        sprintf(buf100, "Edited PS ASM ##%i_%i", i, ps_2[i]->id);
+                        if(ps_2[i]->editedAsm.length() > 1 && ImGui::TreeNode(buf100)) {
+                            sprintf(buf100, "PS2 editedAsm ##%i_%i", i, ps_2[i]->id);
+                            ImGui::BeginChild(buf100, ImVec2(ImGui::GetContentRegionAvail().x, WindowSize.y * 0.5f), false, ImGuiWindowFlags_HorizontalScrollbar);
+                            ImGui::TextUnformatted(ps_2[i]->editedAsm.c_str());
+                            ImGui::EndChild();
+                            ImGui::TreePop();
+                        }
                         sprintf(buf100, "Edited PS HLSL ##%i_%i", i, ps_2[i]->id);
-                        if(ps_2[i]->loadedFx.length() > 1 && ImGui::TreeNode(buf100)) { ImGui::Text(ps_2[i]->editedFx.c_str()); ImGui::TreePop(); }
+                        if(ps_2[i]->editedFx.length() > 1 && ImGui::TreeNode(buf100)) {
+                            sprintf(buf100, "PS2 editedFx ##%i_%i", i, ps_2[i]->id);
+                            ImGui::BeginChild(buf100, ImVec2(ImGui::GetContentRegionAvail().x, WindowSize.y * 0.5f), false, ImGuiWindowFlags_HorizontalScrollbar);
+                            ImGui::TextUnformatted(ps_2[i]->editedFx.c_str());
+                            ImGui::EndChild();
+                            ImGui::TreePop();
+                        }
 
                         sprintf(buf100, "Last PS Constants ##%i_%i", i, ps_2[i]->id);
                         if(ImGui::TreeNode(buf100)) {
+                            sprintf(buf100, "Last PS2 Constants  ##%i_%i", i, ps_2[i]->id);
+                            ImGui::BeginChild(buf100, ImVec2(ImGui::GetContentRegionAvail().x, WindowSize.y * 0.5f), false, ImGuiWindowFlags_HorizontalScrollbar);
+
+                            //for(int c = 0; c < 255; c++) {
+                            //    ImGui::Text("c%i, %f, %f, %f, %f", c, ps_2[i]->constants[c][0], ps_2[i]->constants[c][1], ps_2[i]->constants[c][2], ps_2[i]->constants[c][3]);
+                            //}
+                            auto& cntnt = (ps_2[i]->usingShader != SU_FXC && ps_2[i]->compiledShaders[ps_2[i]->usingShader] != nullptr) ? static_cast<m_IDirect3DPixelShader9*>(ps_2[i]->compiledShaders[ps_2[i]->usingShader])->constants : ps_2[i]->constants;
                             for(int c = 0; c < 255; c++) {
-                                ImGui::Text("c%i, %f, %f, %f, %f", c, ps_2[i]->constants[c][0], ps_2[i]->constants[c][1], ps_2[i]->constants[c][2], ps_2[i]->constants[c][3]);
+                                ImGui::Text("c%i, %f, %f, %f, %f", c, cntnt[c][0], cntnt[c][1], cntnt[c][2], cntnt[c][3]);
                             }
+
+                            ImGui::EndChild();
                             ImGui::TreePop();
                         }
                         ImGui::TreePop();
@@ -1949,21 +2565,60 @@ void ShadowResFix::DrawMainWindow() {
                     //ImGui::Checkbox(buf100, &vs_2[i]->depthWrite);
 
                     sprintf(buf100, "Original VS ASM ##%i_%i", i, vs_2[i]->id);
-                    if(vs_2[i]->fxcAsm.length() > 1 && ImGui::TreeNode(buf100)) { ImGui::Text(vs_2[i]->fxcAsm.c_str()); ImGui::TreePop(); }
+                    if(vs_2[i]->fxcAsm.length() > 1 && ImGui::TreeNode(buf100)) {
+                        sprintf(buf100, "VS2 fxcAsm ##%i_%i", i, vs_2[i]->id);
+                        ImGui::BeginChild(buf100, ImVec2(ImGui::GetContentRegionAvail().x, WindowSize.y * 0.5f), false, ImGuiWindowFlags_HorizontalScrollbar);
+                        ImGui::TextUnformatted(vs_2[i]->fxcAsm.c_str());
+                        ImGui::EndChild();
+                        ImGui::TreePop();
+                    }
                     sprintf(buf100, "Loaded VS ASM ##%i_%i", i, vs_2[i]->id);
-                    if(vs_2[i]->editedFx.length() > 1 && ImGui::TreeNode(buf100)) { ImGui::Text(vs_2[i]->loadedAsm.c_str()); ImGui::TreePop(); }
+                    if(vs_2[i]->loadedAsm.length() > 1 && ImGui::TreeNode(buf100)) {
+                        sprintf(buf100, "VS2 loadedAsm ##%i_%i", i, vs_2[i]->id);
+                        ImGui::BeginChild(buf100, ImVec2(ImGui::GetContentRegionAvail().x, WindowSize.y * 0.5f), false, ImGuiWindowFlags_HorizontalScrollbar);
+                        ImGui::TextUnformatted(vs_2[i]->loadedAsm.c_str());
+                        ImGui::EndChild();
+                        ImGui::TreePop();
+                    }
                     sprintf(buf100, "Edited VS ASM ##%i_%i", i, vs_2[i]->id);
-                    if(vs_2[i]->editedFx.length() > 1 && ImGui::TreeNode(buf100)) { ImGui::Text(vs_2[i]->editedAsm.c_str()); ImGui::TreePop(); }
+                    if(vs_2[i]->editedAsm.length() > 1 && ImGui::TreeNode(buf100)) {
+                        sprintf(buf100, "VS2 editedAsm ##%i_%i", i, vs_2[i]->id);
+                        ImGui::BeginChild(buf100, ImVec2(ImGui::GetContentRegionAvail().x, WindowSize.y * 0.5f), false, ImGuiWindowFlags_HorizontalScrollbar);
+                        ImGui::TextUnformatted(vs_2[i]->editedAsm.c_str());
+                        ImGui::EndChild();
+                        ImGui::TreePop();
+                    }
                     sprintf(buf100, "Loaded VS HLSL ##%i_%i", i, vs_2[i]->id);
-                    if(vs_2[i]->editedAsm.length() > 1 && ImGui::TreeNode(buf100)) { ImGui::Text(vs_2[i]->loadedFx.c_str()); ImGui::TreePop(); }
+                    if(vs_2[i]->loadedFx.length() > 1 && ImGui::TreeNode(buf100)) {
+                        sprintf(buf100, "VS2 loadedFx ##%i_%i", i, vs_2[i]->id);
+                        ImGui::BeginChild(buf100, ImVec2(ImGui::GetContentRegionAvail().x, WindowSize.y * 0.5f), false, ImGuiWindowFlags_HorizontalScrollbar);
+                        ImGui::TextUnformatted(vs_2[i]->loadedFx.c_str());
+                        ImGui::EndChild();
+                        ImGui::TreePop();
+                    }
                     sprintf(buf100, "Edited VS HLSL ##%i_%i", i, vs_2[i]->id);
-                    if(vs_2[i]->loadedFx.length() > 1 && ImGui::TreeNode(buf100)) { ImGui::Text(vs_2[i]->editedFx.c_str()); ImGui::TreePop(); }
+                    if(vs_2[i]->editedFx.length() > 1 && ImGui::TreeNode(buf100)) {
+                        sprintf(buf100, "VS2 editedFx ##%i_%i", i, vs_2[i]->id);
+                        ImGui::BeginChild(buf100, ImVec2(ImGui::GetContentRegionAvail().x, WindowSize.y * 0.5f), false, ImGuiWindowFlags_HorizontalScrollbar);
+                        ImGui::TextUnformatted(vs_2[i]->editedFx.c_str());
+                        ImGui::EndChild();
+                        ImGui::TreePop();
+                    }
 
                     sprintf(buf100, "Last VS Constants ##%i_%i", i, vs_2[i]->id);
                     if(ImGui::TreeNode(buf100)) {
+                        sprintf(buf100, "Last VS2 Constants ##%i_%i", i, vs_2[i]->id);
+                        ImGui::BeginChild(buf100, ImVec2(ImGui::GetContentRegionAvail().x, WindowSize.y * 0.5f), false, ImGuiWindowFlags_HorizontalScrollbar);
+
+                        //for(int c = 0; c < 255; c++) {
+                        //    ImGui::Text("c%i, %f, %f, %f, %f", c, vs_2[i]->constants[c][0], vs_2[i]->constants[c][1], vs_2[i]->constants[c][2], vs_2[i]->constants[c][3]);
+                        //}
+                        auto& cntnt = (vs_2[i]->usingShader != SU_FXC && vs_2[i]->compiledShaders[vs_2[i]->usingShader] != nullptr) ? static_cast<m_IDirect3DVertexShader9*>(vs_2[i]->compiledShaders[vs_2[i]->usingShader])->constants : vs_2[i]->constants;
                         for(int c = 0; c < 255; c++) {
-                            ImGui::Text("c%i, %f, %f, %f, %f", c, vs_2[i]->constants[c][0], vs_2[i]->constants[c][1], vs_2[i]->constants[c][2], vs_2[i]->constants[c][3]);
+                            ImGui::Text("c%i, %f, %f, %f, %f", c, cntnt[c][0], cntnt[c][1], cntnt[c][2], cntnt[c][3]);
                         }
+
+                        ImGui::EndChild();
                         ImGui::TreePop();
                     }
                     ImGui::TreePop();
@@ -1989,18 +2644,18 @@ void ShadowResFix::DrawMainWindow() {
                     ImGui::Text("PS2 %i", i);
                     ImGui::Checkbox(c4, &t->show);
                     if(ImGui::TreeNode(t->name.c_str())) {
-                        ImGui::Text(t->editor->GetText().c_str());
+                        ImGui::TextUnformatted(t->editor->GetText().c_str());
                         ImGui::TreePop();
                     }
                     static char c1[200] = { 0 };
                     sprintf(c1, "New ASM %s##%i", t->name.c_str(), t->bs->id);
                     if(ImGui::TreeNode(c1)) {
-                        ImGui::Text(t->bs->editedAsm.c_str());
+                        ImGui::TextUnformatted(t->bs->editedAsm.c_str());
                         ImGui::TreePop();
                     }
                     sprintf(c1, "New FX %s##%i", t->name.c_str(), t->bs->id);
                     if(ImGui::TreeNode(c1)) {
-                        ImGui::Text(t->bs->editedFx.c_str());
+                        ImGui::TextUnformatted(t->bs->editedFx.c_str());
                         ImGui::TreePop();
                     }
                     //for(int c = 0; c < 255; c++) {
@@ -2464,8 +3119,287 @@ void ShadowResFix::DrawMainWindow() {
     }
 #endif
 
-    if(bDisplayFPSCounter && ImGui::CollapsingHeader("address")) {
+    if(bDisplayFPSCounter && ImGui::CollapsingHeader("address debug")) {
         ImGui::Checkbox("Show Demo Window", &showDemoWindow);
+
+        if(ImGui::Button("exportShaderConstants##ps")) {
+            {
+                FILE* f = 0;
+                f = fopen("gViewInverse.txt", "w");
+                if(f) {
+                    for(int i = 0; i < (int) fx_ps.size(); i++) {
+                        for(int j = 0; j < (int) fx_ps[i].size(); j++) {
+                            if(fx_ps[i][j] && fx_ps[i][j]->used > 100) {
+                                for(int k = 0; k < gViewInverse.size(); k++) {
+                                    if(gViewInverse[k].id == fx_ps[i][j]->id && gViewInverse[k].vs == 0) {
+                                        char buff[1024] = { 0 };
+                                        sprintf(buff, "0, %i, %i, %s\n", gViewInverse[k].id, gViewInverse[k].constant, gViewInverse[k].file.c_str());
+                                        fwrite(buff, 1, strlen(buff), f);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    for(int i = 0; i < (int) fx_vs.size(); i++) {
+                        for(int j = 0; j < (int) fx_vs[i].size(); j++) {
+                            if(fx_vs[i][j] && fx_vs[i][j]->used > 100) {
+                                for(int k = 0; k < gViewInverse.size(); k++) {
+                                    if(gViewInverse[k].id == fx_vs[i][j]->id && gViewInverse[k].vs == 1) {
+                                        char buff[1024] = { 0 };
+                                        sprintf(buff, "1, %i, %i, %s\n", gViewInverse[k].id, gViewInverse[k].constant, gViewInverse[k].file.c_str());
+                                        fwrite(buff, 1, strlen(buff), f);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    fclose(f);
+                }
+            }
+            {
+                FILE* f = 0;
+                f = fopen("gWorld.txt", "w");
+                if(f) {
+                    for(int i = 0; i < (int) fx_ps.size(); i++) {
+                        for(int j = 0; j < (int) fx_ps[i].size(); j++) {
+                            if(fx_ps[i][j] && fx_ps[i][j]->used > 100) {
+                                for(int k = 0; k < gWorld.size(); k++) {
+                                    if(gWorld[k].id == fx_ps[i][j]->id && gWorld[k].vs == 0) {
+                                        char buff[1024] = { 0 };
+                                        sprintf(buff, "0, %i, %i, %s\n", gWorld[k].id, gWorld[k].constant, gWorld[k].file.c_str());
+                                        fwrite(buff, 1, strlen(buff), f);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    for(int i = 0; i < (int) fx_vs.size(); i++) {
+                        for(int j = 0; j < (int) fx_vs[i].size(); j++) {
+                            if(fx_vs[i][j] && fx_vs[i][j]->used > 100) {
+                                for(int k = 0; k < gWorld.size(); k++) {
+                                    if(gWorld[k].id == fx_vs[i][j]->id && gWorld[k].vs == 1) {
+                                        char buff[1024] = { 0 };
+                                        sprintf(buff, "1, %i, %i, %s\n", gWorld[k].id, gWorld[k].constant, gWorld[k].file.c_str());
+                                        fwrite(buff, 1, strlen(buff), f);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    fclose(f);
+                }
+            }
+            {
+                FILE* f = 0;
+                f = fopen("gWorldView.txt", "w");
+                if(f) {
+                    for(int i = 0; i < (int) fx_ps.size(); i++) {
+                        for(int j = 0; j < (int) fx_ps[i].size(); j++) {
+                            if(fx_ps[i][j] && fx_ps[i][j]->used > 100) {
+                                for(int k = 0; k < gWorldView.size(); k++) {
+                                    if(gWorldView[k].id == fx_ps[i][j]->id && gWorldView[k].vs == 0) {
+                                        char buff[1024] = { 0 };
+                                        sprintf(buff, "0, %i, %i, %s\n", gWorldView[k].id, gWorldView[k].constant, gWorldView[k].file.c_str());
+                                        fwrite(buff, 1, strlen(buff), f);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    for(int i = 0; i < (int) fx_vs.size(); i++) {
+                        for(int j = 0; j < (int) fx_vs[i].size(); j++) {
+                            if(fx_vs[i][j] && fx_vs[i][j]->used > 100) {
+                                for(int k = 0; k < gWorldView.size(); k++) {
+                                    if(gWorldView[k].id == fx_vs[i][j]->id && gWorldView[k].vs == 1) {
+                                        char buff[1024] = { 0 };
+                                        sprintf(buff, "1, %i, %i, %s\n", gWorldView[k].id, gWorldView[k].constant, gWorldView[k].file.c_str());
+                                        fwrite(buff, 1, strlen(buff), f);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    fclose(f);
+                }
+            }
+            {
+                FILE* f = 0;
+                f = fopen("gWorldViewProj.txt", "w");
+                if(f) {
+                    for(int i = 0; i < (int) fx_ps.size(); i++) {
+                        for(int j = 0; j < (int) fx_ps[i].size(); j++) {
+                            if(fx_ps[i][j] && fx_ps[i][j]->used > 100) {
+                                for(int k = 0; k < gWorldViewProj.size(); k++) {
+                                    if(gWorldViewProj[k].id == fx_ps[i][j]->id && gWorldViewProj[k].vs == 0) {
+                                        char buff[1024] = { 0 };
+                                        sprintf(buff, "0, %i, %i, %s\n", gWorldViewProj[k].id, gWorldViewProj[k].constant, gWorldViewProj[k].file.c_str());
+                                        fwrite(buff, 1, strlen(buff), f);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    for(int i = 0; i < (int) fx_vs.size(); i++) {
+                        for(int j = 0; j < (int) fx_vs[i].size(); j++) {
+                            if(fx_vs[i][j] && fx_vs[i][j]->used > 100) {
+                                for(int k = 0; k < gWorldViewProj.size(); k++) {
+                                    if(gWorldViewProj[k].id == fx_vs[i][j]->id && gWorldViewProj[k].vs == 1) {
+                                        char buff[1024] = { 0 };
+                                        sprintf(buff, "1, %i, %i, %s\n", gWorldViewProj[k].id, gWorldViewProj[k].constant, gWorldViewProj[k].file.c_str());
+                                        fwrite(buff, 1, strlen(buff), f);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    fclose(f);
+                }
+            }
+            {
+                FILE* f = 0;
+                f = fopen("gShadowMatrix.txt", "w");
+                if(f) {
+                    for(int i = 0; i < (int) fx_ps.size(); i++) {
+                        for(int j = 0; j < (int) fx_ps[i].size(); j++) {
+                            if(fx_ps[i][j] && fx_ps[i][j]->used > 100) {
+                                for(int k = 0; k < gShadowMatrix.size(); k++) {
+                                    if(gShadowMatrix[k].id == fx_ps[i][j]->id && gShadowMatrix[k].vs == 0) {
+                                        char buff[1024] = { 0 };
+                                        sprintf(buff, "0, %i, %i, %s\n", gShadowMatrix[k].id, gShadowMatrix[k].constant, gShadowMatrix[k].file.c_str());
+                                        fwrite(buff, 1, strlen(buff), f);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    for(int i = 0; i < (int) fx_vs.size(); i++) {
+                        for(int j = 0; j < (int) fx_vs[i].size(); j++) {
+                            if(fx_vs[i][j] && fx_vs[i][j]->used > 100) {
+                                for(int k = 0; k < gShadowMatrix.size(); k++) {
+                                    if(gShadowMatrix[k].id == fx_vs[i][j]->id && gShadowMatrix[k].vs == 1) {
+                                        char buff[1024] = { 0 };
+                                        sprintf(buff, "1, %i, %i, %s\n", gShadowMatrix[k].id, gShadowMatrix[k].constant, gShadowMatrix[k].file.c_str());
+                                        fwrite(buff, 1, strlen(buff), f);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    fclose(f);
+                }
+            }
+            {
+                FILE* f = 0;
+                f = fopen("sunDirection.txt", "w");
+                if(f) {
+                    for(int i = 0; i < (int) fx_ps.size(); i++) {
+                        for(int j = 0; j < (int) fx_ps[i].size(); j++) {
+                            if(fx_ps[i][j] && fx_ps[i][j]->used > 100) {
+                                for(int k = 0; k < sunDirection.size(); k++) {
+                                    if(sunDirection[k].id == fx_ps[i][j]->id && sunDirection[k].vs == 0) {
+                                        char buff[1024] = { 0 };
+                                        sprintf(buff, "0, %i, %i, %s\n", sunDirection[k].id, sunDirection[k].constant, sunDirection[k].file.c_str());
+                                        fwrite(buff, 1, strlen(buff), f);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    for(int i = 0; i < (int) fx_vs.size(); i++) {
+                        for(int j = 0; j < (int) fx_vs[i].size(); j++) {
+                            if(fx_vs[i][j] && fx_vs[i][j]->used > 100) {
+                                for(int k = 0; k < sunDirection.size(); k++) {
+                                    if(sunDirection[k].id == fx_vs[i][j]->id && sunDirection[k].vs == 1) {
+                                        char buff[1024] = { 0 };
+                                        sprintf(buff, "1, %i, %i, %s\n", sunDirection[k].id, sunDirection[k].constant, sunDirection[k].file.c_str());
+                                        fwrite(buff, 1, strlen(buff), f);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    fclose(f);
+                }
+            }
+        }
+
+        if(ImGui::Button("exportShaderBin##ps")) {
+            for(int i = 0; i < (int) fx_ps.size(); i++) {
+                for(int j = 0; j < (int) fx_ps[i].size(); j++) {
+                    if(fx_ps[i][j]) {
+                        std::vector<BYTE*> data;
+                        UINT len = 0;
+                        fx_ps[i][j]->GetFunction(0, &len);
+                        if(len > 0) {
+                            data.resize(len);
+                            fx_ps[i][j]->GetFunction(&data[0], &len);
+                            char filename[1024] = { 0 };
+                            char dir[1024] = { 0 };
+
+                            sprintf(dir, "mkdir shaderBin\\%s\\", fx_ps[i][j]->fxName.c_str());
+                            sprintf(filename, "shaderBin\\%s\\%s.bin", fx_ps[i][j]->fxName.c_str(), fx_ps[i][j]->oName.c_str());
+                            //system(dir);
+                            //CreateDirectoryA(dir, 0);
+                            FILE* f = 0;
+                            f = fopen(filename, "wb");
+                            if(f) {
+                                fwrite(&data[0], 1, len, f);
+                                fclose(f);
+                            }
+                        }
+                    }
+                }
+            }
+            for(int i = 0; i < (int) ps_2.size(); i++) {
+                if(ps_2[i]) {
+                    std::vector<BYTE*> data;
+                    UINT len = 0;
+                    ps_2[i]->GetFunction(0, &len);
+                    if(len > 0) {
+                        data.resize(len);
+                        ps_2[i]->GetFunction(&data[0], &len);
+                        char filename[1024] = { 0 };
+                        char dir[1024] = { 0 };
+
+                        sprintf(dir, "mkdir shaderBin\\%s\\", ps_2[i]->fxName.c_str());
+                        sprintf(filename, "shaderBin\\%s\\%s.bin", ps_2[i]->fxName.c_str(), ps_2[i]->oName.c_str());
+                        //system(dir);
+                        //CreateDirectoryA(dir, 0);
+                        FILE* f = 0;
+                        f = fopen(filename, "wb");
+                        if(f) {
+                            fwrite(&data[0], 1, len, f);
+                            fclose(f);
+                        }
+                    }
+                }
+
+            }
+
+        }
+
+        static int cnt1 = 0;
+        static int cnt2 = 0;
+        if(ImGui::Button("Gen Shader crc")) {
+            int version = 0;
+            Utils::GetGameVersion(version);
+
+            cnt1 = GenShaderList_ps(version);
+            cnt2 = GenShaderList_vs(version);
+        }
+        ImGui::Text("shader cont = %i, %i", cnt1, cnt2);
+
+        static int cnt3 = 0;
+        static int cnt4 = 0;
+        if(ImGui::Button("Load Shader crc")) {
+            int version = 0;
+            Utils::GetGameVersion(version);
+
+            cnt3 = read_crc_name_ps(version);
+            cnt4 = read_crc_name_vs(version);
+        }
+        ImGui::Text("shader cont = %i, %i", cnt3, cnt4);
+
         if(GameVersion == 1080 || GameVersion == 1070) {
             ImGui::SliderFloat("Shadow Distance BA + 0xB3E194 ", (float*) (baseAddress + 0xB3E194), 0, 1000);
         }
@@ -2537,7 +3471,6 @@ void ShadowResFix::DrawMainWindow() {
 
     ImGui::BeginChild("##ChildDummy", ImVec2(ImGui::GetContentRegionAvail().x, WindowSize.y), false, ImGuiWindowFlags_NoScrollbar);
     ImGui::EndChild();
-
 
     ImGui::End();
 
@@ -2653,6 +3586,42 @@ void ShadowResFix::DrawMainWindow() {
                                 //		Log::Error(name);
                                 //	}
                             }
+
+                            if(ImGui::MenuItem("Reload from file")) {
+                                switch(t->shaderType) {
+                                    case	PS_ASM:
+                                    case	VS_ASM:
+                                        Log::Info(t->name);
+                                        //SaveASM(t->bs->fxName, t->name, t->bs->GetAsm(), t->shaderType);
+                                        break;
+                                    case	PS_FX:
+                                    case	VS_FX:
+                                        Log::Info(t->name);
+                                        break;
+                                    default:
+                                        Log::Error("Unknow shader type to save:" + t->name);
+                                        //Log::Error(t->name);
+                                        break;
+                                }
+                                //	std::string textToSave = t->bs->GetAsm();
+                                //	std::string dir1 = "shaders\\";
+                                //	std::string dir2 = dir1 + t->bs->fxName + "\\";
+                                //	std::string name = dir2 + t->name;
+                                //	std::string mk = std::string("mkdir ") + dir2;
+                                //	system(mk.c_str());
+                                //	FILE* file = fopen(name.c_str(), "w");
+                                //	if(file) {
+                                //		fwrite(textToSave.data(), 1, textToSave.length(), file);
+                                //		fclose(file);
+                                //		Log::Info("File saved:");
+                                //		Log::Info(name);
+                                //	}
+                                //	else {
+                                //		Log::Error("File not saved");
+                                //		Log::Error(name);
+                                //	}
+                            }
+
                             ImGui::EndMenu();
                         }
                         if(ImGui::BeginMenu("Edit")) {

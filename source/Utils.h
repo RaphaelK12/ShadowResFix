@@ -13,7 +13,7 @@
 
 namespace Utils {
     //returns true if its a supported version and false if not
-    static bool GetGameVersion(int32_t& gameVersion) {
+    static bool GetGameVersion(int& gameVersion) {
         DWORD fileInfoSize = GetFileVersionInfoSize("GTAIV.exe", NULL);
 
         if(fileInfoSize) {

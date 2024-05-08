@@ -45,6 +45,10 @@ HRESULT m_IDirect3DDevice9Ex::GetPixelShaderConstantF(THIS_ UINT StartRegister, 
 }
 
 HRESULT m_IDirect3DDevice9Ex::SetVertexShaderConstantB(THIS_ UINT StartRegister, CONST BOOL* pConstantData, UINT  BoolCount) {
+    //static BOOL b8[4] = { TRUE, TRUE, TRUE, TRUE };
+    //if(StartRegister == 8 && BoolCount == 1) {
+    //    return ProxyInterface->SetVertexShaderConstantB(StartRegister, b8, BoolCount);
+    //}
     return ProxyInterface->SetVertexShaderConstantB(StartRegister, pConstantData, BoolCount);
 }
 
@@ -180,10 +184,6 @@ HRESULT m_IDirect3DDevice9Ex::UpdateTexture(IDirect3DBaseTexture9* pSourceTextur
 
 HRESULT m_IDirect3DDevice9Ex::SetClipPlane(DWORD Index, CONST float* pPlane) {
     return ProxyInterface->SetClipPlane(Index, pPlane);
-}
-
-HRESULT m_IDirect3DDevice9Ex::Clear(DWORD Count, CONST D3DRECT* pRects, DWORD Flags, D3DCOLOR Color, float Z, DWORD Stencil) {
-    return ProxyInterface->Clear(Count, pRects, Flags, Color, Z, Stencil);
 }
 
 HRESULT m_IDirect3DDevice9Ex::GetViewport(D3DVIEWPORT9* pViewport) {

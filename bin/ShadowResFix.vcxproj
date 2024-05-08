@@ -99,7 +99,7 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <LinkIncremental>true</LinkIncremental>
-    <OutDir>F:\SteamLibrary\steamapps\common\Grand Theft Auto IV\GTAIV\</OutDir>
+    <OutDir>C:\Games\Rockstar Games\Grand Theft Auto IV 1040\</OutDir>
     <IntDir>obj\Win32\Debug\</IntDir>
     <TargetName>d3d9</TargetName>
     <TargetExt>.dll</TargetExt>
@@ -133,6 +133,7 @@
       <BufferSecurityCheck>true</BufferSecurityCheck>
       <FloatingPointExceptions>false</FloatingPointExceptions>
       <LanguageStandard>Default</LanguageStandard>
+      <EnableEnhancedInstructionSet>AdvancedVectorExtensions</EnableEnhancedInstructionSet>
     </ClCompile>
     <ResourceCompile>
       <PreprocessorDefinitions>rsc_CompanyName=\"FixingIV\";rsc_LegalCopyright=\"MIT License\";rsc_FileVersion=\"1.0.0.6\";rsc_ProductVersion=\"1.0.0.6\";rsc_InternalName=\"ShadowResFix\";rsc_ProductName=\"ShadowResFix\";rsc_OriginalFilename=\"d3d9.dll\";rsc_FileDescription=\"https://github.com/RaphaelK12/ShadowResFix\";rsc_UpdateUrl=\"https://github.com/RaphaelK12/ShadowResFix\";NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -277,6 +278,7 @@
     <ClInclude Include="..\source\ShadowResFix.h" />
     <ClInclude Include="..\source\TextEditor.h" />
     <ClInclude Include="..\source\Utils.h" />
+    <ClInclude Include="..\source\var2.hpp" />
     <ClInclude Include="..\source\VersionInfo.h" />
     <ClInclude Include="..\source\d3d9.h" />
     <ClInclude Include="..\source\iathook.h" />

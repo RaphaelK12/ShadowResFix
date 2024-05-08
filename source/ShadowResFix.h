@@ -28,9 +28,10 @@ extern std::vector<const char*> shader_names_fxc;
 extern std::vector<std::vector<m_IDirect3DPixelShader9*>> fx_ps;
 extern std::vector<std::vector<m_IDirect3DVertexShader9*>> fx_vs;
 
-extern std::vector<uint8_t> patternZS;
+extern std::vector<m_IDirect3DPixelShader9*> ps_4;
+extern std::vector<m_IDirect3DVertexShader9*> vs_4;
+
 extern std::vector<uint8_t> patternFF;
-extern std::vector<uint8_t> pattern2;
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 

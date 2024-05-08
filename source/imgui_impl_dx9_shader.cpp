@@ -425,10 +425,12 @@ bool ImGui_ImplDX9_CreateDeviceObjects() {
     if(ImGuiPS) {
         m_IDirect3DPixelShader9* pShader2 = static_cast<m_IDirect3DPixelShader9*>(ImGuiPS);
         pShader2->oName = "ImGui_PS";
+        pShader2->id = -1;
     }
     if(ImGuiVS) {
         m_IDirect3DVertexShader9* pShader2 = static_cast<m_IDirect3DVertexShader9*>(ImGuiVS);
         pShader2->oName = "ImGui_VS";
+        pShader2->id = -1;
     }
 
     pixel_shader_buffer->Release();

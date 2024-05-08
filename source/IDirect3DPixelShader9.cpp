@@ -18,12 +18,12 @@
 #include "D3DX9Mesh.h"
 #include "Log.h"
 
-extern std::vector<uint8_t> patternZS;
 extern std::vector<uint8_t> patternFF;
-extern std::vector<uint8_t> pattern2;
 extern std::vector<m_IDirect3DPixelShader9*> ps;
 extern std::vector<m_IDirect3DPixelShader9*> ps_2;
 extern std::vector<m_IDirect3DVertexShader9*> vs_2;
+extern std::vector<m_IDirect3DPixelShader9*> ps_4;
+extern std::vector<m_IDirect3DVertexShader9*> vs_4;
 extern std::vector<const char*> shader_names_ps;
 extern std::vector<const char*> shader_names_vs;
 extern std::vector<const char*> shader_names_fxc;
@@ -83,6 +83,169 @@ int getSignature(m_IDirect3DPixelShader9* pShader, std::vector<uint8_t>& pattern
     return c;
 }
 
+extern std::string LoadFile(std::string filename);
+
+IDirect3DPixelShader9* CompilePixelShaderFromFile(const char* filename, const char* mainFunction, const char* name, m_IDirect3DDevice9Ex* m_pDeviceEx, bool isAsm, bool addToList) {
+    HRESULT hr1 = S_FALSE;
+    HRESULT hr2 = S_FALSE;
+    ID3DXBuffer* pBufferShader = nullptr;
+    ID3DXBuffer* pBufferErrorMessage = nullptr;
+    ID3DXConstantTable* pConstantTable = nullptr;
+
+    if(isAsm) {
+        hr1 = D3DXAssembleShaderFromFileA((std::string("update/shaders/") + filename).c_str(), 0, 0, 0, &pBufferShader, &pBufferErrorMessage);
+        if(!pBufferShader || hr1 != S_OK)
+            hr1 = D3DXAssembleShaderFromFileA((std::string("shaders/") + filename).c_str(), 0, 0, 0, &pBufferShader, &pBufferErrorMessage);
+        if(!pBufferShader || hr1 != S_OK)
+            hr1 = D3DXAssembleShaderFromFileA(filename, 0, 0, 0, &pBufferShader, &pBufferErrorMessage);
+    }
+    else {
+        hr1 = D3DXCompileShaderFromFileA((std::string("update/shaders/") + filename).c_str(), 0, 0, mainFunction, "ps_3_0", 0, &pBufferShader, &pBufferErrorMessage, &pConstantTable);
+        if(!pBufferShader || hr1 != S_OK)
+            hr1 = D3DXCompileShaderFromFileA((std::string("shaders/") + filename).c_str(), 0, 0, mainFunction, "ps_3_0", 0, &pBufferShader, &pBufferErrorMessage, &pConstantTable);
+        if(!pBufferShader || hr1 != S_OK)
+            hr1 = D3DXCompileShaderFromFileA(filename, 0, 0, mainFunction, "ps_3_0", 0, &pBufferShader, &pBufferErrorMessage, &pConstantTable);
+    }
+
+    m_IDirect3DPixelShader9* ps = nullptr;
+    IDirect3DPixelShader9* pShader = nullptr;
+    if(hr1 == S_OK) {
+        int lenght = pBufferShader->GetBufferSize();
+        char* p = (char*) pBufferShader->GetBufferPointer();
+
+        hr2 = m_pDeviceEx->CreatePixelShader2((DWORD*) p, &pShader, SC_NEW);
+        if(pShader) {
+            ps = static_cast<m_IDirect3DPixelShader9*> (pShader);
+            if(ps) {
+                ps->disable = false;
+                ps->oName = name;
+                ps->fileName = filename;
+                ps->oName = name;
+                if(addToList)
+                ps_2.push_back(ps);
+            }
+        }
+    }
+    if(hr1 != S_OK || hr2 != S_OK) {
+        char* bufferMessage = 0;
+        if(pBufferErrorMessage)
+            bufferMessage = (char*) pBufferErrorMessage->GetBufferPointer();
+        Log::Error("Unable to compile Pixel shader");
+        Log::Text(filename);
+        if(mainFunction)
+            Log::Text(mainFunction);
+
+        if(bufferMessage)
+            Log::Text(bufferMessage);
+    }
+
+    SAFE_RELEASE(pBufferShader);
+    SAFE_RELEASE(pBufferErrorMessage);
+
+    if(ps) {
+        if(isAsm) {
+            std::string src = LoadFile((std::string("update/shaders/") + filename).c_str());
+            if(src.length() < 2)
+                src = LoadFile((std::string("shaders/") + filename).c_str());
+            if(src.length() < 2)
+                src = LoadFile(filename);
+            if(src.length() > 1)
+                ps->fxcAsm = src;
+        }
+        else {
+            std::string src = LoadFile((std::string("update/shaders/") + filename).c_str());
+            if(src.length() < 2)
+                src = LoadFile((std::string("shaders/") + filename).c_str());
+            if(src.length() < 2)
+                src = LoadFile(filename);
+            if(src.length() > 1)
+                ps->loadedFx = src;
+            ps->entryFunction = mainFunction;
+        }
+    }
+    return pShader;
+}
+
+IDirect3DVertexShader9* CompileVertexShaderFromFile(const char* filename, const char* mainFunction, const char* name, m_IDirect3DDevice9Ex* m_pDeviceEx, bool isAsm, bool addToList) {
+    HRESULT hr1 = S_FALSE;
+    HRESULT hr2 = S_FALSE;
+    ID3DXBuffer* pBufferShader = nullptr;
+    ID3DXBuffer* pBufferErrorMessage = nullptr;
+    ID3DXConstantTable* pConstantTable = nullptr;
+
+    if(isAsm) {
+        hr1 = D3DXAssembleShaderFromFileA((std::string("update/shaders/") + filename).c_str(), 0, 0, 0, &pBufferShader, &pBufferErrorMessage);
+        if(!pBufferShader || hr1 != S_OK)
+            hr1 = D3DXAssembleShaderFromFileA((std::string("shaders/") + filename).c_str(), 0, 0, 0, &pBufferShader, &pBufferErrorMessage);
+        if(!pBufferShader || hr1 != S_OK)
+            hr1 = D3DXAssembleShaderFromFileA(filename, 0, 0, 0, &pBufferShader, &pBufferErrorMessage);
+    }
+    else {
+        hr1 = D3DXCompileShaderFromFileA((std::string("update/shaders/") + filename).c_str(), 0, 0, mainFunction, "vs_3_0", 0, &pBufferShader, &pBufferErrorMessage, &pConstantTable);
+        if(!pBufferShader || hr1 != S_OK)
+            hr1 = D3DXCompileShaderFromFileA((std::string("shaders/") + filename).c_str(), 0, 0, mainFunction, "vs_3_0", 0, &pBufferShader, &pBufferErrorMessage, &pConstantTable);
+        if(!pBufferShader || hr1 != S_OK)
+            hr1 = D3DXCompileShaderFromFileA(filename, 0, 0, mainFunction, "vs_3_0", 0, &pBufferShader, &pBufferErrorMessage, &pConstantTable);
+    }
+
+    IDirect3DVertexShader9* pShader = nullptr;
+    m_IDirect3DVertexShader9* vs = nullptr;
+    if(hr1 == S_OK) {
+        int lenght = pBufferShader->GetBufferSize();
+        char* p = (char*) pBufferShader->GetBufferPointer();
+
+        hr2 = m_pDeviceEx->CreateVertexShader2((DWORD*) p, &pShader, SC_NEW);
+        if(pShader) {
+            m_IDirect3DVertexShader9* vs = static_cast<m_IDirect3DVertexShader9*> (pShader);
+            if(vs) {
+                vs->disable = false;
+                vs->oName = name;
+                vs->fileName = filename;
+                if(addToList)
+                vs_2.push_back(vs);
+            }
+        }
+    }
+    if(hr1 != S_OK || hr2 != S_OK) {
+        char* bufferMessage = 0;
+        if(pBufferErrorMessage)
+            char* bufferMessage = (char*) pBufferErrorMessage->GetBufferPointer();
+        Log::Error("Unable to compile Vertex shader");
+        Log::Text(filename);
+        if(mainFunction)
+            Log::Text(mainFunction);
+
+        if(bufferMessage)
+            Log::Text(bufferMessage);
+    }
+    SAFE_RELEASE(pBufferShader);
+    SAFE_RELEASE(pBufferErrorMessage);
+
+    if(vs) {
+        if(isAsm) {
+            std::string src = LoadFile((std::string("update/shaders/") + filename).c_str());
+            if(src.length() < 2)
+                src = LoadFile((std::string("shaders/") + filename).c_str());
+            if(src.length() < 2)
+                src = LoadFile(filename);
+            if(src.length() > 1)
+                vs->fxcAsm = src;
+        }
+        else {
+            std::string src = LoadFile((std::string("update/shaders/") + filename).c_str());
+            if(src.length() < 2)
+                src = LoadFile((std::string("shaders/") + filename).c_str());
+            if(src.length() < 2)
+                src = LoadFile(filename);
+            if(src.length() > 1)
+                vs->loadedFx = src;
+            vs->entryFunction = mainFunction;
+        }
+    }
+
+    return pShader;
+}
+
 uint32_t getCRC32(m_IDirect3DPixelShader9* pShader) {
     static std::vector<uint8_t> pbFunc;
     UINT len;
@@ -107,6 +270,43 @@ int getfxid(int id, std::string oName) {
         }
     }
     return fxid;
+}
+
+
+std::string getNameFromCRC(UINT crc32) {
+    for(int i = 0; i < (int) crclist_ps.size(); i++) {
+        if(crclist_ps[i]->crc32 == crc32) {
+            return crclist_ps[i]->name;
+        }
+    }
+    return "";
+}
+
+int getIdFromCRC(UINT crc32) {
+    int id = -1;
+    auto name = getNameFromCRC(crc32);
+    for(int i = 0; i < (int) shader_names_ps.size(); i++) {
+        if(name == shader_names_ps[i]) {
+            id = i;
+            break;
+        }
+    }
+    return id;
+}
+
+std::string LoadFile(std::string filename) {
+    int sz = 0;
+    std::string src;
+    FILE* f = fopen(filename.c_str(), "r");
+    if(f) {
+        fseek(f, 0, SEEK_END);
+        sz = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        src.resize(sz);
+        fread((void*) src.c_str(), 1, sz, f);
+        fclose(f);
+    }
+    return src;
 }
 
 std::string LoadFX(std::string fxname, std::string shadername) {
@@ -185,7 +385,8 @@ HRESULT SaveASM(std::string fxname, std::string shadername, std::string source, 
 
 IDirect3DPixelShader9* m_IDirect3DPixelShader9::dummyShader = nullptr;
 
-extern IDirect3DPixelShader9* PostFxPS;
+extern IDirect3DPixelShader9* FxaaPS;
+extern IDirect3DPixelShader9* SunShafts_PS;
 
 extern IDirect3DPixelShader9* SMAA_EdgeDetection;
 extern IDirect3DPixelShader9* SMAA_BlendingWeightsCalculation;
@@ -198,30 +399,80 @@ extern IDirect3DVertexShader9* SMAA_NeighborhoodBlendingVS;
 
 extern IDirect3DPixelShader9* DOF_ps;
 
+extern IDirect3DPixelShader9* depth_of_field_ps;
+extern IDirect3DPixelShader9* depth_of_field_tent_ps ;
+extern IDirect3DPixelShader9* depth_of_field_blur_ps ;
+extern IDirect3DPixelShader9* depth_of_field_coc_ps  ;
+extern IDirect3DPixelShader9* stipple_filter_ps;
+
 extern IDirect3DPixelShader9* SSAO_ps;
 extern IDirect3DPixelShader9* SSAO_ps2;
 extern IDirect3DVertexShader9* SSAO_vs;
+extern IDirect3DPixelShader9* downsampler_ps;
 
 float m_IDirect3DPixelShader9::globalConstants[256][4] = { {0} }; // constant table, set with Set*ShaderConstantF
+
+int getIdFromOrderCRC(int cnt, UINT crc32) {
+    int id = -1;
+    if(cnt < (int) crclist_ps.size()) {
+        // exact cnt, precise
+        if(crclist_ps[cnt]->crc32 == crc32)
+            return crclist_ps[cnt]->id;
+        // cnt ahead, less precise, but generaly works
+        else {
+            for(int i = max(0, cnt-1); i < (int) crclist_ps.size(); i++) {
+                if(crclist_ps[i]->crc32 == crc32) {
+                    return crclist_ps[i]->id;
+                }
+            }
+        }
+    }
+
+    // just another way to get the id, does this work?
+    for(int i = 0; i < (int) crclist_ps.size(); i++) {
+        if(crclist_ps[i]->crc32 == crc32) {
+            return crclist_ps[i]->id;
+        }
+    }
+
+    // just a brute way to get the id, sometimes works
+    auto name = getNameFromCRC(crc32);
+    for(int i = 0; i < (int) shader_names_ps.size(); i++) {
+        if(name == shader_names_ps[i]) {
+            id = i;
+            break;
+        }
+    }
+    return id;
+}
 
 
 m_IDirect3DPixelShader9::m_IDirect3DPixelShader9(LPDIRECT3DPIXELSHADER9 pShader9, m_IDirect3DDevice9Ex* pDevice, ShaderCreationMode extra) :
     ProxyInterface(pShader9), m_pDeviceEx(pDevice) {
+    static int loadCounter = 0;
+    static bool firstShader = true;
     pDevice->ProxyAddressLookupTable->SaveAddress(this, ProxyInterface);
     static char buf100[100] = { 0 };
     id = getSignature(this, patternFF);
     crc32 = getCRC32(this);
     sprintf(buf100, "ps_%x.asm", crc32);
-    if(id == -1)
-        id = getSignature(this, patternZS);
-
+    if(id == -1) {
+        id = getIdFromOrderCRC(loadCounter, crc32);
+        //getNameFromCRC(crc32);
+    }
+    if(id == -1) {
+        id = getIdFromCRC(crc32);
+    }
+    else
+        loadCounter++;
+    //static std::vector<std::string> LoadOrder;
     fxcAsm = GetAsm();
     if(id >= 0 && id >= (int) shader_names_ps.size()) {
         Log::Error("illegal ps id: " + std::to_string(id));
     }
     if(id >= 0 && id < (int) shader_names_ps.size()) {
-
         oName = shader_names_ps[id];
+        //LoadOrder.push_back(oName);
         fxid = getfxid(id, oName);
         fxName = shader_names_fxc[fxid];
         oName = oName.substr(oName.find_last_of("/") + 1);
@@ -295,280 +546,61 @@ m_IDirect3DPixelShader9::m_IDirect3DPixelShader9(LPDIRECT3DPIXELSHADER9 pShader9
             }
         }
     }
-    if(!dummyShader ) {
-        HRESULT hr2 = S_FALSE;
-        ID3DXBuffer* bf1 = nullptr;
-        ID3DXBuffer* bf2 = nullptr;
-        HRESULT hr1 = D3DXAssembleShader(shadersrcps, sizeof(shadersrcps), 0, 0, 0, &bf1, &bf2);
-        if(hr1 == S_OK) {
-            int sz = bf1->GetBufferSize();
-            char* p = (char*) bf1->GetBufferPointer();
-            hr2 = m_pDeviceEx->CreatePixelShader2((DWORD*) p, &dummyShader, SC_NEW);
-            if(dummyShader) {
-                ((m_IDirect3DPixelShader9*) dummyShader)->disable = true;
-                ((m_IDirect3DPixelShader9*) dummyShader)->oName = "dummyps";
+    if(firstShader) {
+        firstShader = false;
+        if(!dummyShader) {
+            HRESULT hr2 = S_FALSE;
+            ID3DXBuffer* bf1 = nullptr;
+            ID3DXBuffer* bf2 = nullptr;
+            HRESULT hr1 = D3DXAssembleShader(shadersrcps, sizeof(shadersrcps), 0, 0, 0, &bf1, &bf2);
+            if(hr1 == S_OK) {
+                int sz = bf1->GetBufferSize();
+                char* p = (char*) bf1->GetBufferPointer();
+                hr2 = m_pDeviceEx->CreatePixelShader2((DWORD*) p, &dummyShader, SC_NEW);
+                if(dummyShader) {
+                    ((m_IDirect3DPixelShader9*) dummyShader)->disable = true;
+                    ((m_IDirect3DPixelShader9*) dummyShader)->oName = "dummyps";
+                }
             }
-        }
-        if(hr1 != S_OK || hr2 != S_OK) {
-            Log::Error("Unable to compile Dummy Pixel shader");
-        }
-        SAFE_RELEASE(bf1);
-        SAFE_RELEASE(bf2);
-    }
-    if(!PostFxPS ) {
-        FILE* f = nullptr;
-        UINT size = 0;
-        f = fopen("update/shaders/FXAA.asm", "r");
-        if(!f) {
-            f = fopen("shaders/FXAA.asm", "r");
-        }
-        if(!f) {
-            f = fopen("FXAA.asm", "r");
-        }
-        if(!f) {
-            return;
-        }
-        fseek(f, 0, SEEK_END);
-        size = ftell(f);
-        fseek(f, 0, SEEK_SET);
-        char* buff = new char[size];
-        if(!buff) {
-            fclose(f);
-            return;
-        }
-        UINT size2 = fread(buff, 1, size, f);
-        //if( size2 != size) {
-        //    Log::Error("fread(*) != size");
-        //    fclose(f);
-        //    delete[] buff;
-        //}
-        fclose(f);
-        HRESULT hr2 = S_FALSE;
-        ID3DXBuffer* bf1 = nullptr;
-        ID3DXBuffer* bf2 = nullptr;
-        HRESULT hr1 = D3DXAssembleShader(buff, size, 0, 0, 0, &bf1, &bf2);
-        delete[] buff;
-        if(hr1 == S_OK) {
-            int sz = bf1->GetBufferSize();
-            char* p = (char*) bf1->GetBufferPointer();
-            hr2 = m_pDeviceEx->CreatePixelShader2((DWORD*) p, &PostFxPS, SC_NEW);
-            if(PostFxPS) {
-                ((m_IDirect3DPixelShader9*) PostFxPS)->disable = false;
-                ((m_IDirect3DPixelShader9*) PostFxPS)->oName = "FXAA";
-                ps_2.push_back((m_IDirect3DPixelShader9*) PostFxPS);
+            if(hr1 != S_OK || hr2 != S_OK) {
+                Log::Error("Unable to compile Dummy Pixel shader");
             }
+            SAFE_RELEASE(bf1);
+            SAFE_RELEASE(bf2);
         }
-        if(hr1 != S_OK || hr2 != S_OK) {
-            buff = (char*) bf2->GetBufferPointer();
-            Log::Error("Unable to compile PostFx Pixel shader");
-            Log::Text(buff);
-        }
-        SAFE_RELEASE(bf1);
-        SAFE_RELEASE(bf2);
-    }
 
-    if(!DOF_ps) {
-        FILE* f = nullptr;
-        UINT size = 0;
-        f = fopen("update/shaders/DOF_ps.asm", "r");
-        if(!f) {
-            f = fopen("shaders/DOF_ps.asm", "r");
-        }
-        if(!f) {
-            f = fopen("DOF_ps.asm", "r");
-        }
-        if(!f) {
-            return;
-        }
-        fseek(f, 0, SEEK_END);
-        size = ftell(f);
-        fseek(f, 0, SEEK_SET);
-        std::vector<char> buff;
-        buff.resize(size);
-        //char* buff = new char[size];
-        //if(!buff) {
-        //    fclose(f);
-        //    return;
-        //}
-        UINT size2 = fread(buff.data(), 1, size, f);
-        fclose(f);
-        HRESULT hr2 = S_FALSE;
-        ID3DXBuffer* bf1 = nullptr;
-        ID3DXBuffer* bf2 = nullptr;
-        HRESULT hr1 = D3DXAssembleShader(buff.data(), size, 0, 0, 0, &bf1, &bf2);
-        //delete[] buff;
-        if(hr1 == S_OK) {
-            std::vector<char> p2;
-            int sz = bf1->GetBufferSize();
-            char* p = (char*) bf1->GetBufferPointer();
-            p2.resize(sz);
-            memcpy(p2.data(), p, sz);
-            hr2 = m_pDeviceEx->CreatePixelShader2((DWORD*) p, &DOF_ps, SC_NEW);
-            if(DOF_ps) {
-                ((m_IDirect3DPixelShader9*) DOF_ps)->disable = false;
-                ((m_IDirect3DPixelShader9*) DOF_ps)->oName = "DOF_ps";
-                ps_2.push_back((m_IDirect3DPixelShader9*) DOF_ps);
-            }
-        }
-        if(hr1 != S_OK || hr2 != S_OK) {
-            char* buffer = (char*) bf2->GetBufferPointer();
-            Log::Error("Unable to compile DOF Pixel shader");
-            Log::Text(buffer);
-        }
-        SAFE_RELEASE(bf1);
-        SAFE_RELEASE(bf2);
-    }
+        if(!FxaaPS)
+            FxaaPS = CompilePixelShaderFromFile("FXAA.asm", 0, "FXAA.asm", m_pDeviceEx, true, true);
 
-    if(!SSAO_vs) {
-        FILE* f = nullptr;
-        UINT size = 0;
-        f = fopen("update/shaders/SSAO_vs.asm", "r");
-        if(!f) {
-            f = fopen("shaders/SSAO_vs.asm", "r");
-        }
-        if(!f) {
-            f = fopen("SSAO_vs.asm", "r");
-        }
-        if(!f) {
-            return;
-        }
-        fseek(f, 0, SEEK_END);
-        size = ftell(f);
-        fseek(f, 0, SEEK_SET);
-        char* buff = new char[size];
-        if(!buff) {
-            fclose(f);
-            return;
-        }
-        UINT size2 = fread(buff, 1, size, f);
-        fclose(f);
-        HRESULT hr2 = S_FALSE;
-        ID3DXBuffer* bf1 = nullptr;
-        ID3DXBuffer* bf2 = nullptr;
-        HRESULT hr1 = D3DXAssembleShader(buff, size, 0, 0, 0, &bf1, &bf2);
-        delete[] buff;
-        if(hr1 == S_OK) {
-            int sz = bf1->GetBufferSize();
-            char* p = (char*) bf1->GetBufferPointer();
-            hr2 = m_pDeviceEx->CreateVertexShader2((DWORD*) p, &SSAO_vs, SC_NEW);
-            if(SSAO_vs) {
-                ((m_IDirect3DVertexShader9*) SSAO_vs)->disable = false;
-                ((m_IDirect3DVertexShader9*) SSAO_vs)->oName = "SSAO_vs";
-                vs_2.push_back((m_IDirect3DVertexShader9*) SSAO_vs);
-            }
-        }
-        if(hr1 != S_OK || hr2 != S_OK) {
-            buff = (char*) bf2->GetBufferPointer();
-            Log::Error("Unable to compile SSAO Vertex shader");
-            Log::Text(buff);
-        }
-        SAFE_RELEASE(bf1);
-        SAFE_RELEASE(bf2);
-    }
-    if(!SSAO_ps) {
-        FILE* f = nullptr;
-        UINT size = 0;
-        f = fopen("update/shaders/SSAO_ps.asm", "r");
-        if(!f) {
-            f = fopen("shaders/SSAO_ps.asm", "r");
-        }
-        if(!f) {
-            f = fopen("SSAO_ps.asm", "r");
-        }
-        if(!f) {
-            return;
-        }
-        fseek(f, 0, SEEK_END);
-        size = ftell(f);
-        fseek(f, 0, SEEK_SET);
-        std::vector<char> buff;
-        buff.resize(size);
-        //char* buff = new char[size];
-        //if(!buff) {
-        //    fclose(f);
-        //    return;
-        //}
-        UINT size2 = fread(buff.data(), 1, size, f);
-        fclose(f);
-        HRESULT hr2 = S_FALSE;
-        ID3DXBuffer* bf1 = nullptr;
-        ID3DXBuffer* bf2 = nullptr;
-        HRESULT hr1 = D3DXAssembleShader(buff.data(), size, 0, 0, 0, &bf1, &bf2);
-        //delete[] buff;
-        if(hr1 == S_OK) {
-            std::vector<char> p2;
-            int sz = bf1->GetBufferSize();
-            char* p = (char*) bf1->GetBufferPointer();
-            p2.resize(sz);
-            memcpy(p2.data(), p, sz);
-            hr2 = m_pDeviceEx->CreatePixelShader2((DWORD*) p, &SSAO_ps, SC_NEW);
-            if(SSAO_ps) {
-                ((m_IDirect3DPixelShader9*) SSAO_ps)->disable = false;
-                ((m_IDirect3DPixelShader9*) SSAO_ps)->oName = "SSAO_ps";
-                ps_2.push_back((m_IDirect3DPixelShader9*) SSAO_ps);
-            }
-        }
-        if(hr1 != S_OK || hr2 != S_OK) {
-            char* buffer = (char*) bf2->GetBufferPointer();
-            Log::Error("Unable to compile SSAO Pixel shader");
-            Log::Text(buffer);
-        }
-        SAFE_RELEASE(bf1);
-        SAFE_RELEASE(bf2);
-    }
-    if(!SSAO_ps2) {
-        FILE* f = nullptr;
-        UINT size = 0;
-        f = fopen("update/shaders/SSAO_ps2.asm", "r");
-        if(!f) {
-            f = fopen("shaders/SSAO_ps2.asm", "r");
-        }
-        if(!f) {
-            f = fopen("SSAO_ps2.asm", "r");
-        }
-        if(!f) {
-            return;
-        }
-        fseek(f, 0, SEEK_END);
-        size = ftell(f);
-        fseek(f, 0, SEEK_SET);
-        std::vector<char> buff;
-        buff.resize(size);
-        //char* buff = new char[size];
-        //if(!buff) {
-        //    fclose(f);
-        //    return;
-        //}
-        UINT size2 = fread(buff.data(), 1, size, f);
-        fclose(f);
-        HRESULT hr2 = S_FALSE;
-        ID3DXBuffer* bf1 = nullptr;
-        ID3DXBuffer* bf2 = nullptr;
-        HRESULT hr1 = D3DXAssembleShader(buff.data(), size, 0, 0, 0, &bf1, &bf2);
-        //delete[] buff;
-        if(hr1 == S_OK) {
-            std::vector<char> p2;
-            int sz = bf1->GetBufferSize();
-            char* p = (char*) bf1->GetBufferPointer();
-            p2.resize(sz);
-            memcpy(p2.data(), p, sz);
-            hr2 = m_pDeviceEx->CreatePixelShader2((DWORD*) p, &SSAO_ps2, SC_NEW);
-            if(SSAO_ps2) {
-                ((m_IDirect3DPixelShader9*) SSAO_ps2)->disable = false;
-                ((m_IDirect3DPixelShader9*) SSAO_ps2)->oName = "SSAO_ps2";
-                ps_2.push_back((m_IDirect3DPixelShader9*) SSAO_ps2);
-            }
-            else {
-                Log::Error("Unable to compile SSAO2 Pixel shader");
-            }
-        }
-        if(hr1 != S_OK || hr2 != S_OK) {
-            char* buffer = (char*) bf2->GetBufferPointer();
-            Log::Error("Unable to compile SSAO2 Pixel shader");
-            Log::Text(buffer);
-        }
-        SAFE_RELEASE(bf1);
-        SAFE_RELEASE(bf2);
+        if(!downsampler_ps)
+            downsampler_ps = CompilePixelShaderFromFile("SSAO3_ps.hlsl", "mainDownsample", "SSAO3_Downsample.hlsl", m_pDeviceEx, false, true);
+        
+        if(!SunShafts_PS)
+            SunShafts_PS = CompilePixelShaderFromFile("SunShafts_PS.hlsl", "main", "SunShafts_PS.hlsl", m_pDeviceEx, false, true);
+
+        if(!SSAO_vs)
+            SSAO_vs = CompileVertexShaderFromFile("SSAO_vs.asm", 0, "SSAO_vs.asm", m_pDeviceEx, true, true);
+
+        if(!SSAO_ps)
+            SSAO_ps = CompilePixelShaderFromFile("SSAO_ps.asm", 0, "SSAO_ps.asm", m_pDeviceEx, true, true);
+
+        if(!SSAO_ps2)
+            SSAO_ps2 = CompilePixelShaderFromFile("SSAO_ps2.asm", 0, "SSAO_ps2.asm", m_pDeviceEx, true, true);
+
+        if(!depth_of_field_ps)
+            depth_of_field_ps = CompilePixelShaderFromFile("depth_of_field_ps.asm", 0, "depth_of_field_ps.asm", m_pDeviceEx, true, true);
+
+        if(!depth_of_field_tent_ps)
+            depth_of_field_tent_ps = CompilePixelShaderFromFile("depth_of_field_tent_ps.asm", 0, "depth_of_field_tent_ps.asm", m_pDeviceEx, true, true);
+
+        if(!depth_of_field_blur_ps)
+            depth_of_field_blur_ps = CompilePixelShaderFromFile("depth_of_field_blur_ps.asm", 0, "depth_of_field_blur_ps.asm", m_pDeviceEx, true, true);
+
+        if(!depth_of_field_coc_ps)
+            depth_of_field_coc_ps = CompilePixelShaderFromFile("depth_of_field_coc_ps.asm", 0, "depth_of_field_coc_ps.asm", m_pDeviceEx, true, true);
+
+        if(!stipple_filter_ps)
+            stipple_filter_ps = CompilePixelShaderFromFile("stipple_filter_ps.asm", 0, "stipple_filter_ps.asm", m_pDeviceEx, true, true);
     }
 }
 
@@ -579,8 +611,6 @@ m_IDirect3DPixelShader9::m_IDirect3DPixelShader9(LPDIRECT3DPIXELSHADER9 pShader9
     id = getSignature(this, patternFF);
     crc32 = getCRC32(this);
     sprintf(buf100, "ps_%x.asm", crc32);
-    if(id == -1)
-        id = getSignature(this, patternZS);
 
     fxcAsm = GetAsm();
     if(id >= 0 && id >= (int) shader_names_ps.size()) {
@@ -600,11 +630,6 @@ m_IDirect3DPixelShader9::m_IDirect3DPixelShader9(LPDIRECT3DPIXELSHADER9 pShader9
         else {
             fx_ps[fxid].push_back(this);
             ps[id] = this;
-            for(auto& i : shadowGen) {
-                if(i == oName) {
-                    useBias = true;
-                }
-            }
         }
         printf("%i %i %s\n", id, fxid, oName.c_str());
     }
