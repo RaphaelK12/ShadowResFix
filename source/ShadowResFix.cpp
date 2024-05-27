@@ -79,8 +79,8 @@ float parametersAA[4] = { 0.25f , 0.125f , 0.0f, 0.0f };
 float SunCentre[4] = { 0.f };
 float SunColor [4] = { 0.f };
 float SunDirection[4] = { 0.f };
-float SS_params[4] = { 1.f, 0.65f, 0.02f, 0.98f };
-float SS_params2[4] = { 0.5f, 1.f, 1.f, 1.f };
+float SS_params[4] = { 1.5f, 0.95f, 0.01f, 0.975f };
+float SS_params2[4] = { 0.5f, 1.f, 2.f, 1.5f };
 float gWorld[4*4] = { 0.f };
 float gWorldView[4*4] = { 0.f };
 float gWorldViewProj[4*4] = { 0.f };
@@ -152,6 +152,7 @@ m_IDirect3DTexture9* rainDepth = nullptr;
 // postfx textures
 IDirect3DTexture9* pHDRTex =  nullptr; // game hdr texture
 IDirect3DTexture9* pHDRTex2 =  nullptr; // main temp texture
+IDirect3DTexture9* pHDRTex3 =  nullptr; // main temp texture
 IDirect3DTexture9* pHalfHDRTex =  nullptr; // main temp texture
 IDirect3DTexture9* pQuarterHDRTex =  nullptr; // main temp texture
 IDirect3DTexture9* pHDRDownsampleTex =  nullptr; // main downsampled texture
@@ -222,6 +223,12 @@ bool isShaderPostFx(m_IDirect3DPixelShader9* shader) {
 
 IDirect3DPixelShader9* FxaaPS = nullptr;
 IDirect3DPixelShader9* SunShafts_PS = nullptr;
+IDirect3DPixelShader9* SunShafts2_PS = nullptr;
+IDirect3DPixelShader9* SunShafts3_PS = nullptr;
+IDirect3DPixelShader9* SunShafts4_PS = nullptr;
+IDirect3DPixelShader9* SSDownsampler_PS = nullptr;
+IDirect3DPixelShader9* SSDownsampler2_PS = nullptr;
+IDirect3DPixelShader9* SSAdd_PS = nullptr;
 
 IDirect3DPixelShader9* SMAA_EdgeDetection = nullptr;
 IDirect3DPixelShader9* SMAA_BlendingWeightsCalculation = nullptr;
@@ -232,6 +239,8 @@ IDirect3DVertexShader9* SMAA_BlendingWeightsCalculationVS = nullptr;
 IDirect3DVertexShader9* SMAA_NeighborhoodBlendingVS = nullptr;
 
 IDirect3DPixelShader9* DOF_ps = nullptr;
+IDirect3DPixelShader9* dof_blur_ps = nullptr;
+IDirect3DPixelShader9* dof_coc_ps = nullptr;
 
 IDirect3DPixelShader9* depth_of_field_ps = nullptr;
 IDirect3DPixelShader9* depth_of_field_tent_ps = nullptr;
@@ -263,6 +272,10 @@ IDirect3DTexture9* renderTargetTex = 0;
 IDirect3DTexture9* textureRead = 0;
 IDirect3DSurface9* renderTargetSurf = nullptr;
 IDirect3DSurface9* surfaceRead = nullptr;
+
+IDirect3DTexture9* OldShadowAtlas = nullptr;
+IDirect3DTexture9* NewShadowAtlas = nullptr;
+IDirect3DSurface9* OldShadowAtlasSurf = nullptr;
 
 IDirect3DPixelShader9* MSAA_CustomResolve_ps = nullptr;
 IDirect3DPixelShader9* MSAA_Render_ps = nullptr;
@@ -441,7 +454,7 @@ HRESULT m_IDirect3DDevice9Ex::CreateTexture(THIS_ UINT Width, UINT Height, UINT 
         addToList = true;
         name = "shadow cascade";
     }
-    if((Format == D3DFMT_R16F && Height == 256 << *ShadowQualityBA0xD612B8 && Width == Height * 4 && Levels == 1)) {
+    if(((Format == D3DFMT_R16F || Format == D3DFMT_R32F) && Height == /*256*/ 128 << *ShadowQualityBA0xD612B8 && Width == Height * 4 && Levels == 1)) {
         addToList = true;
         name = "shadow atlas";
     }
@@ -466,7 +479,7 @@ HRESULT m_IDirect3DDevice9Ex::CreateTexture(THIS_ UINT Width, UINT Height, UINT 
     }
 
     if(gFixCascadedShadowMapResolution) {
-        if((Format == D3DFMT_R16F && Height >= 256 && Width == Height * 4 && Levels == 1)) {
+        if(((Format == D3DFMT_R16F || Format == D3DFMT_R32F) && Height >= 256 && Width == Height * 4 && Levels == 1)) {
             // old res
             oldCascadesWidth = Width;
             oldCascadesHeight = Height;
@@ -576,11 +589,21 @@ HRESULT m_IDirect3DDevice9Ex::CreateTexture(THIS_ UINT Width, UINT Height, UINT 
             name = "MainPostfx";
         }
     }
+    m_IDirect3DTexture9* tex = nullptr;
     if(SUCCEEDED(hr) && ppTexture) {
-        m_IDirect3DTexture9* tex = nullptr;
         tex = new m_IDirect3DTexture9(*ppTexture, this, Width, Height, Levels, Usage, Format, Pool, name, addToList);
         *ppTexture = tex;
     }
+
+    if(tex != nullptr && (Format == D3DFMT_R16F || Format == D3DFMT_R32F) && Height == /*256*/ 128 << *ShadowQualityBA0xD612B8 && Width == Height * 4 && Levels == 1) {
+        OldShadowAtlas = tex;
+        HRESULT hr = ProxyInterface->CreateTexture(Width, Height, Levels,                       D3DUSAGE_DEPTHSTENCIL, D3DFMT_D24X8, Pool, &NewShadowAtlas, pSharedHandle);
+        NewShadowAtlas = new m_IDirect3DTexture9(NewShadowAtlas, this, Width, Height, Levels,   D3DUSAGE_DEPTHSTENCIL, D3DFMT_D24X8, Pool, name, addToList);
+        //HRESULT hr = ProxyInterface->CreateTexture(Width, Height, Levels,                       D3DUSAGE_DEPTHSTENCIL, (D3DFORMAT) MAKEFOURCC('D','F','2','4'), Pool, &NewShadowAtlas, pSharedHandle);
+        //NewShadowAtlas = new m_IDirect3DTexture9(NewShadowAtlas, this, Width, Height, Levels,   D3DUSAGE_DEPTHSTENCIL, (D3DFORMAT) MAKEFOURCC('D','F','2','4'), Pool, name, addToList);
+    }
+
+
 
     //RainDropsFix from AssaultKifle47
     if(Format == D3DFMT_A16B16G16R16F && Width == gWindowWidth / gWindowDivisor && Height == gWindowHeight / gWindowDivisor && ppTexture != 0 && (*ppTexture) != 0) {
@@ -597,6 +620,7 @@ HRESULT m_IDirect3DDevice9Ex::CreateTexture(THIS_ UINT Width, UINT Height, UINT 
 
 
         textureList.remove((m_IDirect3DTexture9*)pHDRTex2);
+        textureList.remove((m_IDirect3DTexture9*)pHDRTex3);
         textureList.remove((m_IDirect3DTexture9*)areaTex);
         textureList.remove((m_IDirect3DTexture9*)searchTex);
         textureList.remove((m_IDirect3DTexture9*)edgesTex);
@@ -612,6 +636,7 @@ HRESULT m_IDirect3DDevice9Ex::CreateTexture(THIS_ UINT Width, UINT Height, UINT 
 
         // Release before, just to be sure
         SAFE_RELEASE(pHDRTex2);
+        SAFE_RELEASE(pHDRTex3);
         SAFE_RELEASE(areaTex);
         SAFE_RELEASE(searchTex);
         SAFE_RELEASE(edgesTex);
@@ -632,10 +657,18 @@ HRESULT m_IDirect3DDevice9Ex::CreateTexture(THIS_ UINT Width, UINT Height, UINT 
             m_IDirect3DTexture9* tex = nullptr;
 
             std::string nm = "Screen";
-            //tex = (m_IDirect3DTexture9*)pHDRTex2;
             tex = new m_IDirect3DTexture9(pHDRTex2, this, Width, Height, Levels, Usage, Format, Pool, nm, true);
             tex->name = "Screen";
             pHDRTex2 = tex;
+        }
+        hr = ProxyInterface->CreateTexture(Width, Height, Levels, Usage, Format, Pool, &pHDRTex3, 0);
+        if(SUCCEEDED(hr) && pHDRTex3) {
+            m_IDirect3DTexture9* tex = nullptr;
+
+            std::string nm = "Screen";
+            tex = new m_IDirect3DTexture9(pHDRTex3, this, Width, Height, Levels, Usage, Format, Pool, nm, true);
+            tex->name = "Screen";
+            pHDRTex3 = tex;
 
             hr = D3DXCreateTextureFromFileExA(this, "update/shaders/AreaTex.png", 0, 0, 0, 0, D3DFMT_UNKNOWN, D3DPOOL_MANAGED, D3DX_FILTER_LINEAR, D3DX_FILTER_LINEAR, D3DCOLOR_ARGB(150, 100, 100, 100), NULL, NULL, &areaTex);
             if(hr != S_OK) {
@@ -661,13 +694,13 @@ HRESULT m_IDirect3DDevice9Ex::CreateTexture(THIS_ UINT Width, UINT Height, UINT 
                 }
             }
             if(searchTex) {
-                ((m_IDirect3DTexture9*) searchTex)->name = "MainPostfx";
+                ((m_IDirect3DTexture9*) searchTex)->name = "Loaded";
             }
             if(areaTex) { 
-                ((m_IDirect3DTexture9*) areaTex)->name = "MainPostfx";
+                ((m_IDirect3DTexture9*) areaTex)->name = "Loaded";
             }
             if(bluenoisevolume) {
-                ((m_IDirect3DTexture9*) bluenoisevolume)->name = "MainPostfx";
+                ((m_IDirect3DTexture9*) bluenoisevolume)->name = "Loaded";
             }
             if(hr == S_OK) {
                 hr = CreateTexture(Width, Height, Levels, Usage, D3DFMT_X8R8G8B8, Pool, &edgesTex, 0);
@@ -727,27 +760,17 @@ HRESULT m_IDirect3DDevice9Ex::SetPixelShaderConstantF(THIS_ UINT StartRegister, 
         pShader2 = static_cast<m_IDirect3DPixelShader9*>(pShader);
         if(pShader2) {
             for(int i = 0; i < (int) Vector4fCount * 4; i++) {
-                if(pConstantData[i] != 0.f)
-                    m_IDirect3DPixelShader9::globalConstants[StartRegister][i] = pConstantData[i];
+                //if(pConstantData[i] != 0.f)
+                m_IDirect3DPixelShader9::globalConstants[StartRegister][i] = pConstantData[i];
             }
             memcpy(pShader2->constants[0], m_IDirect3DPixelShader9::globalConstants[0], 4 * 4 * 250);
-            //if(pShader2->id == 65 && StartRegister == 65) {
-            //    SunDirection[0] = pConstantData[0];
-            //    SunDirection[1] = pConstantData[1];
-            //    SunDirection[2] = pConstantData[2];
-            //    SunDirection[3] = pConstantData[3];
-            //}
-            // SunDirection[4] = { 0.f };
             if(StartRegister == 65 && Vector4fCount >= 1) {
                 switch(pShader2->id) {
                     case 65:
                     case 66:
                     {
-                        //if(pConstantData[0] != 0.f)
                         if(pConstantData[1] != 0.f && (pConstantData[1] == -pConstantData[3] || pConstantData[1] == pConstantData[3]))
                             memcpy(SunDirection, pConstantData, 4 * 4);
-                        else
-                            printf("%f %f %f %f", pConstantData[0], pConstantData[1], pConstantData[2], pConstantData[3]);
                     }
                 }
             }
@@ -757,10 +780,7 @@ HRESULT m_IDirect3DDevice9Ex::SetPixelShaderConstantF(THIS_ UINT StartRegister, 
                     case 66:
                     {
                         if(pConstantData[0] != 0.f)
-                        //if(pConstantData[1] != 0.f && (pConstantData[1] == -pConstantData[3] || pConstantData[1] == pConstantData[3]))
                             memcpy(SunCentre, pConstantData, 4 * 4);
-                        else
-                            printf("%f %f %f %f", pConstantData[0], pConstantData[1], pConstantData[2], pConstantData[3]);
                     }
                 }
             }
@@ -770,15 +790,11 @@ HRESULT m_IDirect3DDevice9Ex::SetPixelShaderConstantF(THIS_ UINT StartRegister, 
                     case 66:
                     {
                         if(pConstantData[0] != 0.f)
-                        //if(pConstantData[1] != 0.f && (pConstantData[1] == -pConstantData[3] || pConstantData[1] == pConstantData[3]))
                             memcpy(SunColor, pConstantData, 4 * 4);
-                        else
-                            printf("%f %f %f %f", pConstantData[0], pConstantData[1], pConstantData[2], pConstantData[3]);
                     }
                 }
             }
             if(Vector4fCount >= 4) {
-                // gViewInverse[4] = { 0.f };
                 if(StartRegister == 12) {
                     switch(pShader2->id) {
                         case 7:
@@ -796,86 +812,82 @@ HRESULT m_IDirect3DDevice9Ex::SetPixelShaderConstantF(THIS_ UINT StartRegister, 
                         case 158:
                         case 281:
                         case 550:
-                            if(pConstantData[0] != 0.f) {
-                            memcpy(gViewInverse, pConstantData, 4 * 4 * 4);
+                        {
+                            if(pConstantData[0] != 0.f)
+                                memcpy(gViewInverse, pConstantData, 4 * 4 * 4);
                         }
                     }
-                }
-                // gShadowMatrix[4] = { 0.f };
-                if(StartRegister == 60) {
-                    switch(pShader2->id) {
-                        case 7:
-                        case 8:
-                        case 148:
-                        case 158:
-                        case 281:
-                        case 550:
-                        if(pConstantData[0]!= 0.f){
-                            memcpy(gShadowMatrix, pConstantData, 4 * 4 * 4);
+                    if(StartRegister == 60) {
+                        switch(pShader2->id) {
+                            case 7:
+                            case 8:
+                            case 148:
+                            case 158:
+                            case 281:
+                            case 550:
+                            {
+                                if(pConstantData[0] != 0.f)
+                                    memcpy(gShadowMatrix, pConstantData, 4 * 4 * 4);
+                            }
                         }
                     }
                 }
             }
-            //for(int i = 0; i < Vector4fCount; i++) {
-            //	for(int j = 0; j < 4; j++) {
-            //		pShader2->constants[StartRegister][i * j] = pConstantData[i * j];
-            //	}
-            //}
         }
-    }
 
-    if(!ProxyInterface) {
-        return S_FALSE;
-    }
-    if(UseSSAA && pConstantData[0] == 1.f / gWindowWidth && pConstantData[1] == 1.f / gWindowHeight && Vector4fCount==1) {
-        vec[0] = pConstantData[0] * (1.f/ ResSSAA);
-        vec[1] = pConstantData[1] * (1.f / ResSSAA);
-        vec[2] = pConstantData[2] * ResSSAA;
-        vec[3] = pConstantData[3] * ResSSAA;
-        return ProxyInterface->SetPixelShaderConstantF(StartRegister, vec, Vector4fCount);
-    }
-    if(UseSSAA && pConstantData[0] == gWindowWidth && pConstantData[1] == gWindowHeight && Vector4fCount == 1) {
-        vec[0] = pConstantData[0] * ResSSAA;
-        vec[1] = pConstantData[1] * ResSSAA;
-        vec[2] = pConstantData[2] * (1.f / ResSSAA);
-        vec[3] = pConstantData[3] * (1.f / ResSSAA);
-        return ProxyInterface->SetPixelShaderConstantF(StartRegister, vec, Vector4fCount);
-    }
-    if(gFixCascadedShadowMapResolution) {
-        if(StartRegister == 53 && Vector4fCount == 1 && oldCascadesWidth != 0 && oldCascadesHeight != 0 &&
-           pConstantData[0] == 1.f / oldCascadesWidth && pConstantData[1] == 1.f / oldCascadesHeight) {
-            vec[0] = 1.f / newCascadesWidthX2;
-            vec[1] = 1.f / newCascadesHeightX2;
-            vec[2] = 1.f / newCascadesHeightX2;
-            vec[3] = pConstantData[3];
-            // set texture pixel size to pixel shader
-            hr = ProxyInterface->SetPixelShaderConstantF(StartRegister, vec, Vector4fCount);
-            if(pShader2 && pShader2->disable) {
-                ProxyInterface->SetPixelShaderConstantF(220, shaderReturnColor, 1);
-            }
-            return hr;
-        };
-    }
-    if(gNearFarPlane) {
-        if(StartRegister == 128 && Vector4fCount == 1 && pConstantData[0] <= 1.f && pConstantData[1] >= 5.f && pConstantData[1] <= 15000.f) {
-            NearFarPlane[0] = pConstantData[0];
-            NearFarPlane[1] = pConstantData[1];
-            NearFarPlane[2] = pConstantData[2];
-            NearFarPlane[3] = pConstantData[3];
-            bNFfound = true;
+        if(!ProxyInterface) {
+            return S_FALSE;
         }
+        if(UseSSAA && pConstantData[0] == 1.f / gWindowWidth && pConstantData[1] == 1.f / gWindowHeight && Vector4fCount == 1) {
+            vec[0] = pConstantData[0] * (1.f / ResSSAA);
+            vec[1] = pConstantData[1] * (1.f / ResSSAA);
+            vec[2] = pConstantData[2] * ResSSAA;
+            vec[3] = pConstantData[3] * ResSSAA;
+            return ProxyInterface->SetPixelShaderConstantF(StartRegister, vec, Vector4fCount);
+        }
+        if(UseSSAA && pConstantData[0] == gWindowWidth && pConstantData[1] == gWindowHeight && Vector4fCount == 1) {
+            vec[0] = pConstantData[0] * ResSSAA;
+            vec[1] = pConstantData[1] * ResSSAA;
+            vec[2] = pConstantData[2] * (1.f / ResSSAA);
+            vec[3] = pConstantData[3] * (1.f / ResSSAA);
+            return ProxyInterface->SetPixelShaderConstantF(StartRegister, vec, Vector4fCount);
+        }
+        if(gFixCascadedShadowMapResolution) {
+            if(StartRegister == 53 && Vector4fCount == 1 && oldCascadesWidth != 0 && oldCascadesHeight != 0 &&
+               pConstantData[0] == 1.f / oldCascadesWidth && pConstantData[1] == 1.f / oldCascadesHeight) {
+                vec[0] = 1.f / newCascadesWidthX2;
+                vec[1] = 1.f / newCascadesHeightX2;
+                vec[2] = 1.f / newCascadesHeightX2;
+                vec[3] = pConstantData[3];
+                // set texture pixel size to pixel shader
+                hr = ProxyInterface->SetPixelShaderConstantF(StartRegister, vec, Vector4fCount);
+                if(pShader2 && pShader2->disable) {
+                    ProxyInterface->SetPixelShaderConstantF(220, shaderReturnColor, 1);
+                }
+                return hr;
+            };
+        }
+        if(gNearFarPlane) {
+            if(StartRegister == 128 && Vector4fCount == 1 && pConstantData[0] <= 1.f && pConstantData[1] >= 5.f && pConstantData[1] <= 15000.f) {
+                NearFarPlane[0] = pConstantData[0];
+                NearFarPlane[1] = pConstantData[1];
+                NearFarPlane[2] = pConstantData[2];
+                NearFarPlane[3] = pConstantData[3];
+                bNFfound = true;
+            }
+        }
+        if(bNFfound && gNearFarPlane) {
+            ProxyInterface->SetPixelShaderConstantF(128, NearFarPlane, 1);
+        }
+        if(bNFfound && gNearFarPlane && StartRegister == 128 && Vector4fCount == 1)
+            hr = ProxyInterface->SetPixelShaderConstantF(StartRegister, NearFarPlane, Vector4fCount);
+        else
+            hr = ProxyInterface->SetPixelShaderConstantF(StartRegister, pConstantData, Vector4fCount);
+        if(pShader2 && pShader2->disable) {
+            ProxyInterface->SetPixelShaderConstantF(220, shaderReturnColor, 1);
+        }
+        return hr;
     }
-    if(bNFfound && gNearFarPlane) {
-        ProxyInterface->SetPixelShaderConstantF(128, NearFarPlane, 1);
-    }
-    if(bNFfound && gNearFarPlane && StartRegister == 128 && Vector4fCount == 1)
-        hr = ProxyInterface->SetPixelShaderConstantF(StartRegister, NearFarPlane, Vector4fCount);
-    else
-        hr = ProxyInterface->SetPixelShaderConstantF(StartRegister, pConstantData, Vector4fCount);
-    if(pShader2 && pShader2->disable) {
-        ProxyInterface->SetPixelShaderConstantF(220, shaderReturnColor, 1);
-    }
-    return hr;
 }
 
 HRESULT m_IDirect3DDevice9Ex::SetVertexShaderConstantF(THIS_ UINT StartRegister, CONST float* pConstantData, UINT Vector4fCount) {
@@ -893,111 +905,32 @@ HRESULT m_IDirect3DDevice9Ex::SetVertexShaderConstantF(THIS_ UINT StartRegister,
                     switch(pShader2->id) {
                         case 29:
                         case 34:
-                            //case 2:
-                            //case 3:
-                            //case 122:
-                            //case 126:
-                            //case 127:
-                            //case 130:
-                            //case 256:
-                            //case 621:
-                            //case 809:
-                            //case 831:
+                        {
                             if(Vector4fCount == 16) {
                                 if(mtx.size() < (Vector4fCount * 4));
                                 mtx.resize(Vector4fCount * 4);
                                 memcpy(&mtx[0], pConstantData, 4 * 4 * Vector4fCount);
                                 memcpy(gWorld, pConstantData, 4 * 4 * 4);
                             }
-                            else
-                                printf("");
+                        }
                     }
                 }
                 if(StartRegister == 4) {
                     switch(pShader2->id) {
-                        //case 15:
                         case 34:
-                            //case 534:
-                            //case 537:
-                            //case 538:
-                            //case 539:
-                            //case 540:
-                            if(pConstantData[0] != 0.f) {
+                        {
+                            if(pConstantData[0] != 0.f)
                                 memcpy(gWorldView, pConstantData, 4 * 4 * 4);
-                            }
+                        }
                     }
                 }
                 if(StartRegister == 8) {
                     switch(pShader2->id) {
-                        //case 6:
-                        //case 10:
-                        //case 14:
-                        //case 15:
-                        //case 16:
-                        //case 19:
-                        //case 20:
-                        //case 21:
-                        //case 22:
-                        //case 122:
-                        //case 125:
-                        //case 126:
-                        //case 127:
-                        //case 128:
-                        //case 256:
-                        //case 537:
-                        //case 538:
-                        //case 539:
-                        //case 541:
-                        //case 621:
-                        //case 804:
-                        //case  6:
-                        //case  10:
-                        //case  14:
-                        //case  15:
-                        //case  16:
-                        //case  21:
-                        //case  22:
                         case  29:
-
-                            //case  78:
-                            //case  90:
-                            //case  121:
-                            //case  125:
-                            //case  126:
-                            //case  128:
-                            //case  160:
-                            //case  162:
-                            //case  164:
-                            //case  138:
-                            //case  140:
-                            //case  148:
-                            //case  150:
-                            //case  152:
-                            //case  232:
-                            //case  259:
-                            //case  411:
-                            //case  315:
-                            //case  304:
-                            //case  399:
-                            //case  387:
-                            //case  483:
-                            //case  467:
-                            //case  508:
-                            //case  525:
-                            //case  537:
-                            //case  538:
-                            //case  594:
-                            //case  598:
-                            //case  599:
-                            //case  586:
-                            //case  618:
-                            //case  621:
-                            //case  779:
-                            //case  804:
-
-                            if(pConstantData[0] != 0.f) {
+                        {
+                            if(pConstantData[0] != 0.f)
                                 memcpy(gWorldViewProj, pConstantData, 4 * 4 * 4);
-                            }
+                        }
                     }
                 }
                 if(StartRegister == 12) {
@@ -1015,12 +948,12 @@ HRESULT m_IDirect3DDevice9Ex::SetVertexShaderConstantF(THIS_ UINT StartRegister,
                         case 539:
                         case 540:
                         case 541:
-                            if(pConstantData[0] != 0.f) {
+                        {
+                            if(pConstantData[0] != 0.f)
                                 memcpy(gViewInverse, pConstantData, 4 * 4 * 4);
-                            }
+                        }
                     }
                 }
-                // gShadowMatrix[4] = { 0.f };
                 if(StartRegister == 60) {
                     switch(pShader2->id) {
                         case 2:
@@ -1033,26 +966,19 @@ HRESULT m_IDirect3DDevice9Ex::SetVertexShaderConstantF(THIS_ UINT StartRegister,
                         case 540:
                         case 809:
                         case 831:
-                            if(pConstantData[0] != 0.f) {
+                        {
+                            if(pConstantData[0] != 0.f)
                                 memcpy(gShadowMatrix, pConstantData, 4 * 4 * 4);
-                            }
+                        }
                     }
                 }
             }
 
-            //for(int i = 0; i < (int) Vector4fCount * 4; i++) {
-            //    pShader2->constants[StartRegister][i] = pConstantData[i];
-            //}
-
             for(int i = 0; i < (int) Vector4fCount * 4; i++) {
-                if(pConstantData[i] != 0.f)
-                    m_IDirect3DVertexShader9::globalConstants[StartRegister][i] = pConstantData[i];
+                //if(pConstantData[i] != 0.f)
+                m_IDirect3DVertexShader9::globalConstants[StartRegister][i] = pConstantData[i];
             }
             memcpy(pShader2->constants[0], m_IDirect3DVertexShader9::globalConstants[0], (4 * 4 * 250));
-
-            //if(pShader2->id == 15 &&gbuffertexturesampler3) {
-            //    SetTexture(0, gbuffertexturesampler3);
-            //}
         }
     }
     if(gTreeLeavesSwayInTheWind) {
@@ -1734,22 +1660,8 @@ HRESULT m_IDirect3DDevice9Ex::SetRenderState(D3DRENDERSTATETYPE State, DWORD Val
     return hr;
 }
 
-HRESULT m_IDirect3DDevice9Ex::DrawIndexedPrimitive(THIS_ D3DPRIMITIVETYPE Type, INT BaseVertexIndex, UINT MinVertexIndex, UINT NumVertices, UINT startIndex, UINT primCount) {
-    return ProxyInterface->DrawIndexedPrimitive(Type, BaseVertexIndex, MinVertexIndex, NumVertices, startIndex, primCount);
-}
 
-HRESULT m_IDirect3DDevice9Ex::DrawIndexedPrimitiveUP(D3DPRIMITIVETYPE PrimitiveType, UINT MinIndex, UINT NumVertices, UINT PrimitiveCount, CONST void* pIndexData, D3DFORMAT IndexDataFormat, CONST void* pVertexStreamZeroData, UINT VertexStreamZeroStride) {
-    return ProxyInterface->DrawIndexedPrimitiveUP(PrimitiveType, MinIndex, NumVertices, PrimitiveCount, pIndexData, IndexDataFormat, pVertexStreamZeroData, VertexStreamZeroStride);
-}
-
-struct VERTEX {
-    D3DXVECTOR3 pos;
-    D3DXVECTOR2 tex1;
-};
 DWORD CoronaDepth = 0;
-const DWORD VertexFVF = D3DFVF_XYZ | D3DFVF_TEX1;
-DWORD OldFVF = D3DFVF_XYZ | D3DFVF_TEX1;
-extern VERTEX SmaaVertexArray[4];
 #define PostfxTextureCount 15
 IDirect3DBaseTexture9* prePostFx[PostfxTextureCount] = { 0 };
 DWORD Samplers[PostfxTextureCount] = { D3DTEXF_LINEAR };
@@ -1757,10 +1669,10 @@ extern bool usePrimitiveUp;
 
  bool useDof = false;
  int UseSunShafts = 1;
-
- bool useDepthOfField = false;
- bool useDepthOfField2 = false;
+ int SS_NumSamples[4] = { 20, 20, 20, 20 };
+ int useDepthOfField = 0;
  bool useStippleFilter = false;
+ bool useNewShadowAtlas = false;
 
 extern float PostFxFog[4];
 float NoiseSale[4] = { 1.f / 256, 0.3, -0.5, 0 };
@@ -1768,577 +1680,8 @@ float NoiseSale[4] = { 1.f / 256, 0.3, -0.5, 0 };
 extern bool fixDistantOutlineUsingDXVK;
 int DofSamples[4] = { 20 };
 bool downsampleStencil = 0;
-
-HRESULT PostFx(m_IDirect3DDevice9Ex* hk_device, LPDIRECT3DDEVICE9 pDevice,
-               D3DPRIMITIVETYPE PrimitiveType, UINT StartVertex, UINT PrimitiveCount,
-               IDirect3DPixelShader9* pShader
-) {
-    m_IDirect3DPixelShader9* pShader2 = static_cast<m_IDirect3DPixelShader9*>( pShader);
-    static float vec4[4] = { 0.f };
-    HRESULT hr = S_FALSE;
-    IDirect3DSurface9* pHDRSurface = nullptr;
-    IDirect3DSurface9* pHDRSurface2 = nullptr;
-    IDirect3DSurface9* pHDRDownsampleSurf = nullptr;
-    IDirect3DSurface9* backBuffer = nullptr;
-    IDirect3DSurface9* edgesSurf = nullptr;
-    IDirect3DSurface9* blendSurf = nullptr;
-    IDirect3DSurface9* stencilDownsampledSurf = nullptr;
-
-    IDirect3DSurface9* ppZStencilSurface = nullptr;
-    IDirect3DSurface9* ppZStencilSurface2 = nullptr;
-
-    DWORD OldSRGB = 0;
-    DWORD OldSampler = 0;
-
-    for(int i = 0; i < PostfxTextureCount; i++) {
-        pDevice->GetTexture(i, &prePostFx[i]);
-        pDevice->GetSamplerState(i, D3DSAMP_MAGFILTER, &Samplers[i]);
-    }
-
-    pDevice->SetTexture(8, ((m_IDirect3DTexture9*) pHalfHDRTex)->GetProxyInterface());
-    //pDevice->SetTexture(9, ((m_IDirect3DTexture9*) pQuarterHDRTex)->GetProxyInterface());
-
-    if(UseSSAA) {
-        hk_device->GetSamplerState(0, D3DSAMP_MAGFILTER, &OldSampler);
-        hk_device->SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
-    }
-
-    // main postfx passes
-
-    // dhr tex downsample
-    if(0){
-        pDevice->GetRenderTarget(0, &backBuffer);
-
-        pDevice->GetDepthStencilSurface(&ppZStencilSurface);
-        depthStenciltex->GetSurfaceLevel(0, &ppZStencilSurface2);
-        pDevice->SetDepthStencilSurface( ((m_IDirect3DSurface9*)ppZStencilSurface2)->GetProxyInterface() );
-        if(backBuffer && pHDRTex && pHDRTex2 && pHDRDownsampleTex && ppZStencilSurface&& ppZStencilSurface2) {
-            pHDRTex2->GetSurfaceLevel(0, &pHDRSurface2);
-            pHDRTex->GetSurfaceLevel(0, &pHDRSurface);
-            pHDRDownsampleTex->GetSurfaceLevel(0, &pHDRDownsampleSurf);
-
-            hk_device->SetPixelShader(downsampler_ps);
-            //hk_device->SetTexture(2, pHDRTex);
-            hk_device->SetRenderTarget(0, pHDRDownsampleSurf);
-            pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
-            //pDevice->SetTexture(2, prePostFx[2]);
-            pDevice->SetRenderTarget(0, backBuffer);
-            pDevice->SetPixelShader(pShader2->GetProxyInterface());
-            pDevice->SetDepthStencilSurface(ppZStencilSurface);
-
-            SAFE_RELEASE(backBuffer);
-            SAFE_RELEASE(pHDRSurface);
-            SAFE_RELEASE(pHDRSurface2);
-            SAFE_RELEASE(pHDRDownsampleSurf);
-
-            SAFE_RELEASE(ppZStencilSurface);
-            SAFE_RELEASE(ppZStencilSurface2);
-        }
-    }
-
-    {
-        if(useDepthOfField  && depth_of_field_ps) {
-            pDevice->GetRenderTarget(0, &backBuffer);
-            if(backBuffer && pHDRTex && pHDRTex2) {
-                pHDRTex2->GetSurfaceLevel(0, &pHDRSurface2);
-                pHDRTex->GetSurfaceLevel(0, &pHDRSurface);
-
-                // DOF
-                if(1) {
-                    // game postfx or DOF
-                    //SetPixelShader(pShader2);
-
-                    pDevice->SetRenderTarget(0, pHDRSurface2);
-                    hk_device->Clear(0, 0, D3DCLEAR_TARGET, 0, 0, 0);
-                    hr = pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
-
-                    hk_device->SetPixelShader(depth_of_field_ps);
-
-                    pDevice->SetTexture(2, 0);
-
-                    pDevice->SetRenderTarget(0, backBuffer);
-                    pDevice->SetTexture(2, pHDRTex2);
-
-
-                    pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
-
-                    //pDevice->SetTexture(0, 0);
-                    //pDevice->SetTexture(1, 0);
-                    pDevice->SetTexture(2, 0);
-                    //pDevice->SetTexture(3, 0);
-
-                    pDevice->SetPixelShader(pShader2->GetProxyInterface());
-                }
-
-                SAFE_RELEASE(backBuffer);
-                SAFE_RELEASE(pHDRSurface2);
-                SAFE_RELEASE(pHDRSurface);
-                if(UseSSAA && doPostFx) {
-                    pDevice->SetSamplerState(0, D3DSAMP_MAGFILTER, OldSampler);
-                }
-
-                // restore sampler state
-                for(int i = 0; i < PostfxTextureCount; i++) {
-                    if(prePostFx[i]) {
-                        pDevice->SetTexture(i, prePostFx[i]);
-                        pDevice->SetSamplerState(i, D3DSAMP_MAGFILTER, Samplers[i]);
-                        SAFE_RELEASE(prePostFx[i]);
-                    }
-                }
-
-                return hr;
-            }
-            SAFE_RELEASE(backBuffer);
-        }
-
-        if(useStippleFilter && stipple_filter_ps) {
-            pDevice->GetRenderTarget(0, &backBuffer);
-            if(backBuffer && pHDRTex && pHDRTex2) {
-                pHDRTex2->GetSurfaceLevel(0, &pHDRSurface2);
-                pHDRTex->GetSurfaceLevel(0, &pHDRSurface);
-
-                // DOF
-                if(1) {
-                    // game postfx or DOF
-                    //SetPixelShader(pShader2);
-
-                    pDevice->SetRenderTarget(0, pHDRSurface2);
-                    hk_device->Clear(0, 0, D3DCLEAR_TARGET, 0, 0, 0);
-                    hr = pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
-
-                    hk_device->SetPixelShader(stipple_filter_ps);
-
-                    pDevice->SetTexture(2, 0);
-
-                    pDevice->SetRenderTarget(0, backBuffer);
-                    pDevice->SetTexture(2, pHDRTex2);
-
-
-                    pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
-
-                    //pDevice->SetTexture(1, 0);
-                    pDevice->SetTexture(2, 0);
-
-                    pDevice->SetPixelShader(pShader2->GetProxyInterface());
-                }
-
-
-                SAFE_RELEASE(backBuffer);
-                SAFE_RELEASE(pHDRSurface2);
-                SAFE_RELEASE(pHDRSurface);
-                if(UseSSAA && doPostFx) {
-                    pDevice->SetSamplerState(0, D3DSAMP_MAGFILTER, OldSampler);
-                }
-
-                // restore sampler state
-                for(int i = 0; i < PostfxTextureCount; i++) {
-                    if(prePostFx[i]) {
-                        pDevice->SetTexture(i, prePostFx[i]);
-                        pDevice->SetSamplerState(i, D3DSAMP_MAGFILTER, Samplers[i]);
-                        SAFE_RELEASE(prePostFx[i]);
-                    }
-                }
-
-                return hr;
-            }
-            SAFE_RELEASE(backBuffer);
-        }
-
-        if(useDof && DOF_ps) {
-            pDevice->GetRenderTarget(0, &backBuffer);
-            if(backBuffer && pHDRTex && pHDRTex2) {
-                pHDRTex2->GetSurfaceLevel(0, &pHDRSurface2);
-                pHDRTex->GetSurfaceLevel(0, &pHDRSurface);
-
-                // DOF
-                if(1) {
-                    // game postfx or DOF
-                    //SetPixelShader(pShader2);
-
-                    pDevice->SetRenderTarget(0, pHDRSurface2);
-                    hk_device->Clear(0, 0, D3DCLEAR_TARGET, 0, 0, 0);
-                    hr = pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
-
-                    hk_device->SetPixelShader(DOF_ps);
-
-                    //vec4[0] = ((gWindowWidth * 1) * (UseSSAA ? ResSSAA : 1));
-                    //vec4[1] = ((gWindowHeight * 1) * (UseSSAA ? ResSSAA : 1));
-                    //vec4[2] = 1.f / ((gWindowWidth * 1) * (UseSSAA ? ResSSAA : 1));
-                    //vec4[3] = 1.f / ((gWindowHeight * 1) * (UseSSAA ? ResSSAA : 1));
-                    //pDevice->SetPixelShaderConstantF(210, vec4, 1);
-                    //vec4[1] = AoDistance;
-                    //pDevice->SetPixelShaderConstantF(211, vec4, 1);
-
-                    pDevice->SetPixelShaderConstantF(212, FocusPoint, 1);
-                    pDevice->SetPixelShaderConstantF(213, FocusScale, 1);
-                    pDevice->SetPixelShaderConstantI(4, DofSamples, 1);
-                    //if(gNearFarPlane) {
-                    //    pDevice->SetPixelShaderConstantF(128, NearFarPlane, 1);
-                    //}
-                    //SetTexture(1, 0);
-                    //SetTexture(1, 0);
-                    pDevice->SetTexture(2, 0);
-
-                    pDevice->SetRenderTarget(0, backBuffer);
-                    pDevice->SetTexture(2, pHDRTex2);
-                    //SetTexture(1, DiffuseTex);
-                    //SetTexture(2, NormalTex);
-                    //SetTexture(3, BloomTex);
-                    //SetTexture(4, SpecularTex);
-                    //SetTexture(5, DepthTex);
-                    //SetTexture(6, StencilTex);
-
-
-                    pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
-
-                    //pDevice->SetTexture(0, 0);
-                    pDevice->SetTexture(1, 0);
-                    pDevice->SetTexture(2, 0);
-                    //pDevice->SetTexture(3, 0);
-
-                    pDevice->SetPixelShader(pShader2->GetProxyInterface());
-                }
-
-
-                SAFE_RELEASE(backBuffer);
-                SAFE_RELEASE(pHDRSurface2);
-                SAFE_RELEASE(pHDRSurface);
-                if(UseSSAA && doPostFx) {
-                    pDevice->SetSamplerState(0, D3DSAMP_MAGFILTER, OldSampler);
-                }
-
-                // restore sampler state
-                for(int i = 0; i < PostfxTextureCount; i++) {
-                    if(prePostFx[i]) {
-                        pDevice->SetTexture(i, prePostFx[i]);
-                        pDevice->SetSamplerState(i, D3DSAMP_MAGFILTER, Samplers[i]);
-                        SAFE_RELEASE(prePostFx[i]);
-                    }
-                }
-
-                return hr;
-            }
-            SAFE_RELEASE(backBuffer);
-        }
-
-        if(UseSSAO && SSAO_ps && SSAO_vs) {
-            if(UseSSAA) {
-                pDevice->SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
-            }
-
-            pDevice->GetRenderTarget(0, &backBuffer);
-            if(backBuffer && pHDRTex && pHDRTex2) {
-                // save sampler state
-
-                pHDRTex2->GetSurfaceLevel(0, &pHDRSurface2);
-                pHDRTex->GetSurfaceLevel(0, &pHDRSurface);
-
-                // SSAO
-                if(1) {
-                    // game postfx or SSAO
-                    //SetPixelShader(pShader2);
-
-                    if(downsampleStencil) {
-                        stencilDownsampled->GetSurfaceLevel(0, &stencilDownsampledSurf);
-                        hk_device->SetRenderTarget(0, stencilDownsampledSurf);
-                        hk_device->SetPixelShader(downsampler_ps);
-                        hk_device->Clear(0, 0, D3DCLEAR_TARGET, 0, 0, 0);
-                        hr = pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
-
-                        pDevice->SetPixelShader(pShader2->GetProxyInterface());
-                    }
-
-                    pDevice->SetRenderTarget(0, pHDRSurface2);
-                    hk_device->Clear(0, 0, D3DCLEAR_TARGET, 0, 0, 0);
-                    hr = pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
-
-                    hk_device->SetPixelShader(SSAO_ps);
-
-                    vec4[0] = ((gWindowWidth * 1) * (UseSSAA ? ResSSAA : 1));
-                    vec4[1] = ((gWindowHeight * 1) * (UseSSAA ? ResSSAA : 1));
-                    vec4[2] = 1.f / ((gWindowWidth * 1) * (UseSSAA ? ResSSAA : 1));
-                    vec4[3] = 1.f / ((gWindowHeight * 1) * (UseSSAA ? ResSSAA : 1));
-                    pDevice->SetPixelShaderConstantF(210, vec4, 1);
-                    vec4[1] = AoDistance;
-                    pDevice->SetPixelShaderConstantF(211, vec4, 1);
-                    //SetTexture(1, 0);
-                    //SetTexture(1, 0);
-                    pDevice->SetTexture(2, 0);
-
-                    hk_device->SetRenderTarget(0, pHDRSurface);
-                    //SetTexture(2, pHDRTex2);
-
-                    pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
-
-                    //pDevice->SetTexture(0, 0);
-                    pDevice->SetTexture(1, 0);
-                    pDevice->SetTexture(2, 0);
-                    //pDevice->SetTexture(3, 0);
-
-                    hk_device->SetPixelShader(SSAO_ps2);
-
-                    pDevice->SetRenderTarget(0, backBuffer);
-                    switch(UseDebugTextures) {
-
-                        //"None", 
-                        //"Difuse", 
-                        //"normal",
-                        //"specular", 
-                        //"depth", 
-                        //"SMAA edges", 
-                        //"stencil"
-
-                        case 0:
-                            pDevice->SetTexture(2, pHDRTex2);
-                            break;
-                        case 1:
-                            pDevice->SetTexture(2, DiffuseTex->GetProxyInterface());
-                            break;
-                        case 2:
-                            pDevice->SetTexture(2, NormalTex->GetProxyInterface());
-                            break;
-                        case 3:
-                            pDevice->SetTexture(2, BloomTex->GetProxyInterface());
-                            break;
-                        case 4:
-                            pDevice->SetTexture(2, SpecularTex->GetProxyInterface());
-                            break;
-                        case 5:
-                            pDevice->SetTexture(2, DepthTex->GetProxyInterface());
-                            break;
-                        case 6:
-                            pDevice->SetTexture(2, StencilTex->GetProxyInterface());
-                            break;
-                        default:
-                            pDevice->SetTexture(2, pHDRTex2);
-                            break;
-                    }
-                    pDevice->SetTexture(1, ((m_IDirect3DTexture9*) pHDRTex)->GetProxyInterface());
-
-                    pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
-
-                    pDevice->SetTexture(1, 0);
-                    pDevice->SetTexture(2, 0);
-                    pDevice->SetPixelShader(pShader2->GetProxyInterface());
-                }
-
-
-                SAFE_RELEASE(backBuffer);
-                SAFE_RELEASE(pHDRSurface2);
-                SAFE_RELEASE(pHDRSurface);
-                if(UseSSAA && doPostFx) {
-                    pDevice->SetSamplerState(0, D3DSAMP_MAGFILTER, OldSampler);
-                }
-                //pDevice->SetRenderState(D3DRS_ZWRITEENABLE, 0);
-                //pDevice->SetRenderState(D3DRS_ZENABLE, 0);
-                //hr = pDevice->GetDepthStencilSurface(&oldDepth);
-                //Clear(0, 0, D3DCLEAR_ZBUFFER, 0, 0, 0);
-
-                //hr = pDevice->SetDepthStencilSurface(mainDepth);
-                //Clear(0, 0, D3DCLEAR_ZBUFFER, 0, 0, 0);
-
-                //afterpostfx = true;
-
-                // restore sampler state
-                for(int i = 0; i < PostfxTextureCount; i++) {
-                    if(prePostFx[i]) {
-                        pDevice->SetTexture(i, prePostFx[i]);
-                        pDevice->SetSamplerState(i, D3DSAMP_MAGFILTER, Samplers[i]);
-                        SAFE_RELEASE(prePostFx[i]);
-                    }
-                }
-
-                return hr;
-            }
-            SAFE_RELEASE(backBuffer);
-
-            for(int i = 0; i < PostfxTextureCount; i++) {
-                if(prePostFx[i]) {
-                    pDevice->SetTexture(i, prePostFx[i]);
-                    pDevice->SetSamplerState(i, D3DSAMP_MAGFILTER, Samplers[i]);
-                    SAFE_RELEASE(prePostFx[i]);
-                }
-            }
-        }
-
-        // fxaa / smaa
-        if(UsePostFxAA[0] > 0) {
-            if(UseSSAA) {
-                pDevice->SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
-            }
-
-            pDevice->GetRenderTarget(0, &backBuffer);
-            if(backBuffer && pHDRTex && pHDRTex2) {
-                // save sampler state
-                //for(int i = 0; i < PostfxTextureCount; i++) {
-                //    GetTexture(i, &prePostFx[i]);
-                //    GetSamplerState(i, D3DSAMP_MAGFILTER, &Samplers[i]);
-                //}
-
-                pHDRTex2->GetSurfaceLevel(0, &pHDRSurface2);
-
-                // FXAA
-                if((UsePostFxAA[0] == 1) && FxaaPS) {
-                    // game postfx
-                    pDevice->GetRenderState(D3DRS_SRGBWRITEENABLE, &OldSRGB); // save srgb state
-                    //SetPixelShader(pShader2);
-
-                    pDevice->SetRenderTarget(0, pHDRSurface2);
-                    hk_device->Clear(0, 0, D3DCLEAR_TARGET, 0, 0, 0);
-                    hr = pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
-
-                    hk_device->SetPixelShader(FxaaPS);
-
-                    pDevice->SetRenderTarget(0, backBuffer);
-                    pDevice->SetTexture(2, pHDRTex2);
-
-
-                    hr = pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
-
-                    pDevice->SetSamplerState(2, D3DSAMP_SRGBTEXTURE, 0);
-
-                    pDevice->SetTexture(2, 0);
-                    pDevice->SetPixelShader(pShader2->GetProxyInterface());
-                    pDevice->SetRenderState(D3DRS_SRGBWRITEENABLE, OldSRGB);// restore srgb state
-                }
-
-                // SMAA
-                if(UsePostFxAA[0] > 1 &&
-                   SMAA_EdgeDetection && SMAA_BlendingWeightsCalculation && SMAA_NeighborhoodBlending &&
-                   SMAA_EdgeDetectionVS && SMAA_BlendingWeightsCalculationVS && SMAA_NeighborhoodBlendingVS &&
-                   areaTex && searchTex && edgesTex && blendTex && pHDRSurface2
-                   ) {
-                    vec4[0] = 1.f / (gWindowWidth * (UseSSAA ? ResSSAA : 1));
-                    vec4[1] = 1.f / (gWindowHeight * (UseSSAA ? ResSSAA : 1));
-                    vec4[2] = (gWindowWidth * (UseSSAA ? ResSSAA : 1));
-                    vec4[3] = (gWindowHeight * (UseSSAA ? ResSSAA : 1));
-                    pDevice->SetPixelShaderConstantF(24, vec4, 1);
-                    pDevice->SetVertexShaderConstantF(24, vec4, 1);
-                    {
-                        edgesTex->GetSurfaceLevel(0, &edgesSurf);
-                        blendTex->GetSurfaceLevel(0, &blendSurf);
-
-                        // game postfx
-                        //SetPixelShader(pShader2);
-                        pDevice->SetRenderTarget(0, pHDRSurface2);
-                        pDevice->Clear(0, 0, D3DCLEAR_TARGET, 0, 0, 0);
-                        hr = pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
-
-                        // SMAA_EdgeDetection
-                        pDevice->GetRenderState(D3DRS_SRGBWRITEENABLE, &OldSRGB); // save srgb state
-                        pDevice->SetRenderState(D3DRS_SRGBWRITEENABLE, 0);
-                        pDevice->GetFVF(&OldFVF);
-                        if(usePrimitiveUp)
-                            pDevice->SetFVF(VertexFVF);
-                        hk_device->SetPixelShader(SMAA_EdgeDetection);
-                        hk_device->SetVertexShader(SMAA_EdgeDetectionVS);
-                        pDevice->SetPixelShaderConstantF(24, vec4, 1);
-                        pDevice->SetVertexShaderConstantF(24, vec4, 1);
-                        hk_device->SetRenderTarget(0, edgesSurf);
-                        pDevice->SetTexture(0, pHDRTex2);
-                        pDevice->SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
-                        pDevice->SetSamplerState(1, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
-                        pDevice->SetSamplerState(2, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
-                        pDevice->SetSamplerState(3, D3DSAMP_MAGFILTER, D3DTEXF_POINT);
-                        pDevice->SetSamplerState(4, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
-
-                        pDevice->Clear(0, 0, D3DCLEAR_TARGET, 0, 0, 0);
-                        pDevice->SetSamplerState(0, D3DSAMP_SRGBTEXTURE, 1);
-                        if(usePrimitiveUp)
-                            pDevice->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, SmaaVertexArray, sizeof(VERTEX));
-                        else
-                            pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
-                        pDevice->SetSamplerState(0, D3DSAMP_SRGBTEXTURE, 0);
-
-                        pDevice->SetTexture(0, 0);
-                        //SetSamplerState(0, D3DSAMP_SRGBTEXTURE, 1);
-
-                        // SMAA_BlendingWeightsCalculation
-                        hk_device->SetPixelShader(SMAA_BlendingWeightsCalculation);
-                        hk_device->SetVertexShader(SMAA_BlendingWeightsCalculationVS);
-                        pDevice->SetPixelShaderConstantF(24, vec4, 1);
-                        pDevice->SetVertexShaderConstantF(24, vec4, 1);
-                        hk_device->SetRenderTarget(0, blendSurf);
-                        hk_device->SetTexture(1, edgesTex);
-                        hk_device->SetTexture(2, areaTex);
-                        hk_device->SetTexture(3, searchTex);
-                        pDevice->Clear(0, 0, D3DCLEAR_TARGET, 0, 0, 0);
-                        if(usePrimitiveUp)
-                            pDevice->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, SmaaVertexArray, sizeof(VERTEX));
-                        else
-                            pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
-
-                        pDevice->SetTexture(1, 0);
-                        pDevice->SetTexture(2, 0);
-                        pDevice->SetTexture(3, 0);
-
-                        //SetSamplerState(0, D3DSAMP_SRGBTEXTURE, 0);                                
-                        pDevice->SetRenderState(D3DRS_SRGBWRITEENABLE, OldSRGB);// restore srgb state
-
-                        // SMAA_NeighborhoodBlending
-                        hk_device->SetPixelShader(SMAA_NeighborhoodBlending);
-                        hk_device->SetVertexShader(SMAA_NeighborhoodBlendingVS);
-                        pDevice->SetPixelShaderConstantF(24, vec4, 1);
-                        pDevice->SetVertexShaderConstantF(24, vec4, 1);
-                        vec4[0] = UsePostFxAA[0];
-                        vec4[1] = 1;
-                        vec4[2] = 3;
-                        vec4[3] = 4;
-                        pDevice->SetPixelShaderConstantF(5, vec4, 1);
-                        pDevice->SetRenderTarget(0, backBuffer);
-                        //Clear(0, 0, D3DCLEAR_TARGET, 0, 0, 0);
-
-                        pDevice->SetTexture(0, pHDRTex2);
-                        hk_device->SetTexture(1, edgesTex);
-                        hk_device->SetTexture(4, blendTex);
-
-                        pDevice->SetRenderState(D3DRS_SRGBWRITEENABLE, 0);
-
-                        if(usePrimitiveUp)
-                            pDevice->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, SmaaVertexArray, sizeof(VERTEX));
-                        else
-                            pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
-
-                        pDevice->SetTexture(1, 0);
-                        pDevice->SetTexture(4, 0);
-
-                        pDevice->SetPixelShader(pShader2->GetProxyInterface());
-                        pDevice->SetFVF(OldFVF);
-
-
-                        SAFE_RELEASE(edgesSurf);
-                        SAFE_RELEASE(blendSurf);
-                    }
-                }
-
-                SAFE_RELEASE(backBuffer);
-                SAFE_RELEASE(pHDRSurface2);
-                if(UseSSAA && doPostFx) {
-                    pDevice->SetSamplerState(0, D3DSAMP_MAGFILTER, OldSampler);
-                }
-                for(int i = 0; i < PostfxTextureCount; i++) {
-                    if(prePostFx[i]) {
-                        pDevice->SetTexture(i, prePostFx[i]);
-                        //SetSamplerState(i, D3DSAMP_MAGFILTER, Samplers[i]);
-                        SAFE_RELEASE(prePostFx[i]);
-                    }
-                    pDevice->SetSamplerState(i, D3DSAMP_MAGFILTER, Samplers[i]);
-                }
-
-                return hr;
-            }
-            SAFE_RELEASE(backBuffer);
-        }
-    }
-
-    for(int i = 0; i < PostfxTextureCount; i++) {
-        if(prePostFx[i]) {
-            pDevice->SetTexture(i, prePostFx[i]);
-            pDevice->SetSamplerState(i, D3DSAMP_MAGFILTER, Samplers[i]);
-            SAFE_RELEASE(prePostFx[i]);
-        }
-    }
-}
+int DrawCallsCount = 0;
+bool useLinear = 1;
 
 void swapbuffers() {
     auto temptex = renderTargetTex;
@@ -2350,7 +1693,7 @@ void swapbuffers() {
     surfaceRead = tempsurf;
 }
 
-HRESULT PostFx3(m_IDirect3DDevice9Ex* hk_device, LPDIRECT3DDEVICE9 pDevice, D3DPRIMITIVETYPE PrimitiveType,
+static HRESULT PostFx3(m_IDirect3DDevice9Ex* hk_device, LPDIRECT3DDEVICE9 pDevice, D3DPRIMITIVETYPE PrimitiveType,
                 UINT StartVertex, UINT PrimitiveCount, IDirect3DPixelShader9* pShader) {
     m_IDirect3DPixelShader9* pShader2 = static_cast<m_IDirect3DPixelShader9*>(pShader);
 
@@ -2360,6 +1703,7 @@ HRESULT PostFx3(m_IDirect3DDevice9Ex* hk_device, LPDIRECT3DDEVICE9 pDevice, D3DP
 
     IDirect3DSurface9* pHDRSurface = nullptr;
     IDirect3DSurface9* pHDRSurface2 = nullptr;
+    IDirect3DSurface9* pHDRSurface3 = nullptr;
     IDirect3DSurface9* pHDRDownsampleSurf = nullptr;
     IDirect3DSurface9* pHDRDownsampleSurf2 = nullptr;
     IDirect3DSurface9* backBuffer = nullptr;
@@ -2381,7 +1725,18 @@ HRESULT PostFx3(m_IDirect3DDevice9Ex* hk_device, LPDIRECT3DDEVICE9 pDevice, D3DP
     static float blueTimerVec4[4] = { 0.f };
     static int blueTimer = 0;
 
+    // SetPixelShaderConstantI only set the first value, so I need 4 int4 to set 1 int4
+    int SS_NumSamplesa[4] = { SS_NumSamples[0], 0, 1, 0 };
+    int SS_NumSamplesb[4] = { SS_NumSamples[1], 0, 1, 0 };
+    int SS_NumSamplesc[4] = { SS_NumSamples[2], 0, 1, 0 };
+    int SS_NumSamplesd[4] = { SS_NumSamples[3], 0, 1, 0 };
+
     int numPasses = useStippleFilter + UseSSAO + useDepthOfField + useDof + (UsePostFxAA[0] > 0);
+    static float SS_NumSamples2[4] = { 0.f };
+    SS_NumSamples2[0] = SS_NumSamples[0];
+    SS_NumSamples2[1] = SS_NumSamples[1];
+    SS_NumSamples2[2] = SS_NumSamples[2];
+    SS_NumSamples2[3] = SS_NumSamples[3];
 
     // save render state
     for(int i = 0; i < PostfxTextureCount; i++) {
@@ -2404,41 +1759,11 @@ HRESULT PostFx3(m_IDirect3DDevice9Ex* hk_device, LPDIRECT3DDEVICE9 pDevice, D3DP
     pDevice->SetPixelShaderConstantF(144, NoiseSale, 1);
     pDevice->SetTexture(8, ((m_IDirect3DTexture9*) pHalfHDRTex)->GetProxyInterface());
     if(bluenoisevolume)
-    pDevice->SetTexture(9, ((m_IDirect3DTexture9*) bluenoisevolume)->GetProxyInterface());
+        pDevice->SetTexture(9, ((m_IDirect3DTexture9*) bluenoisevolume)->GetProxyInterface());
 
     if(UseSSAA) {
         hk_device->GetSamplerState(0, D3DSAMP_MAGFILTER, &OldSampler);
         hk_device->SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
-    }
-
-    // pre postfx
-    // hdr tex downsample, the render target needs ZStencil half resolution as well
-    if(0) {
-        pDevice->GetRenderTarget(0, &backBuffer);
-
-        pDevice->GetDepthStencilSurface(&ppZStencilSurface);
-        depthStenciltex->GetSurfaceLevel(0, &ppZStencilSurface2);
-        pDevice->SetDepthStencilSurface(((m_IDirect3DSurface9*) ppZStencilSurface2)->GetProxyInterface());
-        if(backBuffer && pHDRTex && pHDRTex2 && pHDRDownsampleTex && ppZStencilSurface && ppZStencilSurface2) {
-            pHDRTex2->GetSurfaceLevel(0, &pHDRSurface2);
-            pHDRTex->GetSurfaceLevel(0, &pHDRSurface);
-            pHDRDownsampleTex->GetSurfaceLevel(0, &pHDRDownsampleSurf);
-
-            hk_device->SetPixelShader(downsampler_ps);
-            hk_device->SetRenderTarget(0, pHDRDownsampleSurf);
-            pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
-            pDevice->SetRenderTarget(0, backBuffer);
-            pDevice->SetPixelShader(pShader2->GetProxyInterface());
-            pDevice->SetDepthStencilSurface(ppZStencilSurface);
-
-            SAFE_RELEASE(backBuffer);
-            SAFE_RELEASE(pHDRSurface);
-            SAFE_RELEASE(pHDRSurface2);
-            SAFE_RELEASE(pHDRDownsampleSurf);
-
-            SAFE_RELEASE(ppZStencilSurface);
-            SAFE_RELEASE(ppZStencilSurface2);
-        }
     }
 
     // main postfx passes
@@ -2453,6 +1778,7 @@ HRESULT PostFx3(m_IDirect3DDevice9Ex* hk_device, LPDIRECT3DDEVICE9 pDevice, D3DP
             renderTargetTex->GetSurfaceLevel(0, &renderTargetSurf);
             textureRead->GetSurfaceLevel(0, &surfaceRead);
             aoTex->GetSurfaceLevel(0, &aoSurface);
+            pHDRTex3->GetSurfaceLevel(0, &pHDRSurface3);
 
             // ready for new post processing?
             if(backBuffer && renderTargetSurf && surfaceRead && aoSurface) {
@@ -2487,7 +1813,7 @@ HRESULT PostFx3(m_IDirect3DDevice9Ex* hk_device, LPDIRECT3DDEVICE9 pDevice, D3DP
                     //pDevice->SetTexture(2, 0);
                     hk_device->SetPixelShader(SSAO_ps2);
 
-                        hk_device->SetRenderTarget(0, renderTargetSurf);
+                    hk_device->SetRenderTarget(0, renderTargetSurf);
 
                     switch(UseDebugTextures) {
                         //"None", 
@@ -2532,21 +1858,31 @@ HRESULT PostFx3(m_IDirect3DDevice9Ex* hk_device, LPDIRECT3DDEVICE9 pDevice, D3DP
 
                 if(useStippleFilter && stipple_filter_ps) {
                     hk_device->SetPixelShader(stipple_filter_ps);
-                        hk_device->SetRenderTarget(0, renderTargetSurf);
+                    hk_device->SetRenderTarget(0, renderTargetSurf);
                     pDevice->SetTexture(2, ((m_IDirect3DTexture9*) textureRead)->GetProxyInterface());
                     pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
                     swapbuffers();
                     pDevice->SetPixelShader(pShader2->GetProxyInterface());
                 }
 
-                if(useDepthOfField2 && depth_of_field_blur_ps && depth_of_field_tent_ps && depth_of_field_coc_ps) {
+                if(useDepthOfField == 1 && depth_of_field_ps) {
+                    hk_device->SetPixelShader(depth_of_field_ps);
+                    hk_device->SetRenderTarget(0, renderTargetSurf);
+                    pDevice->SetTexture(2, ((m_IDirect3DTexture9*) textureRead)->GetProxyInterface());
+                    pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+                    swapbuffers();
+                    //pDevice->SetTexture(2, 0);
+                    pDevice->SetPixelShader(pShader2->GetProxyInterface());
+                }
+
+                if(useDepthOfField == 2 && depth_of_field_blur_ps && depth_of_field_tent_ps && depth_of_field_coc_ps) {
                     pDevice->GetDepthStencilSurface(&ppZStencilSurface);
                     depthStenciltex->GetSurfaceLevel(0, &ppZStencilSurface2);
                     pHDRDownsampleTex->GetSurfaceLevel(0, &pHDRDownsampleSurf);
                     pHDRDownsampleTex2->GetSurfaceLevel(0, &pHDRDownsampleSurf2);
 
-                    if(ppZStencilSurface && ppZStencilSurface2 && pHDRDownsampleSurf && pHDRDownsampleSurf2 
-                       
+                    if(ppZStencilSurface && ppZStencilSurface2 && pHDRDownsampleSurf && pHDRDownsampleSurf2
+
                        ) {
                         hk_device->SetSamplerState(8, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
                         hk_device->SetSamplerState(8, D3DSAMP_ADDRESSU, D3DTADDRESS_MIRROR);
@@ -2582,17 +1918,48 @@ HRESULT PostFx3(m_IDirect3DDevice9Ex* hk_device, LPDIRECT3DDEVICE9 pDevice, D3DP
 
                 }
 
-                if(useDepthOfField && depth_of_field_ps) {
-                    hk_device->SetPixelShader(depth_of_field_ps);
-                    hk_device->SetRenderTarget(0, renderTargetSurf);
-                    pDevice->SetTexture(2, ((m_IDirect3DTexture9*) textureRead)->GetProxyInterface());
-                    pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
-                    swapbuffers();
-                    //pDevice->SetTexture(2, 0);
-                    pDevice->SetPixelShader(pShader2->GetProxyInterface());
+                if(useDepthOfField == 3 && dof_blur_ps && dof_coc_ps) {
+                    pDevice->GetDepthStencilSurface(&ppZStencilSurface);
+                    depthStenciltex->GetSurfaceLevel(0, &ppZStencilSurface2);
+                    pHDRDownsampleTex->GetSurfaceLevel(0, &pHDRDownsampleSurf);
+                    pHDRDownsampleTex2->GetSurfaceLevel(0, &pHDRDownsampleSurf2);
+
+                    if(ppZStencilSurface && ppZStencilSurface2 && pHDRDownsampleSurf && pHDRDownsampleSurf2
+
+                       ) {
+                        hk_device->SetSamplerState(8, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+                        hk_device->SetSamplerState(8, D3DSAMP_ADDRESSU, D3DTADDRESS_MIRROR);
+                        hk_device->SetSamplerState(8, D3DSAMP_ADDRESSV, D3DTADDRESS_MIRROR);
+                        hk_device->SetSamplerState(2, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+
+                        pDevice->SetDepthStencilSurface(((m_IDirect3DSurface9*) ppZStencilSurface2)->GetProxyInterface());
+
+                        hk_device->SetPixelShader(dof_blur_ps);
+                        hk_device->SetRenderTarget(0, pHDRDownsampleSurf);
+                        pDevice->SetTexture(2, ((m_IDirect3DTexture9*) textureRead)->GetProxyInterface());
+                        pDevice->SetTexture(8, ((m_IDirect3DTexture9*) pHalfHDRTex)->GetProxyInterface());
+                        pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+
+                        hk_device->SetPixelShader(dof_coc_ps);
+                        pDevice->SetDepthStencilSurface(ppZStencilSurface);
+                        hk_device->SetRenderTarget(0, renderTargetSurf);
+                        pDevice->SetTexture(2, ((m_IDirect3DTexture9*) textureRead)->GetProxyInterface());
+                        pDevice->SetTexture(8, ((m_IDirect3DTexture9*) pHDRDownsampleTex)->GetProxyInterface());
+                        pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+                        swapbuffers();
+                        pDevice->SetTexture(8, ((m_IDirect3DTexture9*) pHalfHDRTex)->GetProxyInterface());
+
+                        pDevice->SetPixelShader(pShader2->GetProxyInterface());
+                        SAFE_RELEASE(pHDRDownsampleSurf);
+                        SAFE_RELEASE(pHDRDownsampleSurf2);
+
+                        SAFE_RELEASE(ppZStencilSurface);
+                        SAFE_RELEASE(ppZStencilSurface2);
+                    }
+
                 }
 
-                if(useDof && DOF_ps) {
+                if(useDepthOfField == 4 && DOF_ps) {
                     numPasses--;
                     hk_device->SetPixelShader(DOF_ps);
                     pDevice->SetPixelShaderConstantF(212, FocusPoint, 1);
@@ -2600,7 +1967,7 @@ HRESULT PostFx3(m_IDirect3DDevice9Ex* hk_device, LPDIRECT3DDEVICE9 pDevice, D3DP
                     pDevice->SetPixelShaderConstantI(4, DofSamples, 1);
                     //pDevice->SetTexture(2, 0);
 
-                        hk_device->SetRenderTarget(0, renderTargetSurf);       
+                    hk_device->SetRenderTarget(0, renderTargetSurf);
 
                     pDevice->SetTexture(2, ((m_IDirect3DTexture9*) textureRead)->GetProxyInterface());
                     pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
@@ -2653,7 +2020,6 @@ HRESULT PostFx3(m_IDirect3DDevice9Ex* hk_device, LPDIRECT3DDEVICE9 pDevice, D3DP
                         // SMAA_EdgeDetection
                         pDevice->GetRenderState(D3DRS_SRGBWRITEENABLE, &OldSRGB); // save srgb state
                         pDevice->SetRenderState(D3DRS_SRGBWRITEENABLE, 0);
-                        pDevice->GetFVF(&OldFVF);
                         hk_device->SetPixelShader(SMAA_EdgeDetection);
                         hk_device->SetVertexShader(SMAA_EdgeDetectionVS);
                         pDevice->SetPixelShaderConstantF(24, vec4, 1);
@@ -2718,66 +2084,208 @@ HRESULT PostFx3(m_IDirect3DDevice9Ex* hk_device, LPDIRECT3DDEVICE9 pDevice, D3DP
                         pDevice->SetSamplerState(3, D3DSAMP_MAGFILTER, oldSample);
                         pDevice->SetPixelShader(pShader2->GetProxyInterface());
                         pDevice->SetVertexShader(vShader);
-                        pDevice->SetFVF(OldFVF);
                         SAFE_RELEASE(edgesSurf);
                         SAFE_RELEASE(blendSurf);
                     }
                 }
 
-                // new
-                if( UseSunShafts == 2) {
-                    pDevice->GetRenderState(D3DRS_SRGBWRITEENABLE, &OldSRGB); // save srgb state
-                    hk_device->SetSamplerState(8, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
-                    hk_device->SetSamplerState(8, D3DSAMP_ADDRESSU, D3DTADDRESS_MIRROR);
-                    hk_device->SetSamplerState(8, D3DSAMP_ADDRESSV, D3DTADDRESS_MIRROR);
-                    hk_device->SetSamplerState(9, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
-                    hk_device->SetSamplerState(9, D3DSAMP_ADDRESSU, D3DTADDRESS_MIRROR);
-                    hk_device->SetSamplerState(9, D3DSAMP_ADDRESSV, D3DTADDRESS_MIRROR);
-                    hk_device->SetSamplerState(2, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
-                    hk_device->SetPixelShader(SunShafts_PS);
-
-                    pDevice->SetPixelShaderConstantF(96, SS_params, 1);//   [4] = { 0.f };
-                    pDevice->SetPixelShaderConstantF(99, SS_params2, 1);//   [4] = { 0.f };
-                    pDevice->SetPixelShaderConstantF(97, SunDirection, 1);//   [4] = { 0.f };
-                    pDevice->SetPixelShaderConstantF(98, SunColor, 1);//   [4] = { 0.f };
-                    pDevice->SetPixelShaderConstantF(100, gWorld, 4);//   [4] = { 0.f };
-                    pDevice->SetPixelShaderConstantF(104, gWorldView, 4);//   [4] = { 0.f };
-                    pDevice->SetPixelShaderConstantF(108, gWorldViewProj, 4);//   [4] = { 0.f };
-                    pDevice->SetPixelShaderConstantF(112, gViewInverse, 4);//   [4] = { 0.f };
-                    pDevice->SetPixelShaderConstantF(116, gShadowMatrix, 4);//   [4] = { 0.f };
-                    pDevice->SetPixelShaderConstantF(100, &mtx[0], mtx.size() / 4);//   [4] = { 0.f };
-                    //pDevice->SetPixelShaderConstantF(108, gWorldViewProj , 4);//   [4] = { 0.f };
-                    //pDevice->SetPixelShaderConstantF(104, gWorldView     , 4);//   [4] = { 0.f };
-
-                    hk_device->SetRenderTarget(0, renderTargetSurf);
-
-                    pDevice->SetTexture(2, ((m_IDirect3DTexture9*) textureRead)->GetProxyInterface());
-                    pDevice->SetPixelShaderConstantF(218, blueTimerVec4, 1);
-                    pDevice->SetPixelShaderConstantF(144, NoiseSale, 1);
-                    pDevice->SetTexture(8, ((m_IDirect3DTexture9*) pHalfHDRTex)->GetProxyInterface());
-                    if(bluenoisevolume)
-                    pDevice->SetTexture(9, ((m_IDirect3DTexture9*) bluenoisevolume)->GetProxyInterface());
-
-                    pDevice->SetTexture(11, ((m_IDirect3DTexture9*) pHDRDownsampleTex)->GetProxyInterface());
-                    pDevice->SetTexture(13, ((m_IDirect3DTexture9*) pHDRDownsampleTex2)->GetProxyInterface());
-
-                    hr = pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
-                    swapbuffers();
-                    pDevice->SetSamplerState(2, D3DSAMP_SRGBTEXTURE, 0);
-                    //pDevice->SetTexture(2, 0);
-                    pDevice->SetPixelShader(pShader2->GetProxyInterface());
-                    pDevice->SetRenderState(D3DRS_SRGBWRITEENABLE, OldSRGB);// restore srgb state
-                }
-
-                if(UseSunShafts==1 && depth_of_field_blur_ps && depth_of_field_tent_ps && depth_of_field_coc_ps) {
+                // one pass half res
+                if(UseSunShafts == 1 && SSDownsampler_PS && depth_of_field_tent_ps && SunShafts_PS) {
                     pDevice->GetDepthStencilSurface(&ppZStencilSurface);
                     depthStenciltex->GetSurfaceLevel(0, &ppZStencilSurface2);
                     pHDRDownsampleTex->GetSurfaceLevel(0, &pHDRDownsampleSurf);
                     pHDRDownsampleTex2->GetSurfaceLevel(0, &pHDRDownsampleSurf2);
 
-                    if(ppZStencilSurface && ppZStencilSurface2 && pHDRDownsampleSurf && pHDRDownsampleSurf2
+                    if(ppZStencilSurface && ppZStencilSurface2 && pHDRDownsampleSurf && pHDRDownsampleSurf2) {
+                        {
+                            hk_device->SetSamplerState(2, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+                            hk_device->SetSamplerState(8, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+                            hk_device->SetSamplerState(8, D3DSAMP_ADDRESSU, D3DTADDRESS_MIRROR);
+                            hk_device->SetSamplerState(8, D3DSAMP_ADDRESSV, D3DTADDRESS_MIRROR);
+                            hk_device->SetSamplerState(9, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+                            hk_device->SetSamplerState(9, D3DSAMP_ADDRESSU, D3DTADDRESS_MIRROR);
+                            hk_device->SetSamplerState(9, D3DSAMP_ADDRESSV, D3DTADDRESS_MIRROR);
+                            hk_device->SetSamplerState(11, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+                            hk_device->SetSamplerState(11, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
+                            hk_device->SetSamplerState(11, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
+                            hk_device->SetSamplerState(13, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+                            hk_device->SetSamplerState(13, D3DSAMP_ADDRESSU, D3DTADDRESS_MIRROR);
+                            hk_device->SetSamplerState(13, D3DSAMP_ADDRESSV, D3DTADDRESS_MIRROR);
 
-                       ) {
+                            pDevice->SetPixelShaderConstantF(96, SS_params, 1);
+                            pDevice->SetPixelShaderConstantF(99, SS_params2, 1);
+                            pDevice->SetPixelShaderConstantF(97, SunDirection, 1);
+                            pDevice->SetPixelShaderConstantF(98, SunColor, 1);
+                            pDevice->SetPixelShaderConstantF(100, gWorld, 4);
+                            pDevice->SetPixelShaderConstantF(104, gWorldView, 4);
+                            pDevice->SetPixelShaderConstantF(108, gWorldViewProj, 4);
+                            pDevice->SetPixelShaderConstantF(112, gViewInverse, 4);
+                            pDevice->SetPixelShaderConstantF(116, gShadowMatrix, 4);
+                            pDevice->SetPixelShaderConstantF(100, &mtx[0], mtx.size() / 4);
+                            pDevice->SetPixelShaderConstantF(120, SS_NumSamples2, 1);
+                            pDevice->SetPixelShaderConstantI(5, SS_NumSamplesa, 1);
+                            pDevice->SetPixelShaderConstantI(6, SS_NumSamplesb, 1);
+                            pDevice->SetPixelShaderConstantI(7, SS_NumSamplesc, 1);
+                            pDevice->SetPixelShaderConstantI(8, SS_NumSamplesd, 1);
+                        }
+
+                        pDevice->SetPixelShaderConstantF(218, blueTimerVec4, 1);
+                        pDevice->SetPixelShaderConstantF(144, NoiseSale, 1);
+                        pDevice->SetDepthStencilSurface(((m_IDirect3DSurface9*) ppZStencilSurface2)->GetProxyInterface());
+
+                        pDevice->SetTexture(13, 0);
+                        pDevice->SetTexture(11, 0);
+                        pDevice->SetTexture(8, 0);
+
+                        hk_device->SetPixelShader(SSDownsampler_PS);
+                        hk_device->SetRenderTarget(0, pHDRDownsampleSurf2);
+                        pDevice->SetTexture(2, ((m_IDirect3DTexture9*) textureRead)->GetProxyInterface());
+                        pDevice->SetTexture(13, ((m_IDirect3DTexture9*) DiffuseTex)->GetProxyInterface());
+                        pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+
+                        hk_device->SetPixelShader(depth_of_field_tent_ps);
+                        hk_device->SetRenderTarget(0, pHDRDownsampleSurf);
+                        pDevice->SetTexture(8, ((m_IDirect3DTexture9*) pHDRDownsampleTex2)->GetProxyInterface());
+                        pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+
+                        hk_device->SetPixelShader(SunShafts_PS);
+                        hk_device->SetRenderTarget(0, pHDRDownsampleSurf2);
+                        pDevice->SetTexture(8, 0);
+                        pDevice->SetTexture(11, ((m_IDirect3DTexture9*) pHDRDownsampleTex)->GetProxyInterface());
+                        pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+
+                        pDevice->SetTexture(8, 0);
+                        pDevice->SetTexture(11, 0);
+                        pDevice->SetTexture(13, 0);
+
+                        hk_device->SetPixelShader(SSAdd_PS);
+                        pDevice->SetDepthStencilSurface(ppZStencilSurface);
+                        hk_device->SetRenderTarget(0, renderTargetSurf);
+                        pDevice->SetTexture(2, ((m_IDirect3DTexture9*) textureRead)->GetProxyInterface());
+                        pDevice->SetTexture(8, ((m_IDirect3DTexture9*) pHalfHDRTex)->GetProxyInterface());
+                        pDevice->SetTexture(11, ((m_IDirect3DTexture9*) pHDRDownsampleTex2)->GetProxyInterface());
+                        if(bluenoisevolume)
+                            pDevice->SetTexture(9, ((m_IDirect3DTexture9*) bluenoisevolume)->GetProxyInterface());
+
+                        pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+                        swapbuffers();
+                        pDevice->SetTexture(13, 0);
+                        pDevice->SetTexture(11, 0);
+                        pDevice->SetTexture(8, 0);
+
+                        pDevice->SetPixelShader(pShader2->GetProxyInterface());
+                        SAFE_RELEASE(pHDRDownsampleSurf);
+                        SAFE_RELEASE(pHDRDownsampleSurf2);
+
+                        SAFE_RELEASE(ppZStencilSurface);
+                        SAFE_RELEASE(ppZStencilSurface2);
+                    }
+                }
+
+                // 2 passes half res
+                if(UseSunShafts == 2 && SSDownsampler_PS && depth_of_field_tent_ps && SunShafts_PS && SunShafts2_PS) {
+                    pDevice->GetDepthStencilSurface(&ppZStencilSurface);
+                    depthStenciltex->GetSurfaceLevel(0, &ppZStencilSurface2);
+                    pHDRDownsampleTex->GetSurfaceLevel(0, &pHDRDownsampleSurf);
+                    pHDRDownsampleTex2->GetSurfaceLevel(0, &pHDRDownsampleSurf2);
+
+                    if(ppZStencilSurface && ppZStencilSurface2 && pHDRDownsampleSurf && pHDRDownsampleSurf2) {
+                        hk_device->SetSamplerState(2, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+                        hk_device->SetSamplerState(8, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+                        hk_device->SetSamplerState(8, D3DSAMP_ADDRESSU, D3DTADDRESS_MIRROR);
+                        hk_device->SetSamplerState(8, D3DSAMP_ADDRESSV, D3DTADDRESS_MIRROR);
+                        hk_device->SetSamplerState(9, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+                        hk_device->SetSamplerState(9, D3DSAMP_ADDRESSU, D3DTADDRESS_MIRROR);
+                        hk_device->SetSamplerState(9, D3DSAMP_ADDRESSV, D3DTADDRESS_MIRROR);
+                        hk_device->SetSamplerState(11, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+                        hk_device->SetSamplerState(11, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
+                        hk_device->SetSamplerState(11, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
+                        hk_device->SetSamplerState(13, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+                        hk_device->SetSamplerState(13, D3DSAMP_ADDRESSU, D3DTADDRESS_MIRROR);
+                        hk_device->SetSamplerState(13, D3DSAMP_ADDRESSV, D3DTADDRESS_MIRROR);
+
+                        pDevice->SetPixelShaderConstantF(96, SS_params, 1);
+                        pDevice->SetPixelShaderConstantF(99, SS_params2, 1);
+                        pDevice->SetPixelShaderConstantF(97, SunDirection, 1);
+                        pDevice->SetPixelShaderConstantF(98, SunColor, 1);
+                        pDevice->SetPixelShaderConstantF(100, gWorld, 4);
+                        pDevice->SetPixelShaderConstantF(104, gWorldView, 4);
+                        pDevice->SetPixelShaderConstantF(108, gWorldViewProj, 4);
+                        pDevice->SetPixelShaderConstantF(112, gViewInverse, 4);
+                        pDevice->SetPixelShaderConstantF(116, gShadowMatrix, 4);
+                        pDevice->SetPixelShaderConstantF(100, &mtx[0], mtx.size() / 4);
+                        pDevice->SetPixelShaderConstantF(120, SS_NumSamples2, 1);
+                        pDevice->SetPixelShaderConstantI(5, SS_NumSamplesa, 1);
+                        pDevice->SetPixelShaderConstantI(6, SS_NumSamplesb, 1);
+                        pDevice->SetPixelShaderConstantI(7, SS_NumSamplesc, 1);
+                        pDevice->SetPixelShaderConstantI(8, SS_NumSamplesd, 1);
+
+                        pDevice->SetPixelShaderConstantF(218, blueTimerVec4, 1);
+                        pDevice->SetPixelShaderConstantF(144, NoiseSale, 1);
+                        pDevice->SetDepthStencilSurface(((m_IDirect3DSurface9*) ppZStencilSurface2)->GetProxyInterface());
+
+                        pDevice->SetTexture(13, 0);
+                        pDevice->SetTexture(11, 0);
+                        pDevice->SetTexture(8, 0);
+
+                        hk_device->SetPixelShader(SSDownsampler_PS);
+                        hk_device->SetRenderTarget(0, pHDRDownsampleSurf2);
+                        pDevice->SetTexture(2, ((m_IDirect3DTexture9*) textureRead)->GetProxyInterface());
+                        pDevice->SetTexture(13, ((m_IDirect3DTexture9*) DiffuseTex)->GetProxyInterface());
+                        pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+
+                        hk_device->SetPixelShader(depth_of_field_tent_ps);
+                        hk_device->SetRenderTarget(0, pHDRDownsampleSurf);
+                        pDevice->SetTexture(8, ((m_IDirect3DTexture9*) pHDRDownsampleTex2)->GetProxyInterface());
+                        pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+
+                        hk_device->SetPixelShader(SunShafts_PS);
+                        hk_device->SetRenderTarget(0, pHDRDownsampleSurf2);
+                        pDevice->SetTexture(8, 0);
+                        pDevice->SetTexture(11, ((m_IDirect3DTexture9*) pHDRDownsampleTex)->GetProxyInterface());
+                        pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+
+                        hk_device->SetPixelShader(SunShafts2_PS);
+                        hk_device->SetRenderTarget(0, pHDRDownsampleSurf);
+                        pDevice->SetTexture(11, ((m_IDirect3DTexture9*) pHDRDownsampleTex2)->GetProxyInterface());
+                        pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+
+                        pDevice->SetTexture(8, 0);
+                        pDevice->SetTexture(11, 0);
+                        pDevice->SetTexture(13, 0);
+
+                        hk_device->SetPixelShader(SSAdd_PS);
+                        pDevice->SetDepthStencilSurface(ppZStencilSurface);
+                        hk_device->SetRenderTarget(0, renderTargetSurf);
+                        pDevice->SetTexture(2, ((m_IDirect3DTexture9*) textureRead)->GetProxyInterface());
+                        pDevice->SetTexture(8, ((m_IDirect3DTexture9*) pHalfHDRTex)->GetProxyInterface());
+                        pDevice->SetTexture(11, ((m_IDirect3DTexture9*) pHDRDownsampleTex)->GetProxyInterface());
+                        if(bluenoisevolume)
+                            pDevice->SetTexture(9, ((m_IDirect3DTexture9*) bluenoisevolume)->GetProxyInterface());
+
+                        pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+                        swapbuffers();
+                        pDevice->SetTexture(13, 0);
+                        pDevice->SetTexture(11, 0);
+                        pDevice->SetTexture(8, 0);
+
+                        pDevice->SetPixelShader(pShader2->GetProxyInterface());
+                        SAFE_RELEASE(pHDRDownsampleSurf);
+                        SAFE_RELEASE(pHDRDownsampleSurf2);
+
+                        SAFE_RELEASE(ppZStencilSurface);
+                        SAFE_RELEASE(ppZStencilSurface2);
+                    }
+                }
+
+                // full screen
+                if(UseSunShafts == 3 && depth_of_field_blur_ps && depth_of_field_tent_ps && depth_of_field_coc_ps && SunShafts3_PS) {
+                    pDevice->GetDepthStencilSurface(&ppZStencilSurface);
+                    depthStenciltex->GetSurfaceLevel(0, &ppZStencilSurface2);
+                    pHDRDownsampleTex->GetSurfaceLevel(0, &pHDRDownsampleSurf);
+                    pHDRDownsampleTex2->GetSurfaceLevel(0, &pHDRDownsampleSurf2);
+
+                    if(ppZStencilSurface && ppZStencilSurface2 && pHDRDownsampleSurf && pHDRDownsampleSurf2 && pHDRSurface3) {
                         hk_device->SetSamplerState(2, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
                         hk_device->SetSamplerState(8, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
                         hk_device->SetSamplerState(8, D3DSAMP_ADDRESSU, D3DTADDRESS_MIRROR);
@@ -2792,19 +2300,14 @@ HRESULT PostFx3(m_IDirect3DDevice9Ex* hk_device, LPDIRECT3DDEVICE9 pDevice, D3DP
                         hk_device->SetSamplerState(13, D3DSAMP_ADDRESSU, D3DTADDRESS_MIRROR);
                         hk_device->SetSamplerState(13, D3DSAMP_ADDRESSV, D3DTADDRESS_MIRROR);
 
-                        pDevice->SetDepthStencilSurface(((m_IDirect3DSurface9*) ppZStencilSurface2)->GetProxyInterface());
-
-                        hk_device->SetPixelShader(depth_of_field_blur_ps);
-                        hk_device->SetRenderTarget(0, pHDRDownsampleSurf2);
+                        hk_device->SetPixelShader(SSDownsampler2_PS);
+                        hk_device->SetRenderTarget(0, pHDRSurface3);
                         pDevice->SetTexture(2, ((m_IDirect3DTexture9*) textureRead)->GetProxyInterface());
+                        pDevice->SetTexture(13, ((m_IDirect3DTexture9*) DiffuseTex)->GetProxyInterface());
                         pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
 
-                        hk_device->SetPixelShader(depth_of_field_tent_ps);
-                        hk_device->SetRenderTarget(0, pHDRDownsampleSurf);
-                        pDevice->SetTexture(8, ((m_IDirect3DTexture9*) pHDRDownsampleTex2)->GetProxyInterface());
-                        pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
-
-                        hk_device->SetPixelShader(SunShafts_PS);
+                        hk_device->SetPixelShader(SunShafts3_PS);
+                        hk_device->SetRenderTarget(0, renderTargetSurf);
 
                         pDevice->SetPixelShaderConstantF(96, SS_params, 1);//   [4] = { 0.f };
                         pDevice->SetPixelShaderConstantF(99, SS_params2, 1);//   [4] = { 0.f };
@@ -2816,20 +2319,98 @@ HRESULT PostFx3(m_IDirect3DDevice9Ex* hk_device, LPDIRECT3DDEVICE9 pDevice, D3DP
                         pDevice->SetPixelShaderConstantF(112, gViewInverse, 4);//   [4] = { 0.f };
                         pDevice->SetPixelShaderConstantF(116, gShadowMatrix, 4);//   [4] = { 0.f };
                         pDevice->SetPixelShaderConstantF(100, &mtx[0], mtx.size() / 4);//   [4] = { 0.f };
-                        //pDevice->SetPixelShaderConstantF(108, gWorldViewProj , 4);//   [4] = { 0.f };
-                        //pDevice->SetPixelShaderConstantF(104, gWorldView     , 4);//   [4] = { 0.f };
 
-                        pDevice->SetDepthStencilSurface(ppZStencilSurface);
+                        pDevice->SetPixelShaderConstantF(120, SS_NumSamples2, 1);
+                        pDevice->SetPixelShaderConstantI(5, SS_NumSamplesa, 1);
+                        pDevice->SetPixelShaderConstantI(6, SS_NumSamplesb, 1);
+                        pDevice->SetPixelShaderConstantI(7, SS_NumSamplesc, 1);
+                        pDevice->SetPixelShaderConstantI(8, SS_NumSamplesd, 1);
+
+                        pDevice->SetPixelShaderConstantF(218, blueTimerVec4, 1);
+                        pDevice->SetPixelShaderConstantF(144, NoiseSale, 1);
+                        //pDevice->SetTexture(8, ((m_IDirect3DTexture9*) pHalfHDRTex)->GetProxyInterface());
+                        pDevice->SetTexture(11, ((m_IDirect3DTexture9*) pHDRTex3)->GetProxyInterface());
+                        if(bluenoisevolume)
+                            pDevice->SetTexture(9, ((m_IDirect3DTexture9*) bluenoisevolume)->GetProxyInterface());
+
+                        //pDevice->SetTexture(11, ((m_IDirect3DTexture9*) pHDRDownsampleTex)->GetProxyInterface());
+                        pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+                        swapbuffers();
+
+                        pDevice->SetPixelShader(pShader2->GetProxyInterface());
+                        SAFE_RELEASE(pHDRDownsampleSurf);
+                        SAFE_RELEASE(pHDRDownsampleSurf2);
+
+                        SAFE_RELEASE(ppZStencilSurface);
+                        SAFE_RELEASE(ppZStencilSurface2);
+                    }
+                }
+                
+                // full screen 2 passes
+                if(UseSunShafts == 4 && depth_of_field_blur_ps && depth_of_field_tent_ps && depth_of_field_coc_ps && SunShafts4_PS) {
+                    pDevice->GetDepthStencilSurface(&ppZStencilSurface);
+                    depthStenciltex->GetSurfaceLevel(0, &ppZStencilSurface2);
+                    pHDRDownsampleTex->GetSurfaceLevel(0, &pHDRDownsampleSurf);
+                    pHDRDownsampleTex2->GetSurfaceLevel(0, &pHDRDownsampleSurf2);
+
+                    if(ppZStencilSurface && ppZStencilSurface2 && pHDRDownsampleSurf && pHDRDownsampleSurf2) {
+                        hk_device->SetSamplerState(2, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+                        hk_device->SetSamplerState(8, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+                        hk_device->SetSamplerState(8, D3DSAMP_ADDRESSU, D3DTADDRESS_MIRROR);
+                        hk_device->SetSamplerState(8, D3DSAMP_ADDRESSV, D3DTADDRESS_MIRROR);
+                        hk_device->SetSamplerState(9, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+                        hk_device->SetSamplerState(9, D3DSAMP_ADDRESSU, D3DTADDRESS_MIRROR);
+                        hk_device->SetSamplerState(9, D3DSAMP_ADDRESSV, D3DTADDRESS_MIRROR);
+                        hk_device->SetSamplerState(11, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+                        hk_device->SetSamplerState(11, D3DSAMP_ADDRESSU, D3DTADDRESS_MIRROR);
+                        hk_device->SetSamplerState(11, D3DSAMP_ADDRESSV, D3DTADDRESS_MIRROR);
+                        hk_device->SetSamplerState(13, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+                        hk_device->SetSamplerState(13, D3DSAMP_ADDRESSU, D3DTADDRESS_MIRROR);
+                        hk_device->SetSamplerState(13, D3DSAMP_ADDRESSV, D3DTADDRESS_MIRROR);
+
+                        if(!(useDepthOfField == 2)) {
+                            pDevice->SetDepthStencilSurface(((m_IDirect3DSurface9*) ppZStencilSurface2)->GetProxyInterface());
+
+                            hk_device->SetPixelShader(depth_of_field_blur_ps);
+                            hk_device->SetRenderTarget(0, pHDRDownsampleSurf2);
+                            pDevice->SetTexture(2, ((m_IDirect3DTexture9*) textureRead)->GetProxyInterface());
+                            pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+
+                            hk_device->SetPixelShader(depth_of_field_tent_ps);
+                            hk_device->SetRenderTarget(0, pHDRDownsampleSurf);
+                            pDevice->SetTexture(8, ((m_IDirect3DTexture9*) pHDRDownsampleTex2)->GetProxyInterface());
+                            pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+                            pDevice->SetDepthStencilSurface(ppZStencilSurface);
+                        }
                         hk_device->SetRenderTarget(0, renderTargetSurf);
+                        pDevice->SetTexture(2, ((m_IDirect3DTexture9*) textureRead)->GetProxyInterface());
+
+                        hk_device->SetPixelShader(SunShafts4_PS);
+
+                        pDevice->SetPixelShaderConstantF(96, SS_params, 1);//   [4] = { 0.f };
+                        pDevice->SetPixelShaderConstantF(99, SS_params2, 1);//   [4] = { 0.f };
+                        pDevice->SetPixelShaderConstantF(97, SunDirection, 1);//   [4] = { 0.f };
+                        pDevice->SetPixelShaderConstantF(98, SunColor, 1);//   [4] = { 0.f };
+                        pDevice->SetPixelShaderConstantF(100, gWorld, 4);//   [4] = { 0.f };
+                        pDevice->SetPixelShaderConstantF(104, gWorldView, 4);//   [4] = { 0.f };
+                        pDevice->SetPixelShaderConstantF(108, gWorldViewProj, 4);//   [4] = { 0.f };
+                        pDevice->SetPixelShaderConstantF(112, gViewInverse, 4);//   [4] = { 0.f };
+                        pDevice->SetPixelShaderConstantF(116, gShadowMatrix, 4);//   [4] = { 0.f };
+                        pDevice->SetPixelShaderConstantF(100, &mtx[0], mtx.size() / 4);//   [4] = { 0.f };
+
+                        pDevice->SetPixelShaderConstantF(120, SS_NumSamples2, 1);
+                        pDevice->SetPixelShaderConstantI(5, SS_NumSamplesa, 1);
+                        pDevice->SetPixelShaderConstantI(6, SS_NumSamplesb, 1);
+                        pDevice->SetPixelShaderConstantI(7, SS_NumSamplesc, 1);
+                        pDevice->SetPixelShaderConstantI(8, SS_NumSamplesd, 1);
 
                         pDevice->SetPixelShaderConstantF(218, blueTimerVec4, 1);
                         pDevice->SetPixelShaderConstantF(144, NoiseSale, 1);
                         pDevice->SetTexture(8, ((m_IDirect3DTexture9*) pHalfHDRTex)->GetProxyInterface());
                         if(bluenoisevolume)
-                        pDevice->SetTexture(9, ((m_IDirect3DTexture9*) bluenoisevolume)->GetProxyInterface());
+                            pDevice->SetTexture(9, ((m_IDirect3DTexture9*) bluenoisevolume)->GetProxyInterface());
 
                         pDevice->SetTexture(11, ((m_IDirect3DTexture9*) pHDRDownsampleTex)->GetProxyInterface());
-                        //pDevice->SetTexture(13, ((m_IDirect3DTexture9*) pHDRDownsampleTex2)->GetProxyInterface());
                         pDevice->SetTexture(13, ((m_IDirect3DTexture9*) DiffuseTex)->GetProxyInterface());
                         pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
                         swapbuffers();
@@ -2841,10 +2422,8 @@ HRESULT PostFx3(m_IDirect3DDevice9Ex* hk_device, LPDIRECT3DDEVICE9 pDevice, D3DP
                         SAFE_RELEASE(ppZStencilSurface);
                         SAFE_RELEASE(ppZStencilSurface2);
                     }
-
-
-
                 }
+
                 // game postfx
                 {
                     pDevice->SetRenderTarget(0, backBuffer);
@@ -2861,18 +2440,18 @@ HRESULT PostFx3(m_IDirect3DDevice9Ex* hk_device, LPDIRECT3DDEVICE9 pDevice, D3DP
                     pDevice->SetPixelShaderConstantF(144, NoiseSale, 1);
                     pDevice->SetTexture(8, ((m_IDirect3DTexture9*) pHalfHDRTex)->GetProxyInterface());
                     if(bluenoisevolume)
-                    pDevice->SetTexture(9, ((m_IDirect3DTexture9*) bluenoisevolume)->GetProxyInterface());
+                        pDevice->SetTexture(9, ((m_IDirect3DTexture9*) bluenoisevolume)->GetProxyInterface());
 
                     pDevice->SetTexture(2, ((m_IDirect3DTexture9*) textureRead)->GetProxyInterface());
                     hk_device->Clear(0, 0, D3DCLEAR_TARGET, 0, 0, 0);
                     hr = pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
                 }
-
                 SAFE_RELEASE(backBuffer);
                 SAFE_RELEASE(renderTargetSurf);
                 SAFE_RELEASE(surfaceRead);
                 SAFE_RELEASE(aoSurface);
                 SAFE_RELEASE(mainTex);
+                SAFE_RELEASE(pHDRSurface3);
 
                 if(UseSSAA) {
                     pDevice->SetSamplerState(0, D3DSAMP_MAGFILTER, OldSampler);
@@ -2922,43 +2501,131 @@ HRESULT PostFx3(m_IDirect3DDevice9Ex* hk_device, LPDIRECT3DDEVICE9 pDevice, D3DP
 }
 
 
-
 HRESULT m_IDirect3DDevice9Ex::DrawPrimitive(D3DPRIMITIVETYPE PrimitiveType, UINT StartVertex, UINT PrimitiveCount) {
+    DrawCallsCount++;
     HRESULT hr = S_FALSE;
     m_IDirect3DPixelShader9* pShader2 = nullptr;
     IDirect3DPixelShader9* pShader = nullptr;
-    //static float vec4[4] = { 0.f };
-    //IDirect3DSurface9* pHDRSurface = nullptr;
-    //IDirect3DSurface9* pHDRSurface2 = nullptr;
-    //IDirect3DSurface9* backBuffer = nullptr;
-    //IDirect3DSurface9* edgesSurf = nullptr;
-    //IDirect3DSurface9* blendSurf = nullptr;
-    //DWORD OldSRGB = 0;
-    //DWORD OldSampler = 0;
+
+    IDirect3DVertexShader9* vShader = nullptr;
+    m_IDirect3DVertexShader9* vshader2 = nullptr;
+    GetVertexShader(&vShader);
+    if(vShader) {
+        vshader2 = static_cast<m_IDirect3DVertexShader9*>(vShader);
+        if(vshader2) {
+            vshader2->replaceConstants();
+        }
+    }
 
     GetPixelShader(&pShader);
     if(pShader) {
         pShader2 = static_cast<m_IDirect3DPixelShader9*>(pShader);
         if(pShader2) {
+            pShader2->replaceConstants();
+            // post fx
             if(isShaderPostFx(pShader2)) {
-                doPostFx = false; // useless?
                 HRESULT result = PostFx3(this, ProxyInterface, PrimitiveType, StartVertex, PrimitiveCount, pShader);
-                if(result == S_OK){
+                if(result == S_OK) {
                     return result;
                 }
             }
+            // atmoscat clouds
             else if((pShader2->id == 65 || pShader2->id == 66) && DiffuseTex != nullptr) {
                 IDirect3DSurface9* DiffuseSurf = nullptr;
                 DiffuseTex->GetProxyInterface()->GetSurfaceLevel(0, &DiffuseSurf);
                 if(DiffuseSurf) {
+                    IDirect3DSurface9* pTexture = 0;
+
+                    ProxyInterface->GetRenderTarget(1, &pTexture);
                     ProxyInterface->SetRenderTarget(1, DiffuseSurf);
+                    //if(pShader2->compiledShaders[(int)ShaderUse::SU_LASM]) {
+                    //    ProxyInterface->SetPixelShader(static_cast<m_IDirect3DPixelShader9*>(pShader2->compiledShaders[ShaderUse::SU_LASM])->GetProxyInterface());
+                    //}
                     hr = ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
-                    ProxyInterface->SetRenderTarget(1, 0);
+                    ProxyInterface->SetPixelShader(pShader2->GetProxyInterface());
+                    ProxyInterface->SetRenderTarget(1, pTexture);
+
+                    //ProxyInterface->SetRenderTarget(1, 0);
+                    SAFE_RELEASE(pTexture);
                     SAFE_RELEASE(DiffuseSurf);
                     return hr;
-
                 }
                 printf("%i", pShader2->id);
+            }
+            // cascade convert
+            else if(useNewShadowAtlas == true && pShader2->id == 1 && NewShadowAtlas) {
+                IDirect3DSurface9* oldDepth = nullptr;
+                IDirect3DSurface9* newDepth = nullptr;
+                NewShadowAtlas->GetSurfaceLevel(0, &newDepth);
+                if(newDepth) {
+                    D3DVIEWPORT9 newViewport = { 0 };
+                    D3DVIEWPORT9 lastViewport = { 0 };
+                    ProxyInterface->GetViewport(&newViewport);
+                    ProxyInterface->GetViewport(&lastViewport);
+                    ProxyInterface->GetDepthStencilSurface(&oldDepth);
+                    SetDepthStencilSurface(newDepth);
+                    DWORD last_ZENABLE      = 0;
+                    DWORD last_ZWRITEENABLE = 0;
+                    DWORD last_ZFUNC        = 0;
+                    ProxyInterface->GetRenderState(D3DRS_ZENABLE        , &last_ZENABLE     );
+                    ProxyInterface->GetRenderState(D3DRS_ZWRITEENABLE   , &last_ZWRITEENABLE);
+                    ProxyInterface->GetRenderState(D3DRS_ZFUNC          , &last_ZFUNC       );
+
+                    ProxyInterface->SetRenderState(D3DRS_ZENABLE        , D3DZB_TRUE);
+                    ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE   , D3DZB_TRUE);
+                    ProxyInterface->SetRenderState(D3DRS_ZFUNC          , D3DCMP_ALWAYS);
+                    newViewport.MaxZ = 1000;
+                    newViewport.MinZ = -1000;
+                    ProxyInterface->SetViewport(&newViewport);
+                    hr = ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+                    ProxyInterface->SetViewport(&lastViewport);
+                    ProxyInterface->SetRenderState(D3DRS_ZENABLE        , last_ZENABLE     );
+                    ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE   , last_ZWRITEENABLE);
+                    ProxyInterface->SetRenderState(D3DRS_ZFUNC          , last_ZFUNC       );
+                    ProxyInterface->SetDepthStencilSurface(oldDepth);
+                    SAFE_RELEASE(newDepth);
+                    SAFE_RELEASE(oldDepth);
+                    return hr;
+                }
+            }
+            // deferred 1
+            else if(useNewShadowAtlas == true && pShader2->id == 6 && NewShadowAtlas) {
+                SetTexture(15, NewShadowAtlas);
+                //To enable Fetch - 4 on a texture sampler(sampler 0 in this example) :
+                #define FETCH4_ENABLE ((DWORD)MAKEFOURCC('G', 'E', 'T', '4'))
+                #define FETCH4_DISABLE ((DWORD)MAKEFOURCC('G', 'E', 'T', '1'))
+                DWORD old_SAMP_MIPMAPLODBIAS = 0;
+                DWORD old_SAMP_MAGFILTER = 0;
+                DWORD old_SAMP_MINFILTER = 0;
+
+                // Enable Fetch-4 on sampler 0 by overloading the MIPMAPLODBIAS render state
+                ProxyInterface->GetSamplerState(15, D3DSAMP_MIPMAPLODBIAS, &old_SAMP_MIPMAPLODBIAS );
+                ProxyInterface->GetSamplerState(15, D3DSAMP_MAGFILTER, &old_SAMP_MAGFILTER );
+                ProxyInterface->GetSamplerState(15, D3DSAMP_MINFILTER, &old_SAMP_MINFILTER );
+
+                //ProxyInterface->SetSamplerState(15, D3DSAMP_MIPMAPLODBIAS, FETCH4_ENABLE);
+                // Set point sampling filtering (required for Fetch-4 to work)
+                ProxyInterface->SetSamplerState(15, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+                ProxyInterface->SetSamplerState(15, D3DSAMP_MINFILTER, D3DTEXF_LINEAR);
+                ProxyInterface->SetSamplerState(15, D3DSAMP_MIPFILTER, D3DTEXF_POINT);
+                hr = ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+
+                ProxyInterface->SetSamplerState(15, D3DSAMP_MIPMAPLODBIAS, old_SAMP_MIPMAPLODBIAS);
+                ProxyInterface->SetSamplerState(15, D3DSAMP_MAGFILTER, old_SAMP_MAGFILTER);
+                ProxyInterface->SetSamplerState(15, D3DSAMP_MINFILTER, old_SAMP_MINFILTER);
+
+                SetTexture(15, OldShadowAtlas);
+                return hr;
+            }
+            else if(useNewShadowAtlas == false && pShader2->id == 6 && OldShadowAtlas) {
+                SetTexture(15, OldShadowAtlas);
+                hr = ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+                return hr;
+            }
+            else if( pShader2->id == 6 ) {
+                SetTexture(15, OldShadowAtlas);
+                hr = ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+                return hr;
             }
         }
     }
@@ -2981,17 +2648,13 @@ HRESULT m_IDirect3DDevice9Ex::DrawPrimitive(D3DPRIMITIVETYPE PrimitiveType, UINT
     // Fixes coronas being rendered through objects in water reflections.
     if(fixCoronaDepth) {
         GetRenderState(D3DRS_ZENABLE, &CoronaDepth);
-        IDirect3DVertexShader9* vShader = 0;
-        GetVertexShader(&vShader);
-        if(vShader) {
-            m_IDirect3DVertexShader9* vshader2 = static_cast<m_IDirect3DVertexShader9*>(vShader);
-            if(vshader2) {
-                if(vshader2->id == 15) {
-                    SetRenderState(D3DRS_ZENABLE, 1);
-                    hr = ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
-                    SetRenderState(D3DRS_ZENABLE, CoronaDepth);
-                    return hr;
-                }
+        if(vshader2) {
+            vshader2->replaceConstants();
+            if(vshader2->id == 15) {
+                SetRenderState(D3DRS_ZENABLE, 1);
+                hr = ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+                SetRenderState(D3DRS_ZENABLE, CoronaDepth);
+                return hr;
             }
         }
     }
@@ -3001,17 +2664,48 @@ HRESULT m_IDirect3DDevice9Ex::DrawPrimitive(D3DPRIMITIVETYPE PrimitiveType, UINT
 }
 
 HRESULT m_IDirect3DDevice9Ex::DrawPrimitiveUP(D3DPRIMITIVETYPE PrimitiveType, UINT PrimitiveCount, CONST void* pVertexStreamZeroData, UINT VertexStreamZeroStride) {
+    DrawCallsCount++;
     return ProxyInterface->DrawPrimitiveUP(PrimitiveType, PrimitiveCount, pVertexStreamZeroData, VertexStreamZeroStride);
 }
 
 HRESULT m_IDirect3DDevice9Ex::DrawRectPatch(UINT Handle, CONST float* pNumSegs, CONST D3DRECTPATCH_INFO* pRectPatchInfo) {
+    DrawCallsCount++;
     return ProxyInterface->DrawRectPatch(Handle, pNumSegs, pRectPatchInfo);
 }
 
 HRESULT m_IDirect3DDevice9Ex::DrawTriPatch(UINT Handle, CONST float* pNumSegs, CONST D3DTRIPATCH_INFO* pTriPatchInfo) {
+    DrawCallsCount++;
     return ProxyInterface->DrawTriPatch(Handle, pNumSegs, pTriPatchInfo);
 }
 
+HRESULT m_IDirect3DDevice9Ex::DrawIndexedPrimitive(THIS_ D3DPRIMITIVETYPE Type, INT BaseVertexIndex, UINT MinVertexIndex, UINT NumVertices, UINT startIndex, UINT primCount) {
+    DrawCallsCount++;
+    m_IDirect3DPixelShader9* pShader2 = nullptr;
+    IDirect3DPixelShader9* pShader = nullptr;
+
+    IDirect3DVertexShader9* vShader = nullptr;
+    m_IDirect3DVertexShader9* vshader2 = nullptr;
+    GetVertexShader(&vShader);
+    if(vShader) {
+        vshader2 = static_cast<m_IDirect3DVertexShader9*>(vShader);
+        if(vshader2) {
+            vshader2->replaceConstants();
+        }
+    }
+
+    GetPixelShader(&pShader);
+    if(pShader) {
+        pShader2 = static_cast<m_IDirect3DPixelShader9*>(pShader);
+        if(pShader2) {
+            pShader2->replaceConstants();
+        }
+    }
+    return ProxyInterface->DrawIndexedPrimitive(Type, BaseVertexIndex, MinVertexIndex, NumVertices, startIndex, primCount);
+}
+
+HRESULT m_IDirect3DDevice9Ex::DrawIndexedPrimitiveUP(D3DPRIMITIVETYPE PrimitiveType, UINT MinIndex, UINT NumVertices, UINT PrimitiveCount, CONST void* pIndexData, D3DFORMAT IndexDataFormat, CONST void* pVertexStreamZeroData, UINT VertexStreamZeroStride) {
+    return ProxyInterface->DrawIndexedPrimitiveUP(PrimitiveType, MinIndex, NumVertices, PrimitiveCount, pIndexData, IndexDataFormat, pVertexStreamZeroData, VertexStreamZeroStride);
+}
 
 
 

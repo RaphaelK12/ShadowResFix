@@ -74,13 +74,12 @@ extern IDirect3DTexture9* halfDepthDsTex;
 
 extern IDirect3DTexture9* pHDRTex;
 extern IDirect3DTexture9* pHDRTex2;
+extern IDirect3DTexture9* pHDRTex3;
 extern IDirect3DTexture9* pHalfHDRTex;
 extern IDirect3DTexture9* pQuarterHDRTex;
 
 extern std::list<m_IDirect3DTexture9*> textureList;
 extern m_IDirect3DTexture9* rainDepth;
-extern IDirect3DTexture9* pHDRTex;
-extern IDirect3DTexture9* pHDRTex2;
 extern IDirect3DTexture9* areaTex;
 extern IDirect3DTexture9* searchTex;
 extern IDirect3DTexture9* edgesTex;
@@ -97,6 +96,9 @@ extern IDirect3DTexture9* pHDRDownsampleTex; // gen
 extern IDirect3DTexture9* pHDRDownsampleTex2; // gen
 extern IDirect3DTexture9* depthStenciltex; // gen
 
+extern IDirect3DTexture9* OldShadowAtlas ; // game
+extern IDirect3DTexture9* NewShadowAtlas ; // gen
+extern IDirect3DSurface9* OldShadowAtlasSurf ; // gen
 
 bool gNearFarPlane = 1;
 float NearFarPlane[4] = { 1,1,1,1 };
@@ -120,6 +122,8 @@ bool afterpostfx = false;
 BOOL b_ShowCursor = 0; // if game want to show cursor
 int hookWait = 10;
 extern int UseSunShafts;
+
+extern int DrawCallsCount;
 
 
 
@@ -204,6 +208,13 @@ public:
         return 0;
     }
     static void ShowFPS(LPDIRECT3DDEVICE9EX device) {
+        //int lastError = 0;
+        //lastError = GetLastError();
+        //if(lastError) {
+        //    static char buff[100] = { 0 };
+        //    sprintf(buff, "%x", lastError);
+        //    Log::Warning(buff);
+        //}
         static std::list<int> m_times;
 
         //https://github.com/microsoft/VCSamples/blob/master/VC2012Samples/Windows%208%20samples/C%2B%2B/Windows%208%20app%20samples/Direct2D%20geometry%20realization%20sample%20(Windows%208)/C%2B%2B/FPSCounter.cpp#L279
@@ -284,6 +295,7 @@ public:
             };
 
             static char str_format_fps[] = "%02d";
+            static char str_format_draw[] = "DrawCalls: %i";
             static char str_format_time[] = "%.01f ms";
             static char str_format_nfp[] = "%.03f, %.03f";
             static const D3DXCOLOR YELLOW(D3DCOLOR_XRGB(0xF7, 0xF7, 0));
@@ -291,6 +303,7 @@ public:
             DrawTextOutline(pTimeFont, 10, space, YELLOW, str_format_time, (1.0f / fps) * 1000.0f);
             DrawTextOutline(pTimeFont, 10, space + 15, YELLOW, str_format_nfp, NearFarPlane[0], NearFarPlane[1]);
             DrawTextOutline(pTimeFont, 10, space + 30, YELLOW, str_format_fps, gFixEmissiveTransparency);
+            DrawTextOutline(pTimeFont, 10, space + 45, YELLOW, str_format_draw, DrawCallsCount );
         }
     }
 
@@ -487,6 +500,7 @@ HRESULT m_IDirect3DDevice9Ex::Present(CONST RECT* pSourceRect, CONST RECT* pDest
     if(UsePresentToRenderUI) {
         if(bDisplayFPSCounter)
             FrameLimiter::ShowFPS(ProxyInterface);
+        //DrawCallsCount = 0;
 
         // Need to keep dx9 state the same as before using ImGui functions
         DWORD		_D3DRS_ZWRITEENABLE = FALSE;
@@ -558,6 +572,7 @@ HRESULT m_IDirect3DDevice9Ex::Present(CONST RECT* pSourceRect, CONST RECT* pDest
     //    o_ShowCursor(b_ShowCursor);
     //}
 
+    //DrawCallsCount = 0;
     return hr;
 }
 
@@ -571,6 +586,7 @@ HRESULT m_IDirect3DDevice9Ex::PresentEx(THIS_ CONST RECT* pSourceRect, CONST REC
     if(UsePresentToRenderUI) {
         if(bDisplayFPSCounter)
             FrameLimiter::ShowFPS(ProxyInterface);
+        //DrawCallsCount = 0;
 
         // Need to keep dx9 state the same as before using ImGui functions
         DWORD		_D3DRS_ZWRITEENABLE = FALSE;
@@ -620,11 +636,12 @@ HRESULT m_IDirect3DDevice9Ex::PresentEx(THIS_ CONST RECT* pSourceRect, CONST REC
         }
         ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE, 1);
     }
-
+    //DrawCallsCount = 0;
     return ProxyInterface->PresentEx(pSourceRect, pDestRect, hDestWindowOverride, pDirtyRegion, dwFlags);
 }
 
 HRESULT m_IDirect3DDevice9Ex::BeginScene() {
+    //DrawCallsCount = 0;
     return ProxyInterface->BeginScene();
     //ProxyInterface->SetRenderState(D3DRS_ZWRITEENABLE, 1);
     //Clear(0, 0, D3DCLEAR_ZBUFFER, 0, 0, 0);
@@ -634,8 +651,10 @@ HRESULT m_IDirect3DDevice9Ex::BeginScene() {
 
 HRESULT m_IDirect3DDevice9Ex::EndScene() {
     if(!UsePresentToRenderUI) {
-        if(bDisplayFPSCounter)
+        if(bDisplayFPSCounter) {
             FrameLimiter::ShowFPS(ProxyInterface);
+            DrawCallsCount = 0;
+        }
 
         // Need to keep dx9 state the same as before using ImGui functions
         DWORD		_D3DRS_ZWRITEENABLE = FALSE;
@@ -687,6 +706,7 @@ HRESULT m_IDirect3DDevice9Ex::EndScene() {
     }
 
     HRESULT hr = ProxyInterface->EndScene();
+    //DrawCallsCount = 0;
 
     return hr;
 }
@@ -850,11 +870,15 @@ HRESULT m_IDirect3DDevice9Ex::Reset(D3DPRESENT_PARAMETERS* pPresentationParamete
     StencilTex = nullptr;
     BloomTex = nullptr;
     DepthTex = nullptr;
+    OldShadowAtlas = nullptr;
+    OldShadowAtlasSurf = nullptr;
+
     textureList.remove(rainDepth);
     textureList.remove((m_IDirect3DTexture9*) pHDRTex);
+    textureList.remove((m_IDirect3DTexture9*) pHDRTex2);
+    textureList.remove((m_IDirect3DTexture9*) pHDRTex3);
     textureList.remove((m_IDirect3DTexture9*) pHalfHDRTex);
     textureList.remove((m_IDirect3DTexture9*) pQuarterHDRTex);
-    textureList.remove((m_IDirect3DTexture9*) pHDRTex2);
     textureList.remove((m_IDirect3DTexture9*) areaTex);
     textureList.remove((m_IDirect3DTexture9*) searchTex);
     textureList.remove((m_IDirect3DTexture9*) edgesTex);
@@ -868,12 +892,14 @@ HRESULT m_IDirect3DDevice9Ex::Reset(D3DPRESENT_PARAMETERS* pPresentationParamete
     textureList.remove((m_IDirect3DTexture9*) pHDRDownsampleTex);
     textureList.remove((m_IDirect3DTexture9*) pHDRDownsampleTex2);
     textureList.remove((m_IDirect3DTexture9*) depthStenciltex);
+    textureList.remove((m_IDirect3DTexture9*) NewShadowAtlas);
 
     pHalfHDRTex = nullptr;
     pQuarterHDRTex = nullptr;
     SAFE_RELEASE(rainDepth);
     //SAFE_RELEASE(pHDRTex); // the game will release this
     SAFE_RELEASE(pHDRTex2);
+    SAFE_RELEASE(pHDRTex3);
     SAFE_RELEASE(areaTex);
     SAFE_RELEASE(searchTex);
     SAFE_RELEASE(edgesTex);
@@ -887,6 +913,10 @@ HRESULT m_IDirect3DDevice9Ex::Reset(D3DPRESENT_PARAMETERS* pPresentationParamete
     SAFE_RELEASE(pHDRDownsampleTex);
     SAFE_RELEASE(pHDRDownsampleTex2);
     SAFE_RELEASE(depthStenciltex);
+
+    SAFE_RELEASE(OldShadowAtlas);
+    SAFE_RELEASE(OldShadowAtlasSurf);
+    SAFE_RELEASE(NewShadowAtlas);
 
     //SAFE_RELEASE(mainDepth);
     //SAFE_RELEASE(mainDepthTex);

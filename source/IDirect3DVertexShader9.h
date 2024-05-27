@@ -14,6 +14,7 @@ public:
 	static float globalConstants[256][4]; // constant table, set with Set*ShaderConstantF
 
 	// new methods
+	void replaceConstants();
 	std::string GetAsm();
 	HRESULT compileNewASM();
 	HRESULT compileNewFx();

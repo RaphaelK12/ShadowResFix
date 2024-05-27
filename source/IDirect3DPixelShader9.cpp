@@ -387,6 +387,12 @@ IDirect3DPixelShader9* m_IDirect3DPixelShader9::dummyShader = nullptr;
 
 extern IDirect3DPixelShader9* FxaaPS;
 extern IDirect3DPixelShader9* SunShafts_PS;
+extern IDirect3DPixelShader9* SunShafts2_PS;
+extern IDirect3DPixelShader9* SunShafts3_PS;
+extern IDirect3DPixelShader9* SunShafts4_PS;
+extern IDirect3DPixelShader9* SSAdd_PS;
+extern IDirect3DPixelShader9* SSDownsampler_PS;
+extern IDirect3DPixelShader9* SSDownsampler2_PS;
 
 extern IDirect3DPixelShader9* SMAA_EdgeDetection;
 extern IDirect3DPixelShader9* SMAA_BlendingWeightsCalculation;
@@ -398,6 +404,8 @@ extern IDirect3DVertexShader9* SMAA_BlendingWeightsCalculationVS;
 extern IDirect3DVertexShader9* SMAA_NeighborhoodBlendingVS;
 
 extern IDirect3DPixelShader9* DOF_ps;
+extern IDirect3DPixelShader9* dof_blur_ps;
+extern IDirect3DPixelShader9* dof_coc_ps;
 
 extern IDirect3DPixelShader9* depth_of_field_ps;
 extern IDirect3DPixelShader9* depth_of_field_tent_ps ;
@@ -576,7 +584,25 @@ m_IDirect3DPixelShader9::m_IDirect3DPixelShader9(LPDIRECT3DPIXELSHADER9 pShader9
             downsampler_ps = CompilePixelShaderFromFile("SSAO3_ps.hlsl", "mainDownsample", "SSAO3_Downsample.hlsl", m_pDeviceEx, false, true);
         
         if(!SunShafts_PS)
-            SunShafts_PS = CompilePixelShaderFromFile("SunShafts_PS.hlsl", "main", "SunShafts_PS.hlsl", m_pDeviceEx, false, true);
+            SunShafts_PS = CompilePixelShaderFromFile("SunShafts_PS.hlsl", "SunShafts1", "SunShafts1_PS.hlsl", m_pDeviceEx, false, true);
+        
+        if(!SunShafts2_PS)
+            SunShafts2_PS = CompilePixelShaderFromFile("SunShafts_PS.hlsl", "SunShafts2", "SunShafts2_PS.hlsl", m_pDeviceEx, false, true);
+        
+        if(!SunShafts3_PS)
+            SunShafts3_PS = CompilePixelShaderFromFile("SunShafts_PS.hlsl", "SunShafts3", "SunShafts3_PS.hlsl", m_pDeviceEx, false, true);
+        
+        if(!SunShafts4_PS)
+            SunShafts4_PS = CompilePixelShaderFromFile("SunShafts_PS.hlsl", "SunShafts4", "SunShafts4_PS.hlsl", m_pDeviceEx, false, true);
+        
+        if(!SSDownsampler_PS)
+            SSDownsampler_PS = CompilePixelShaderFromFile("SunShafts_PS.hlsl", "SSDownsampler", "SunShaftsDS_PS.hlsl", m_pDeviceEx, false, true);
+
+        if(!SSDownsampler2_PS)
+            SSDownsampler2_PS = CompilePixelShaderFromFile("SunShafts_PS.hlsl", "SSDownsampler2", "SunShaftsDS2_PS.hlsl", m_pDeviceEx, false, true);
+
+        if(!SSAdd_PS)
+            SSAdd_PS = CompilePixelShaderFromFile("SunShafts_PS.hlsl", "SSAdd", "SunShafts_PS.hlsl", m_pDeviceEx, false, true);
 
         if(!SSAO_vs)
             SSAO_vs = CompileVertexShaderFromFile("SSAO_vs.asm", 0, "SSAO_vs.asm", m_pDeviceEx, true, true);
@@ -586,6 +612,12 @@ m_IDirect3DPixelShader9::m_IDirect3DPixelShader9(LPDIRECT3DPIXELSHADER9 pShader9
 
         if(!SSAO_ps2)
             SSAO_ps2 = CompilePixelShaderFromFile("SSAO_ps2.asm", 0, "SSAO_ps2.asm", m_pDeviceEx, true, true);
+
+        if(!dof_blur_ps)
+            dof_blur_ps = CompilePixelShaderFromFile("dof_blur.asm", 0, "dof_blur.asm", m_pDeviceEx, true, true);
+
+        if(!dof_coc_ps)
+            dof_coc_ps = CompilePixelShaderFromFile("dof_coc.asm", 0, "dof_coc.asm", m_pDeviceEx, true, true);
 
         if(!depth_of_field_ps)
             depth_of_field_ps = CompilePixelShaderFromFile("depth_of_field_ps.asm", 0, "depth_of_field_ps.asm", m_pDeviceEx, true, true);
@@ -828,7 +860,14 @@ HRESULT m_IDirect3DPixelShader9::compileShaderSource(std::string source, ShaderT
         }
         case PS_FX:
         {
-            HRESULT hr3 = D3DXCompileShader(source.c_str(), source.length(), 0, 0, "main", "ps_3_0", 0, &bf3, &bf4, &ppConstantTable);
+            HRESULT hr3 = 0;
+            if(entryFunction.length() > 1) {
+                hr3 = D3DXCompileShader(source.c_str(), source.length(), 0, 0, entryFunction.c_str(), "ps_3_0", 0, &bf3, &bf4, &ppConstantTable);
+                if(hr3 != S_OK)
+                    hr3 = D3DXCompileShader(source.c_str(), source.length(), 0, 0, "main", "ps_3_0", 0, &bf3, &bf4, &ppConstantTable);
+            }
+            else
+                hr3 = D3DXCompileShader(source.c_str(), source.length(), 0, 0, "main", "ps_3_0", 0, &bf3, &bf4, &ppConstantTable);
             HRESULT hr2 = S_FALSE;
             IDirect3DPixelShader9* shader = nullptr;
             if(hr3 == S_OK) {
@@ -858,6 +897,9 @@ HRESULT m_IDirect3DPixelShader9::compileShaderSource(std::string source, ShaderT
                         if(use == SU_EFX) {
                             this->editedAsm = source;
                         }
+                        //m_IDirect3DPixelShader9* pShader2 = static_cast<m_IDirect3DPixelShader9*>(shader);
+                        //if(pShader2)
+                        //    pShader2->id == id;
                     }
                 }
                 SAFE_RELEASE(bf1);
@@ -937,3 +979,10 @@ HRESULT m_IDirect3DPixelShader9::GetDevice(THIS_ IDirect3DDevice9** ppDevice) {
 HRESULT m_IDirect3DPixelShader9::GetFunction(THIS_ void* pData, UINT* pSizeOfData) {
     return ProxyInterface->GetFunction(pData, pSizeOfData);
 }
+
+void m_IDirect3DPixelShader9::replaceConstants() {
+    for(auto& [key, value] : constantReplace) {
+        m_pDeviceEx->GetProxyInterface()->SetPixelShaderConstantF(key, (FLOAT*) value, 1);
+    }
+}
+

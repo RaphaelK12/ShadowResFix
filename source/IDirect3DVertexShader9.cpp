@@ -483,7 +483,16 @@ HRESULT m_IDirect3DVertexShader9::compileShaderSource(std::string source, Shader
         }
         case VS_FX:
         {
-            HRESULT hr3 = D3DXCompileShader(source.c_str(), source.length(), 0, 0, "main", "vs_3_0", 0, &bf3, &bf4, &ppConstantTable);
+            //HRESULT hr3 = D3DXCompileShader(source.c_str(), source.length(), 0, 0, "main", "vs_3_0", 0, &bf3, &bf4, &ppConstantTable);
+            HRESULT hr3 = 0;
+            if(entryFunction.length() > 1) {
+                hr3 = D3DXCompileShader(source.c_str(), source.length(), 0, 0, entryFunction.c_str(), "ps_3_0", 0, &bf3, &bf4, &ppConstantTable);
+                if(hr3 != S_OK)
+                    hr3 = D3DXCompileShader(source.c_str(), source.length(), 0, 0, "main", "ps_3_0", 0, &bf3, &bf4, &ppConstantTable);
+            }
+            else
+                hr3 = D3DXCompileShader(source.c_str(), source.length(), 0, 0, "main", "ps_3_0", 0, &bf3, &bf4, &ppConstantTable);
+
             HRESULT hr2 = S_FALSE;
             if(hr3 == S_OK) {
                 hr2 = m_pDeviceEx->CreateVertexShader2((DWORD*) bf3->GetBufferPointer(), &shader, SC_NEW);
@@ -568,3 +577,11 @@ HRESULT m_IDirect3DVertexShader9::GetDevice(THIS_ IDirect3DDevice9** ppDevice) {
 HRESULT m_IDirect3DVertexShader9::GetFunction(THIS_ void* pData, UINT* pSizeOfData) {
     return ProxyInterface->GetFunction(pData, pSizeOfData);
 }
+
+void m_IDirect3DVertexShader9::replaceConstants() {
+    for( auto& [key, value] : constantReplace) {
+        m_pDeviceEx->GetProxyInterface()->SetVertexShaderConstantF(key, (FLOAT*) value, 1);
+    }
+}
+
+

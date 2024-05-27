@@ -2,6 +2,8 @@
 
 #include "checksum.h"
 #include "Log.h"
+#include <map>
+#include "dxsdk\d3dx9math.h"
 
 #ifndef SAFE_RELEASE
 #define SAFE_RELEASE(p)      { if (p) { (p)->Release(); (p)=NULL; } }
@@ -95,4 +97,8 @@ public:
     virtual HRESULT compileNewFx() { return S_FALSE; };
 
     basicShader() : id(-1), fxid(-1), gid(g_id) { g_id++; }
+
+    bool constantIndex[256] = { 0 };
+    std::map<int, D3DXVECTOR4> constantReplace ;
+
 };

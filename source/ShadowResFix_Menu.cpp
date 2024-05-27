@@ -102,9 +102,10 @@ bool usePrimitiveUp = false;
 
 extern bool useDof;
 extern int UseSunShafts;
-extern bool useDepthOfField ;
-extern bool useDepthOfField2;
+extern int useDepthOfField ;
+//extern bool useDepthOfField2;
 extern bool useStippleFilter;
+extern bool useNewShadowAtlas;
 
 extern bool fixDistantOutlineUsingDXVK;
 
@@ -596,7 +597,7 @@ extern float parametersAA[4];
 extern float NoiseSale[4];
 extern float SS_params[4];
 extern float SS_params2[4];
-
+extern int SS_NumSamples[4];
 //struct crc_name {
 //    uint32_t crc32;
 //    std::string name;
@@ -894,8 +895,10 @@ int read_crc_name_vs2(int version) {
     return cnt;
 }
 
+extern IDirect3DTexture9* pHDRDownsampleTex; // main downsampled texture
 
 
+extern bool useLinear;
 void ShadowResFix::DrawMainWindow() {
     static float shaderColor[4] = { 0 };
     static ImVec4 bgColor(0.0549f, 0.047f, 0.0274509f, 0.333f);
@@ -913,11 +916,14 @@ void ShadowResFix::DrawMainWindow() {
     ImGui::Begin("RaGeFX 1.0.0.8", NULL, ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoBringToFrontOnFocus);
 
     // semi transparent background
-    if(pRainDropsRefractionHDRTex  ) {
+    if(pRainDropsRefractionHDRTex) {
         ImVec2 wsize = ImVec2(gWindowWidth, gWindowHeight);
         ImVec2 pos = ImGui::GetCursorScreenPos();
         ImGui::SetCursorScreenPos(ImVec2(0, 0));
-        ImGui::Image(pRainDropsRefractionHDRTex, wsize, ImVec2(0, 0), ImVec2(1, 1), bgColor); //<---warning here
+        //if(pHDRDownsampleTex && (useDepthOfField2 || UseSunShafts == 1))
+        //    ImGui::Image(pHDRDownsampleTex, wsize, ImVec2(0, 0), ImVec2(1, 1), bgColor);
+        //else
+            ImGui::Image(pRainDropsRefractionHDRTex, wsize, ImVec2(0, 0), ImVec2(1, 1), bgColor);
         ImGui::SetCursorScreenPos(pos);
     }
 
@@ -953,6 +959,8 @@ void ShadowResFix::DrawMainWindow() {
     ImGui::Checkbox("FixCoronaDepth", &fixCoronaDepth);
     ImGui::Checkbox("FixDistantOutlineUsingDXVK", &fixDistantOutlineUsingDXVK);
     ImGui::Checkbox("NearFarPlane", &gNearFarPlane);
+    ImGui::Checkbox("useNewShadowAtlas", &useNewShadowAtlas);
+    ImGui::Checkbox("useLinear", &useLinear);
     ImGui::Checkbox("Show Log Window", &mShowLogWindow);
     if(ImGui::Button("Clear Log")) {
         Log::clear();
@@ -980,14 +988,22 @@ void ShadowResFix::DrawMainWindow() {
         ImGui::Checkbox("useStippleFilter", &useStippleFilter);
         ImGui::DragFloat4("NoiseSale", NoiseSale, 0.001, -1, 1, "%.3f", ImGuiSliderFlags_Logarithmic);
 
-        if(ImGui::Checkbox("useDepthOfField", &useDepthOfField) && useDepthOfField) {
-            useDepthOfField2 = false;
-        };
+        //if(ImGui::Checkbox("useDepthOfField", &useDepthOfField) && useDepthOfField) {
+        //    useDepthOfField2 = false;
+        //};
+        //if(ImGui::Checkbox("useDepthOfField 2", &useDepthOfField2) && useDepthOfField2) {
+        //    useDepthOfField = false;
+        //};
+        //ImGui::Checkbox("UseDof 2", &useDof);
 
-        if(ImGui::Checkbox("useDepthOfField 2", &useDepthOfField2) && useDepthOfField2) {
-            useDepthOfField = false;
+        static const char* DofTypes[] = {
+            "none",
+            "Dof1",
+            "Dof2",
+            "Dof3",
+            "Dof4",
         };
-        ImGui::Checkbox("UseDof 2", &useDof);
+        ImGui::SliderInt("DofType", &useDepthOfField, 0, 4, DofTypes[useDepthOfField]);
 
         ImGui::DragFloat4("FocusPoint", FocusPoint, 1, 0, 1500, "%.3f", ImGuiSliderFlags_Logarithmic);
         ImGui::DragFloat4("FocusScale", FocusScale, 1, 0, 1500, "%.3f", ImGuiSliderFlags_Logarithmic);
@@ -1013,12 +1029,13 @@ void ShadowResFix::DrawMainWindow() {
         //ImGui::Checkbox("SunShafts", &UseSunShafts);
 
         static const char* SSTypes[] = {
-            "None", "Simple", "Simple 2 WIP"
+            "None", "HalfRes one pass", "HalfRes Two passes WIP", "Full screen one pass", "Full screen Two passes"
         };
-        ImGui::SliderInt("SunShafts Type", &UseSunShafts, 0, 2, SSTypes[UseSunShafts]);
+        ImGui::SliderInt("God Rays Type", &UseSunShafts, 0, 4, SSTypes[UseSunShafts]);
 
-        ImGui::DragFloat4("Weight Density, Exposure, Decay", SS_params, 0.001, -2, 2, "%.3f");
+        ImGui::DragFloat4("Weight Density, Exposure, Decay", SS_params, 0.001, -2, 8, "%.3f");
         ImGui::DragFloat4("SunSize, pow, depth, power", SS_params2, 0.01, -0.01, 16, "%.3f");
+        ImGui::DragInt4("NumSamples", SS_NumSamples, 1, 1, 256, "%d");
 
         ImGui::Text("SunDirection = %f, %f, %f, %f", SunDirection[0], SunDirection[1], SunDirection[2], SunDirection[3]);
         ImGui::Text("SunCentre = %f, %f, %f, %f", SunCentre[0], SunCentre[1], SunCentre[2], SunCentre[3]);
@@ -1146,7 +1163,8 @@ void ShadowResFix::DrawMainWindow() {
         "water reflex",
         "light atlas",
         "shadow atlas",
-        "shadow cascade"
+        "shadow cascade",
+        "Loaded"
     };
     
     if(ImGui::CollapsingHeader("Textures")) {
@@ -1546,8 +1564,34 @@ void ShadowResFix::DrawMainWindow() {
 
                                 auto& cntnt = (fx_ps[i][j]->usingShader != SU_FXC && fx_ps[i][j]->compiledShaders[fx_ps[i][j]->usingShader] != nullptr) ? static_cast<m_IDirect3DPixelShader9*>(fx_ps[i][j]->compiledShaders[fx_ps[i][j]->usingShader])->constants : fx_ps[i][j]->constants;
 
-                                for(int c = 0; c < 255; c++) {
-                                    ImGui::Text("c%i, %f, %f, %f, %f", c, cntnt[c][0], cntnt[c][1], cntnt[c][2], cntnt[c][3]);
+                                auto shad = (fx_ps[i][j]->usingShader != SU_FXC && fx_ps[i][j]->compiledShaders[fx_ps[i][j]->usingShader] != nullptr) ? static_cast<m_IDirect3DPixelShader9*>(fx_ps[i][j]->compiledShaders[fx_ps[i][j]->usingShader]) : fx_ps[i][j];
+
+                                if(shad) {
+                                    for(int c = 0; c < 255; c++) {
+                                        if(shad->constantIndex[c]) {
+                                            sprintf(buf100, "c%i##psb%i_%i_%i_%i", c, c, i, j, fx_ps[i][j]->id);
+                                        }
+                                        else {
+                                            sprintf(buf100, "##psb%i_%i_%i_%i", c, i, j, fx_ps[i][j]->id);
+                                        }
+                                        if(ImGui::Checkbox(buf100, &shad->constantIndex[c])) {
+                                            if(shad->constantIndex[c]) {
+                                                shad->constantReplace[c] = cntnt[c];
+                                            }
+                                            else {
+                                                shad->constantReplace.erase(c);
+                                            }
+                                        }
+                                        ImGui::SameLine();
+                                        if(shad->constantIndex[c]) {
+                                            sprintf(buf100, "##psv%i_%i_%i_%i", c, i, j, fx_ps[i][j]->id);
+                                            ImGui::SetNextItemWidth(-1.f);
+                                            ImGui::DragFloat4(buf100, (shad->constantReplace[c]), 1.0f, -2000, 2000, "%f", ImGuiSliderFlags_Logarithmic);
+                                        }
+                                        else {
+                                            ImGui::Text("c%i, %f, %f, %f, %f", c, cntnt[c][0], cntnt[c][1], cntnt[c][2], cntnt[c][3]);
+                                        }
+                                    }
                                 }
 
                                 ImGui::EndChild();
@@ -1859,9 +1903,40 @@ void ShadowResFix::DrawMainWindow() {
                                 //    ImGui::Text("c%i, %f, %f, %f, %f", c, fx_vs[i][j]->constants[c][0], fx_vs[i][j]->constants[c][1], fx_vs[i][j]->constants[c][2], fx_vs[i][j]->constants[c][3]);
                                 //}
                                 auto& cntnt = (fx_vs[i][j]->usingShader != SU_FXC && fx_vs[i][j]->compiledShaders[fx_vs[i][j]->usingShader] != nullptr) ? static_cast<m_IDirect3DVertexShader9*>(fx_vs[i][j]->compiledShaders[fx_vs[i][j]->usingShader])->constants : fx_vs[i][j]->constants;
-                                for(int c = 0; c < 255; c++) {
-                                    ImGui::Text("c%i, %f, %f, %f, %f", c, cntnt[c][0], cntnt[c][1], cntnt[c][2], cntnt[c][3]);
+                                
+                                auto shad = (fx_vs[i][j]->usingShader != SU_FXC && fx_vs[i][j]->compiledShaders[fx_vs[i][j]->usingShader] != nullptr) ? static_cast<m_IDirect3DVertexShader9*>(fx_vs[i][j]->compiledShaders[fx_vs[i][j]->usingShader]) : fx_vs[i][j];
+
+                                if(shad) {
+                                    for(int c = 0; c < 255; c++) {
+                                        if(shad->constantIndex[c]) {
+                                            sprintf(buf100, "c%i##vsb%i_%i_%i_%i", c, c, i, j, fx_vs[i][j]->id);
+                                        }
+                                        else {
+                                            sprintf(buf100, "##vsb%i_%i_%i_%i", c, i, j, fx_vs[i][j]->id);
+                                        }
+                                        if(ImGui::Checkbox(buf100, &shad->constantIndex[c])) {
+                                            if(shad->constantIndex[c]) {
+                                                shad->constantReplace[c] = cntnt[c];
+                                            }
+                                            else {
+                                                shad->constantReplace.erase(c);
+                                            }
+                                        }
+                                        ImGui::SameLine();
+                                        if(shad->constantIndex[c]) {
+                                            sprintf(buf100, "##vsv%i_%i_%i_%i", c, i, j, fx_vs[i][j]->id);
+                                            ImGui::SetNextItemWidth(-1.f);
+                                            ImGui::DragFloat4(buf100, (shad->constantReplace[c]), 0.1, -2000, 2000, "%f", ImGuiSliderFlags_Logarithmic);
+                                        }
+                                        else {
+                                            ImGui::Text("c%i, %f, %f, %f, %f", c, cntnt[c][0], cntnt[c][1], cntnt[c][2], cntnt[c][3]);
+                                        }
+                                    }
                                 }
+                                
+                                //for(int c = 0; c < 255; c++) {
+                                //    ImGui::Text("c%i, %f, %f, %f, %f", c, cntnt[c][0], cntnt[c][1], cntnt[c][2], cntnt[c][3]);
+                                //}
 
                                 ImGui::EndChild();
                                 ImGui::TreePop();
@@ -3404,6 +3479,10 @@ void ShadowResFix::DrawMainWindow() {
             ImGui::SliderFloat("Shadow Distance BA + 0xB3E194 ", (float*) (baseAddress + 0xB3E194), 0, 1000);
         }
         if(GameVersion == 1200) {
+            ImGui::DragFloat4("Shadow Distance L BA + 0xC36960 ", (float*) (baseAddress + (0xC36960-3*4)), 1, 0, 2500, "%.3f", ImGuiSliderFlags_Logarithmic);
+            ImGui::DragFloat4("Shadow Distance M BA + 0xC36974 ", (float*) (baseAddress + (0xC36974-3*4)), 1, 0, 2500, "%.3f", ImGuiSliderFlags_Logarithmic);
+            ImGui::DragFloat4("Shadow Distance H BA + 0xC36988 ", (float*) (baseAddress + (0xC36988-3*4)), 1, 0, 2500, "%.3f", ImGuiSliderFlags_Logarithmic);
+            ImGui::DragFloat4("Shadow Distance VH BA + 0xC3699C", (float*) (baseAddress + (0xC3699C-3*4)), 1, 0, 2500, "%.3f", ImGuiSliderFlags_Logarithmic);
             ImGui::Checkbox("isininterior baseAddress + 0x1320FA8", IsInInterior);
             ImGui::Checkbox("inpausemenu baseAddress + C30B7C", IsGameOnMenu);
             ImGui::Checkbox("isgamepaused baseAddress + D73590", (bool*) (baseAddress + 0xD73590));
