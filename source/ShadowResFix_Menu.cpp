@@ -43,8 +43,9 @@ extern UINT gWindowWidth;
 extern UINT gWindowHeight;
 
 bool fixCoronaDepth = 1;
+bool useMotionBlur = 0;
 int UseDebugTextures = 0;
-int UsePostFxAA[4] = { 0 }; // none, fxaa pre, fxaa pos, smaa, blend, edge
+int UsePostFxAA[4] = { 1 }; // none, fxaa pre, fxaa pos, smaa, blend, edge
 
 float PostFxFog[4] = { 1,1,(-1.f/gWindowWidth)*0.5,(-1.f/gWindowHeight)*0.5 }; 
 
@@ -598,6 +599,10 @@ extern float NoiseSale[4];
 extern float SS_params[4];
 extern float SS_params2[4];
 extern int SS_NumSamples[4];
+extern float BilateralDepthTreshold[4];
+
+extern int useDefferedShadows;
+
 //struct crc_name {
 //    uint32_t crc32;
 //    std::string name;
@@ -959,8 +964,6 @@ void ShadowResFix::DrawMainWindow() {
     ImGui::Checkbox("FixCoronaDepth", &fixCoronaDepth);
     ImGui::Checkbox("FixDistantOutlineUsingDXVK", &fixDistantOutlineUsingDXVK);
     ImGui::Checkbox("NearFarPlane", &gNearFarPlane);
-    ImGui::Checkbox("useNewShadowAtlas", &useNewShadowAtlas);
-    ImGui::Checkbox("useLinear", &useLinear);
     ImGui::Checkbox("Show Log Window", &mShowLogWindow);
     if(ImGui::Button("Clear Log")) {
         Log::clear();
@@ -985,6 +988,7 @@ void ShadowResFix::DrawMainWindow() {
             "stencil"
         };
         ImGui::SliderInt("DebugTextures", &UseDebugTextures, 0, 6, DebugTextures[UseDebugTextures]);
+        ImGui::Checkbox("useMotionBlur", &useMotionBlur);
         ImGui::Checkbox("useStippleFilter", &useStippleFilter);
         ImGui::DragFloat4("NoiseSale", NoiseSale, 0.001, -1, 1, "%.3f", ImGuiSliderFlags_Logarithmic);
 
@@ -1028,10 +1032,18 @@ void ShadowResFix::DrawMainWindow() {
 
         //ImGui::Checkbox("SunShafts", &UseSunShafts);
 
+        static const char* DFTypes[] = {
+            "None", "Horizontal", "Vertical", "Horizontal & Vertical", "Omini"
+        };
+        ImGui::Checkbox("useNewShadowAtlas", &useNewShadowAtlas);
+        ImGui::SliderInt("Blur Shadows Direction", &useDefferedShadows, 0, 4, DFTypes[useDefferedShadows]);
+        ImGui::DragFloat4("BilateralDepthTreshold", BilateralDepthTreshold, 0.01f, 0, 1, "%f", ImGuiSliderFlags_Logarithmic);
+
         static const char* SSTypes[] = {
             "None", "HalfRes one pass", "HalfRes Two passes WIP", "Full screen one pass", "Full screen Two passes"
         };
         ImGui::SliderInt("God Rays Type", &UseSunShafts, 0, 4, SSTypes[UseSunShafts]);
+
 
         ImGui::DragFloat4("Weight Density, Exposure, Decay", SS_params, 0.001, -2, 8, "%.3f");
         ImGui::DragFloat4("SunSize, pow, depth, power", SS_params2, 0.01, -0.01, 16, "%.3f");
@@ -1598,6 +1610,30 @@ void ShadowResFix::DrawMainWindow() {
 
                                 ImGui::TreePop();
                             }
+
+                            sprintf(buf100, "Edited Constants ##%i_%i_%i", i, j, fx_ps[i][j]->id);
+                            if(ImGui::TreeNode(buf100)) {
+                                sprintf(buf100, "Edited Constants ##%i_%i_%i", i, j, fx_ps[i][j]->id);
+                                ImGui::BeginChild(buf100, ImVec2(ImGui::GetContentRegionAvail().x, WindowSize.y * 0.5f), false, ImGuiWindowFlags_HorizontalScrollbar);
+
+                                auto shad = (fx_ps[i][j]->usingShader != SU_FXC && fx_ps[i][j]->compiledShaders[fx_ps[i][j]->usingShader] != nullptr) ? static_cast<m_IDirect3DPixelShader9*>(fx_ps[i][j]->compiledShaders[fx_ps[i][j]->usingShader]) : fx_ps[i][j];
+
+                                if(shad && !shad->constantReplace.empty()) {
+                                    for(auto& [key, value] : shad->constantReplace) {
+                                        sprintf(buf100, "##pse%i_%i_%i_%i", key, i, j, fx_ps[i][j]->id);
+                                        ImGui::Text("c%i", key);
+                                        ImGui::SameLine();
+
+                                        ImGui::SetNextItemWidth(-40.f);
+                                        ImGui::DragFloat4(buf100, (float*)value, 1.0f, -2000, 2000, "%f", ImGuiSliderFlags_Logarithmic);
+                                    }
+                                }
+
+                                ImGui::EndChild();
+
+                                ImGui::TreePop();
+                            }
+
                             ImGui::TreePop();
                         }
                     }
@@ -2744,456 +2780,6 @@ void ShadowResFix::DrawMainWindow() {
         ImGui::EndChild();
     }
 
-#ifdef ___nothing___
-    if(ImGui::CollapsingHeader("Vertex shaders 2")) {
-        ImGui::BeginChild("ChildVS2", ImVec2(ImGui::GetContentRegionAvail().x, WindowSize.y * 2.f / 3.f), false, ImGuiWindowFlags_HorizontalScrollbar);
-        for(int i = 0; i < vs_2.size(); i++) {
-            m_IDirect3DVertexShader9* pShader2 = static_cast<m_IDirect3DVertexShader9*>(ImGuiVS);
-            if(vs_2[i] && vs_2[i] != m_IDirect3DVertexShader9::dummyShader && vs_2[i] != pShader2) {
-                sprintf(buf100, "Vertex Shader2 %i", i);
-                if(ImGui::TreeNode(buf100)) {
-                    ImGui::Text("VS %i", vs_2[i]->id);
-                    if(vs_2[i] != vs_2[i]->dummyShader) {
-                        sprintf(buf100, "Disable PS Shader2 ##%i_%i", i, vs_2[i]->id);
-                        ImGui::Checkbox(buf100, &vs_2[i]->disable);
-                    }
-                    sprintf(buf100, "VS Assembly2 %i", i);
-                    if(ImGui::TreeNode(buf100)) {
-                        //char* as = (char*) vs[i]->GetAsm();
-                        ImGui::Text("%s\n", vs_2[i]->fxcAsm.c_str());
-                        ImGui::TreePop();
-                    }
-                    sprintf(buf100, "Last VS2 Constants ##%i", i);
-                    if(ImGui::TreeNode(buf100)) {
-                        for(int c = 0; c < 256; c++) {
-                            ImGui::Text("c%i, %f, %f, %f, %f", c, vs_2[i]->constants[c][0], vs_2[i]->constants[c][1], vs_2[i]->constants[c][2], vs_2[i]->constants[c][3]);
-                        }
-                        ImGui::TreePop();
-                    }
-                    ImGui::TreePop();
-                }
-            }
-        }
-        ImGui::EndChild();
-    }
-
-    if(ImGui::CollapsingHeader("Pixel shaders 2")) {
-        ImGui::BeginChild("ChildPS2", ImVec2(ImGui::GetContentRegionAvail().x, WindowSize.y * 2.f / 3.f), false, ImGuiWindowFlags_HorizontalScrollbar);
-        for(int i = 0; i < ps_2.size(); i++) {
-            m_IDirect3DPixelShader9* pShader2 = static_cast<m_IDirect3DPixelShader9*>(ImGuiPS);
-            if(ps_2[i] && ps_2[i] != m_IDirect3DPixelShader9::dummyShader && ps_2[i] != pShader2) {
-                sprintf(buf100, "Pixel Shader2 %i", i);
-                if(ImGui::TreeNode(buf100)) {
-                    //m_IDirect3DPixelShader9* pShader2 = static_cast<m_IDirect3DPixelShader9*>(ImGuiPS);
-                    //if(ps_2[i] && ps_2[i]->GetProxyInterface() != m_IDirect3DPixelShader9::dummyShader && ps_2[i] != pShader2) {
-                    ImGui::Text("PS %i", ps_2[i]->id);
-                    if(ps_2[i] != ps_2[i]->dummyShader) {
-                        sprintf(buf100, "Disable PS Shader2 ##%i_%i", i, ps_2[i]->id);
-                        ImGui::Checkbox(buf100, &ps_2[i]->disable);
-                    }
-                    sprintf(buf100, "PS Assembly2 %i", i);
-                    if(ImGui::TreeNode(buf100)) {
-                        //char* as = (char*) ps[i]->GetAsm();
-                        ImGui::Text("%s\n", ps_2[i]->fxcAsm.c_str());
-                        ImGui::TreePop();
-                    }
-                    sprintf(buf100, "Last PS2 Constants ##%i", i);
-                    if(ImGui::TreeNode(buf100)) {
-                        for(int c = 0; c < 255; c++) {
-                            ImGui::Text("c%i, %f, %f, %f, %f", c, ps_2[i]->constants[c][0], ps_2[i]->constants[c][1], ps_2[i]->constants[c][2], ps_2[i]->constants[c][3]);
-                        }
-                        ImGui::TreePop();
-                    }
-                    ImGui::TreePop();
-                }
-            }
-        }
-        ImGui::EndChild();
-    }
-    if(ImGui::CollapsingHeader("Vertex shaders 2")) {
-        ImGui::BeginChild("ChildVS2", ImVec2(ImGui::GetContentRegionAvail().x, WindowSize.y * 2.f / 3.f), false, ImGuiWindowFlags_HorizontalScrollbar);
-        for(int i = 0; i < vs_2.size(); i++) {
-            m_IDirect3DVertexShader9* pShader2 = static_cast<m_IDirect3DVertexShader9*>(ImGuiVS);
-            if(vs_2[i] && vs_2[i] != m_IDirect3DVertexShader9::dummyShader && vs_2[i] != pShader2) {
-                sprintf(buf100, "Vertex Shader2 %i", i);
-                if(ImGui::TreeNode(buf100)) {
-                    ImGui::Text("VS %i", vs_2[i]->id);
-                    if(vs_2[i] != vs_2[i]->dummyShader) {
-                        sprintf(buf100, "Disable PS Shader2 ##%i_%i", i, vs_2[i]->id);
-                        ImGui::Checkbox(buf100, &vs_2[i]->disable);
-                    }
-                    sprintf(buf100, "VS Assembly2 %i", i);
-                    if(ImGui::TreeNode(buf100)) {
-                        //char* as = (char*) vs[i]->GetAsm();
-                        ImGui::Text("%s\n", vs_2[i]->fxcAsm.c_str());
-                        ImGui::TreePop();
-                    }
-                    sprintf(buf100, "Last VS2 Constants ##%i", i);
-                    if(ImGui::TreeNode(buf100)) {
-                        for(int c = 0; c < 256; c++) {
-                            ImGui::Text("c%i, %f, %f, %f, %f", c, vs_2[i]->constants[c][0], vs_2[i]->constants[c][1], vs_2[i]->constants[c][2], vs_2[i]->constants[c][3]);
-                        }
-                        ImGui::TreePop();
-                    }
-                    ImGui::TreePop();
-                }
-            }
-        }
-        ImGui::EndChild();
-    }
-
-    if(ImGui::CollapsingHeader("Vertex shaders")) {
-        ImGui::Checkbox("Show Unused##vs", &showUnused);
-        ImGui::Checkbox("Hide Empty FXC##vs", &hideEmptyFXC);
-        if(ImGui::Button("Reset Use##vs")) {
-            for(int i = 0; i < fx_vs.size(); i++) {
-                for(int j = 0; j < fx_vs[i].size(); j++) {
-                    if(fx_vs[i][j]) {
-                        fx_vs[i][j]->used = 0;
-                    }
-                }
-            }
-        }
-        if(ImGui::Button("Enable all vs")) {
-            for(int i = 0; i < fx_vs.size(); i++) {
-                for(int j = 0; j < fx_vs[i].size(); j++) {
-                    if(fx_vs[i][j]) {
-                        fx_vs[i][j]->disable = false;
-                        fx_vs[i][j]->useNewShader = false;
-                    }
-                }
-            }
-        }
-
-        ImGui::BeginChild("ChildVS", ImVec2(ImGui::GetContentRegionAvail().x, ImGui::GetContentRegionAvail().y * 2), false, ImGuiWindowFlags_HorizontalScrollbar);
-        for(int i = 0; i < fx_vs.size(); i++) {
-            if(ImGui::TreeNode(shader_names_fxc[i])) {
-                sprintf(buf100, "Disable all##vs%i", i);
-                if(ImGui::Button(buf100)) {
-                    for(int j = 0; j < fx_vs[i].size(); j++) {
-                        if(fx_vs[i][j]) {
-                            fx_vs[i][j]->disable = true;
-                            fx_vs[i][j]->useNewShader = false;
-                        }
-                    }
-                }
-                sprintf(buf100, "Enable all##vs%i", i);
-                ImGui::SameLine();
-                if(ImGui::Button(buf100)) {
-                    for(int j = 0; j < fx_vs[i].size(); j++) {
-                        if(fx_vs[i][j]) {
-                            fx_vs[i][j]->disable = false;
-                            fx_vs[i][j]->useNewShader = false;
-                        }
-                    }
-                }
-                for(int j = 0; j < fx_vs[i].size(); j++) {
-                    if(fx_vs[i][j] && ((showUnused == false && fx_vs[i][j]->used > 0) || showUnused == true)) {
-                        sprintf(buf100, "%s #vs%i_%i_%i", fx_vs[i][j]->oName.c_str(), i, j, fx_vs[i][j]->id);
-                        if(ImGui::TreeNode(buf100)) {
-                            std::string namefx = fx_vs[i][j]->oName.substr(0, fx_vs[i][j]->oName.find_last_of(".")) + std::string(".fx");
-                            std::string nameasm = fx_vs[i][j]->oName;
-
-                            ImGui::Text("VS ID %i ##%i_%i_%i", fx_vs[i][j]->id, i, j, fx_vs[i][j]->id);
-                            ImGui::Text("Use Counter: %i ##%i_%i_%i", fx_vs[i][j]->used, i, j, fx_vs[i][j]->id);
-
-                            sprintf(buf100, "Compile VS asm ##%i_%i_%i", i, j, fx_vs[i][j]->id);
-                            if(fx_vs[i][j]->editedAsm.length() > 3 && ImGui::Button(buf100)) {
-                                for(auto t : lst) {
-                                    if(t->bs && t->bs == fx_vs[i][j] && t->name == nameasm) {
-                                        t->bs->editedAsm = t->editor->GetText();;
-                                        if(t->bs->compileNewASM() == S_OK && fx_vs[i][j]->newShader) {
-                                            t->bs->useNewShader = true;
-                                        }
-                                    }
-                                }
-                            }
-                            sprintf(buf100, "Compile VS fx ##%i_%i_%i", i, j, fx_vs[i][j]->id);
-                            if(fx_vs[i][j]->editedFx.length() > 3 && ImGui::Button(buf100)) {
-                                for(auto t : lst) {
-                                    if(t->bs && t->bs == fx_vs[i][j] && t->name == namefx) {
-                                        t->bs->editedFx = t->editor->GetText();;
-                                        if(t->bs->compileNewFx() == S_OK && fx_vs[i][j]->newShader) {
-                                            IDirect3DVertexShader9* pShader = fx_vs[i][j]->newShader;
-                                            static std::vector<uint8_t> pbFunc;
-                                            UINT len;
-                                            pShader->GetFunction(nullptr, &len);
-                                            if(pbFunc.size() < len) {
-                                                pbFunc.resize(len + len % 4);
-                                            }
-                                            pShader->GetFunction(pbFunc.data(), &len);
-
-                                            ID3DXBuffer* pShaderAsm = NULL;
-                                            HRESULT hr = D3DXDisassembleShader((DWORD*) pbFunc.data(), FALSE, 0x00000002, &pShaderAsm);
-                                            if(SUCCEEDED(hr) && pShaderAsm) {
-                                                t->bs->editedAsm = (char*) pShaderAsm->GetBufferPointer();
-                                            }
-
-                                            t->bs->useNewShader = true;
-                                        }
-                                    }
-                                }
-                            }
-                            sprintf(buf100, "Reset VS ##%i_%i_%i", i, j, fx_vs[i][j]->id);
-                            if(ImGui::Button(buf100)) {
-                                for(auto t : lst) {
-                                    if(t->bs == fx_vs[i][j]) {
-                                        t->bs->editedAsm = "";
-                                        t->bs->editedFx = "";
-                                        if(fx_vs[i][j]->newShader)
-                                            fx_vs[i][j]->newShader->Release();
-                                        fx_vs[i][j]->newShader = 0;
-                                        lst.remove(t);
-                                        break;
-                                    }
-                                }
-                                for(auto t : lst) {
-                                    if(t->bs == fx_vs[i][j]) {
-                                        t->bs->editedAsm = "";
-                                        t->bs->editedFx = "";
-                                        if(fx_vs[i][j]->newShader)
-                                            fx_vs[i][j]->newShader->Release();
-                                        fx_vs[i][j]->newShader = 0;
-                                        lst.remove(t);
-                                        break;
-                                    }
-                                }
-                            }
-                            sprintf(buf100, "Edit VS asm ##%i_%i_%i", i, j, fx_vs[i][j]->id);
-                            if(ImGui::Button(buf100)) {
-                                bool isInEditor = false;
-                                for(auto t : lst) {
-                                    basicShader* bs = static_cast<basicShader*> (fx_vs[i][j]);
-                                    if(t->bs && t->bs == bs && t->name == nameasm) {
-                                        isInEditor = true;
-                                        t->show = true;
-                                    }
-                                }
-                                if(isInEditor == false) {
-                                    if(fx_vs[i][j]->editedAsm.length() < 3) {
-                                        fx_vs[i][j]->editedAsm = fx_vs[i][j]->fxcAsm;
-                                    }
-                                    stShaderEditor* s = new stShaderEditor(fx_vs[i][j]->oName, VS_ASM, new TextEditor(), fx_vs[i][j]);
-                                    s->editor->SetShowWhitespaces(0);
-                                    s->editor->SetText(s->bs->editedAsm);
-                                    lst.push_back(s);
-                                }
-                            }
-                            sprintf(buf100, "Edit VS hlsl ##%i_%i_%i", i, j, fx_vs[i][j]->id);
-                            if(fx_vs[i][j]->loadedFx.length() > 0 && ImGui::Button(buf100)) {
-                                bool isInEditor = false;
-                                for(auto t : lst) {
-                                    basicShader* bs = static_cast<basicShader*> (fx_vs[i][j]);
-                                    if(t->bs && t->bs == bs && t->name == namefx) {
-                                        isInEditor = true;
-                                        t->show = true;
-                                    }
-                                }
-                                if(isInEditor == false) {
-                                    if(fx_vs[i][j]->editedFx.length() < 3) {
-                                        fx_vs[i][j]->editedFx = fx_vs[i][j]->loadedFx;
-                                    }
-                                    stShaderEditor* s = new stShaderEditor(fx_vs[i][j]->oName.substr(0, fx_vs[i][j]->oName.find_last_of(".")) + std::string(".fx"), VS_FX, new TextEditor(), fx_vs[i][j]);
-                                    s->editor->SetShowWhitespaces(0);
-                                    s->editor->SetText(s->bs->editedFx);
-                                    lst.push_back(s);
-                                }
-                            }
-                            sprintf(buf100, "Disable VS Shader ##%i_%i_%i", i, j, fx_vs[i][j]->id);
-                            ImGui::Checkbox(buf100, &fx_vs[i][j]->disable);
-                            if(!fx_vs[i][j]->newShader)
-                                fx_vs[i][j]->useNewShader = false;
-                            else {
-                                sprintf(buf100, "Use New VS Shader ##%i_%i_%i", i, j, fx_vs[i][j]->id);
-                                ImGui::Checkbox(buf100, &fx_vs[i][j]->useNewShader);
-                            }
-                            sprintf(buf100, "Original VS ASM ##%i_%i_%i", i, j, fx_vs[i][j]->id);
-                            if(fx_vs[i][j]->fxcAsm.length() > 1 && ImGui::TreeNode(buf100)) { ImGui::Text(fx_vs[i][j]->fxcAsm.c_str()); ImGui::TreePop(); }
-                            sprintf(buf100, "Original VS FX ##%i_%i_%i", i, j, fx_vs[i][j]->id);
-                            if(fx_vs[i][j]->loadedFx.length() > 1 && ImGui::TreeNode(buf100)) { ImGui::Text(fx_vs[i][j]->loadedFx.c_str()); ImGui::TreePop(); }
-                            sprintf(buf100, "Edited VS ASM ##%i_%i_%i", i, j, fx_vs[i][j]->id);
-                            if(fx_vs[i][j]->editedAsm.length() > 1 && ImGui::TreeNode(buf100)) { ImGui::Text(fx_vs[i][j]->editedAsm.c_str()); ImGui::TreePop(); }
-                            sprintf(buf100, "Edited VS FX ##%i_%i_%i", i, j, fx_vs[i][j]->id);
-                            if(fx_vs[i][j]->editedFx.length() > 1 && ImGui::TreeNode(buf100)) { ImGui::Text(fx_vs[i][j]->editedFx.c_str()); ImGui::TreePop(); }
-                            sprintf(buf100, "Last VS Constants ##%i_%i_%i", i, j, fx_vs[i][j]->id);
-                            if(ImGui::TreeNode(buf100)) {
-                                for(int c = 0; c < 255; c++) {
-                                    ImGui::Text("c%i, %f, %f, %f, %f", c, fx_vs[i][j]->constants[c][0], fx_vs[i][j]->constants[c][1], fx_vs[i][j]->constants[c][2], fx_vs[i][j]->constants[c][3]);
-                                }
-                                ImGui::TreePop();
-                            }
-                            ImGui::TreePop();
-                        }
-                    }
-                }
-                ImGui::TreePop();
-            }
-        }
-        ImGui::EndChild();
-    }
-
-    if(false && ImGui::CollapsingHeader("Vertex shaders")) {
-        ImGui::Checkbox("showUnused", &showUnused);
-        for(int i = 0; i < fx_vs.size(); i++) {
-            if(ImGui::TreeNode(shader_names_fxc[i])) {
-                for(int j = 0; j < fx_vs[i].size(); j++) {
-                    if(fx_vs[i][j] && ((showUnused == false && fx_vs[i][j]->used > 0) || showUnused == true)) {
-                        char buf1[100] = { 0 };
-                        sprintf(buf1, "%s %i_%i", fx_vs[i][j]->oName.c_str(), i, j);
-                        if(ImGui::TreeNode(buf1)) {
-                            ImGui::Text("VS ID %i", fx_vs[i][j]->id);
-                            ImGui::Text("Use Counter: %i", fx_vs[i][j]->used);
-                            char ch[] = "VS Assembly 000000000000";
-                            char ch1[] = "Disable Shader##%i0000000000";
-                            char ch2[] = "Use New Shader##%i0000000000";
-                            char ch3[] = "Last Constants##%i0000000000";
-                            char coa[100] = { 0 }; sprintf(coa, "Original ASM##%i%i", i, j);
-                            char cof[100] = { 0 }; sprintf(cof, "Original FX##%i%i", i, j);
-                            char cea[100] = { 0 }; sprintf(cea, "Edited ASM##%i%i", i, j);
-                            char cef[100] = { 0 }; sprintf(cef, "Edited FX##%i%i", i, j);
-                            sprintf(ch, "VS Assembly %i", fx_vs[i][j]->id);
-                            sprintf(ch1, "Disable Shader##%i", fx_vs[i][j]->id);
-                            sprintf(ch2, "Use New Shader##%i", fx_vs[i][j]->id);
-                            sprintf(ch3, "Last Constants##%i", fx_vs[i][j]->id);
-                            if(ImGui::Button("Compile")) {
-                                for(auto t : lst) {
-                                    if(t->bs == fx_vs[i][j]) {
-                                        t->bs->editedAsm = t->editor->GetText();;
-                                        t->bs->compileNewASM();
-                                    }
-                                }
-                            }
-                            char reset[] = "reset##xxxx xxxx";
-                            sprintf(reset, "Reset##%i%i", i, j);
-                            if(ImGui::Button(reset)) {
-                                for(auto t : lst) {
-                                    if(t->bs == fx_vs[i][j]) {
-                                        t->bs->editedAsm = "";
-                                        t->bs->editedFx = "";
-                                        if(fx_vs[i][j]->newShader)
-                                            fx_vs[i][j]->newShader->Release();
-                                        fx_vs[i][j]->newShader = 0;
-                                        lst.remove(t);
-                                        break;
-                                    }
-                                }
-                            }
-                            if(ImGui::Button("Edit")) {
-                                bool isInEditor = false;
-                                for(auto t : lst) {
-                                    basicShader* bs = static_cast<basicShader*> (fx_vs[i][j]);
-                                    if(t->bs == bs) {
-                                        isInEditor = true;
-                                        t->show = true;
-                                    }
-                                }
-                                if(isInEditor == false) {
-                                    if(fx_vs[i][j]->editedAsm.length() < 3) {
-                                        fx_vs[i][j]->editedAsm = fx_vs[i][j]->fxcAsm;
-                                    }
-                                    stShaderEditor* s = new stShaderEditor(fx_vs[i][j]->oName, fx_vs[i][j]->editedAsm, new TextEditor(), fx_vs[i][j]);
-                                    s->editor->SetShowWhitespaces(0);
-                                    s->editor->SetText(s->bs->editedAsm);
-                                    lst.push_back(s);
-                                    //editor.SetText(ps[i]->editedAsm);
-                                    //editor.SetShowWhitespaces(0);
-                                }
-                            }
-                            ImGui::Checkbox(ch1, &fx_vs[i][j]->disable);
-                            if(!fx_vs[i][j]->newShader)
-                                fx_vs[i][j]->useNewShader = false;
-                            else
-                                ImGui::Checkbox(ch2, &fx_vs[i][j]->useNewShader);
-                            if(fx_vs[i][j]->fxcAsm.length() > 1 && ImGui::TreeNode(coa)) { ImGui::Text(fx_vs[i][j]->fxcAsm.c_str()); ImGui::TreePop(); }
-                            if(fx_vs[i][j]->loadedFx.length() > 1 && ImGui::TreeNode(cof)) { ImGui::Text(fx_vs[i][j]->loadedFx.c_str()); ImGui::TreePop(); }
-                            if(fx_vs[i][j]->editedAsm.length() > 1 && ImGui::TreeNode(cea)) { ImGui::Text(fx_vs[i][j]->editedAsm.c_str()); ImGui::TreePop(); }
-                            if(fx_vs[i][j]->editedFx.length() > 1 && ImGui::TreeNode(cef)) { ImGui::Text(fx_vs[i][j]->editedFx.c_str()); ImGui::TreePop(); }
-                            if(ImGui::TreeNode(ch3)) {
-                                for(int c = 0; c < 255; c++) {
-                                    ImGui::Text("c%i, %f, %f, %f, %f", c, fx_vs[i][j]->constants[c][0], fx_vs[i][j]->constants[c][1], fx_vs[i][j]->constants[c][2], fx_vs[i][j]->constants[c][3]);
-                                }
-                                ImGui::TreePop();
-                            }
-                            ImGui::TreePop();
-                        }
-                    }
-                }
-                ImGui::TreePop();
-            }
-        }
-    }
-
-    if(0) {
-        //if(ImGui::CollapsingHeader("Pixel shaders")) {
-        for(int i = 0; i < shader_names_ps.size(); i++) {
-            if(ImGui::TreeNode(shader_names_ps[i])) {
-                if(ps[i]) {
-                    ImGui::Text("PS ID %i", ps[i]->id);
-                    ImGui::Text("Use Counter: %i", ps[i]->used);
-                    char ch[] = "PS Assembly 000000000000";
-                    char ch1[] = "Disable Shader##%i0000000000";
-                    char ch2[] = "Use New Shader##%i0000000000";
-                    char ch3[] = "Last Constants##%i0000000000";
-                    sprintf(ch, "PS Assembly %i", i);
-                    sprintf(ch1, "Disable Shader##%i", i);
-                    sprintf(ch2, "Use New Shader##%i", i);
-                    sprintf(ch3, "Last Constants##%i", i);
-                    if(ImGui::Button("Compile")) {
-                        ps[i]->compileNewASM();
-                    }
-                    if(ImGui::Button("Edit")) {
-                        ps[i]->editedAsm = ps[i]->fxcAsm;
-                        stShaderEditor* s = new stShaderEditor(ps[i]->oName, ps[i]->editedAsm, new TextEditor(), ps[i]);
-                        s->editor->SetShowWhitespaces(0);
-                        s->editor->SetText(s->bs->editedAsm);
-                        lst.push_back(s);
-                        //editor.SetText(ps[i]->editedAsm);
-                        //editor.SetShowWhitespaces(0);
-                    }
-                    ImGui::Checkbox(ch1, &ps[i]->disable);
-                    ImGui::Checkbox(ch2, &ps[i]->useNewShader);
-                    if(!ps[i]->newShader)
-                        ps[i]->useNewShader = false;
-                    if(ImGui::TreeNode(ch)) {
-                        //char* as = (char*) ps[i]->GetAsm();
-                        ImGui::Text("%s\n", ps[i]->fxcAsm.c_str());
-                        ImGui::TreePop();
-                    }
-                    if(ImGui::TreeNode(ch3)) {
-                        for(int c = 0; c < 255; c++) {
-                            ImGui::Text("c%i, %f, %f, %f, %f", c, ps[i]->constants[c][0], ps[i]->constants[c][1], ps[i]->constants[c][2], ps[i]->constants[c][3]);
-                        }
-                        ImGui::TreePop();
-                    }
-                }
-                ImGui::TreePop();
-            }
-        }
-    }
-    if(0) {
-        if(ImGui::CollapsingHeader("Vertex shaders")) {
-            for(int i = 0; i < shader_names_vs.size(); i++) {
-                if(ImGui::TreeNode(shader_names_vs[i])) {
-                    if(vs[i]) {
-                        ImGui::Text("VS ID %i", vs[i]->id);
-                        char c[] = "VS Assembly 000000000000";
-                        sprintf(c, "VS Assembly %i", i);
-                        if(ImGui::TreeNode(c)) {
-                            //char* as = (char*) vs[i]->GetAsm();
-                            ImGui::Text("%s\n", vs[i]->fxcAsm.c_str());
-                            ImGui::TreePop();
-                        }
-                        for(int c = 0; c < 256; c++) {
-                            ImGui::Text("c%i, %f, %f, %f, %f", c, vs[i]->constants[c][0], vs[i]->constants[c][1], vs[i]->constants[c][2], vs[i]->constants[c][3]);
-                        }
-                    }
-                    ImGui::TreePop();
-                }
-            }
-        }
-    }
-#endif
-
     if(bDisplayFPSCounter && ImGui::CollapsingHeader("address debug")) {
         ImGui::Checkbox("Show Demo Window", &showDemoWindow);
 
@@ -3546,7 +3132,6 @@ void ShadowResFix::DrawMainWindow() {
             ImGui::SliderInt("Vehicle density BA +0xD60E9C ", (int*) (baseAddress + 0xD60E9C), 0, 100);
         }
     }
-
 
     ImGui::BeginChild("##ChildDummy", ImVec2(ImGui::GetContentRegionAvail().x, WindowSize.y), false, ImGuiWindowFlags_NoScrollbar);
     ImGui::EndChild();

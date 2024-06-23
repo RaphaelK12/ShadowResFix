@@ -29,12 +29,6 @@ extern UINT gWindowWidth; // see dllmain.cpp-> CreateDevice/Reset
 extern UINT gWindowHeight;
 extern UINT gWindowDivisor;
 
-extern m_IDirect3DTexture9* NormalTex;
-extern m_IDirect3DTexture9* DiffuseTex;
-extern m_IDirect3DTexture9* SpecularTex;
-extern m_IDirect3DTexture9* DepthTex;
-extern m_IDirect3DTexture9* StencilTex;
-extern m_IDirect3DTexture9* BloomTex;
 
 // Near Far Plane
 extern bool gNearFarPlane;
@@ -149,12 +143,23 @@ std::list<m_IDirect3DTexture9*> textureList;
 
 m_IDirect3DTexture9* rainDepth = nullptr;
 
+extern m_IDirect3DTexture9* NormalTex;
+extern m_IDirect3DTexture9* DiffuseTex;
+extern m_IDirect3DTexture9* SpecularTex;
+extern m_IDirect3DTexture9* DepthTex;
+extern m_IDirect3DTexture9* StencilTex;
+extern m_IDirect3DTexture9* BloomTex;
+
 // postfx textures
 IDirect3DTexture9* pHDRTex =  nullptr; // game hdr texture
 IDirect3DTexture9* pHDRTex2 =  nullptr; // main temp texture
 IDirect3DTexture9* pHDRTex3 =  nullptr; // main temp texture
-IDirect3DTexture9* pHalfHDRTex =  nullptr; // main temp texture
-IDirect3DTexture9* pQuarterHDRTex =  nullptr; // main temp texture
+
+IDirect3DTexture9* pShadowBlurTex1 =  nullptr; // main shadow temp texture
+IDirect3DTexture9* pShadowBlurTex2 =  nullptr; // main shadow temp texture
+
+IDirect3DTexture9* pHalfHDRTex =  nullptr; // game half res screen texture
+IDirect3DTexture9* pQuarterHDRTex =  nullptr; //  game 1/4 res screen texture
 IDirect3DTexture9* pHDRDownsampleTex =  nullptr; // main downsampled texture
 IDirect3DTexture9* pHDRDownsampleTex2 =  nullptr; // main downsampled texture
 
@@ -164,6 +169,27 @@ IDirect3DTexture9* searchTex=  nullptr; // loaded from file
 IDirect3DTexture9* edgesTex =  nullptr; // smaa gen
 IDirect3DTexture9* blendTex =  nullptr; // smaa gen
 IDirect3DVolumeTexture9* bluenoisevolume =  nullptr; // loaded from file
+extern bool afterpostfx;
+IDirect3DTexture9* mainDepthTex = nullptr; // gen
+IDirect3DTexture9* oldDepthTex = nullptr; // gen
+IDirect3DSurface9* mainDepth = nullptr; // gen
+IDirect3DSurface9* oldDepth = nullptr; // gen
+
+IDirect3DTexture9* aoHalfTex = 0;
+IDirect3DTexture9* aoTex = 0;
+IDirect3DTexture9* halfDepthDsTex = 0;
+IDirect3DTexture9* stencilDownsampled = nullptr; // gen
+IDirect3DTexture9* depthStenciltex = nullptr; // gen
+
+// temp set and used in postfx
+IDirect3DTexture9* renderTargetTex = 0;
+IDirect3DTexture9* textureRead = 0;
+IDirect3DSurface9* renderTargetSurf = nullptr;
+IDirect3DSurface9* surfaceRead = nullptr;
+
+IDirect3DTexture9* OldShadowAtlas = nullptr;
+IDirect3DTexture9* NewShadowAtlas = nullptr;
+IDirect3DSurface9* OldShadowAtlasSurf = nullptr;
 
 
 
@@ -247,35 +273,22 @@ IDirect3DPixelShader9* depth_of_field_tent_ps = nullptr;
 IDirect3DPixelShader9* depth_of_field_blur_ps = nullptr;
 IDirect3DPixelShader9* depth_of_field_coc_ps  = nullptr;
 IDirect3DPixelShader9* stipple_filter_ps = nullptr;
+IDirect3DPixelShader9* motionblur_ps = nullptr;
 
 IDirect3DPixelShader9* SSAO_ps = nullptr;
 IDirect3DPixelShader9* SSAO_ps2 = nullptr;
 IDirect3DVertexShader9* SSAO_vs = nullptr;
 IDirect3DPixelShader9* downsampler_ps = nullptr;
 
+IDirect3DPixelShader9* DeferredShadowGen_ps = nullptr;
+IDirect3DPixelShader9* DeferredShadowBlur1_ps = nullptr;
+IDirect3DPixelShader9* DeferredShadowBlur2_ps = nullptr;
+IDirect3DPixelShader9* DeferredShadowBlur3_ps = nullptr;
+IDirect3DPixelShader9* DeferredShadowUse1_ps = nullptr;
+IDirect3DPixelShader9* DeferredShadowUse2_ps = nullptr;
 
 
-extern bool afterpostfx;
-IDirect3DTexture9* mainDepthTex =  nullptr; // gen
-IDirect3DTexture9* oldDepthTex =  nullptr; // gen
-IDirect3DSurface9* mainDepth =  nullptr; // gen
-IDirect3DSurface9* oldDepth =  nullptr; // gen
 
-IDirect3DTexture9* aoHalfTex = 0;
-IDirect3DTexture9* aoTex = 0;
-IDirect3DTexture9* halfDepthDsTex = 0;
-IDirect3DTexture9* stencilDownsampled =  nullptr; // gen
-IDirect3DTexture9* depthStenciltex =  nullptr; // gen
-
-// temp set and used in postfx
-IDirect3DTexture9* renderTargetTex = 0;
-IDirect3DTexture9* textureRead = 0;
-IDirect3DSurface9* renderTargetSurf = nullptr;
-IDirect3DSurface9* surfaceRead = nullptr;
-
-IDirect3DTexture9* OldShadowAtlas = nullptr;
-IDirect3DTexture9* NewShadowAtlas = nullptr;
-IDirect3DSurface9* OldShadowAtlasSurf = nullptr;
 
 IDirect3DPixelShader9* MSAA_CustomResolve_ps = nullptr;
 IDirect3DPixelShader9* MSAA_Render_ps = nullptr;
@@ -597,6 +610,7 @@ HRESULT m_IDirect3DDevice9Ex::CreateTexture(THIS_ UINT Width, UINT Height, UINT 
 
     if(tex != nullptr && (Format == D3DFMT_R16F || Format == D3DFMT_R32F) && Height == /*256*/ 128 << *ShadowQualityBA0xD612B8 && Width == Height * 4 && Levels == 1) {
         OldShadowAtlas = tex;
+        SAFE_RELEASE(NewShadowAtlas);
         HRESULT hr = ProxyInterface->CreateTexture(Width, Height, Levels,                       D3DUSAGE_DEPTHSTENCIL, D3DFMT_D24X8, Pool, &NewShadowAtlas, pSharedHandle);
         NewShadowAtlas = new m_IDirect3DTexture9(NewShadowAtlas, this, Width, Height, Levels,   D3DUSAGE_DEPTHSTENCIL, D3DFMT_D24X8, Pool, name, addToList);
         //HRESULT hr = ProxyInterface->CreateTexture(Width, Height, Levels,                       D3DUSAGE_DEPTHSTENCIL, (D3DFORMAT) MAKEFOURCC('D','F','2','4'), Pool, &NewShadowAtlas, pSharedHandle);
@@ -619,20 +633,22 @@ HRESULT m_IDirect3DDevice9Ex::CreateTexture(THIS_ UINT Width, UINT Height, UINT 
         pHDRTex = (*ppTexture);
 
 
-        textureList.remove((m_IDirect3DTexture9*)pHDRTex2);
-        textureList.remove((m_IDirect3DTexture9*)pHDRTex3);
-        textureList.remove((m_IDirect3DTexture9*)areaTex);
-        textureList.remove((m_IDirect3DTexture9*)searchTex);
-        textureList.remove((m_IDirect3DTexture9*)edgesTex);
-        textureList.remove((m_IDirect3DTexture9*)blendTex);
+        textureList.remove((m_IDirect3DTexture9*) pHDRTex2);
+        textureList.remove((m_IDirect3DTexture9*) pHDRTex3);
+        textureList.remove((m_IDirect3DTexture9*) areaTex);
+        textureList.remove((m_IDirect3DTexture9*) searchTex);
+        textureList.remove((m_IDirect3DTexture9*) edgesTex);
+        textureList.remove((m_IDirect3DTexture9*) blendTex);
         textureList.remove((m_IDirect3DTexture9*) bluenoisevolume);
-        textureList.remove((m_IDirect3DTexture9*)aoHalfTex);
+        textureList.remove((m_IDirect3DTexture9*) aoHalfTex);
         textureList.remove((m_IDirect3DTexture9*) aoTex);
-        textureList.remove((m_IDirect3DTexture9*)halfDepthDsTex);
+        textureList.remove((m_IDirect3DTexture9*) halfDepthDsTex);
         textureList.remove((m_IDirect3DTexture9*) stencilDownsampled);
         textureList.remove((m_IDirect3DTexture9*) pHDRDownsampleTex);
         textureList.remove((m_IDirect3DTexture9*) pHDRDownsampleTex2);
         textureList.remove((m_IDirect3DTexture9*) depthStenciltex);
+        textureList.remove((m_IDirect3DTexture9*) pShadowBlurTex1);
+        textureList.remove((m_IDirect3DTexture9*) pShadowBlurTex2);
 
         // Release before, just to be sure
         SAFE_RELEASE(pHDRTex2);
@@ -650,6 +666,8 @@ HRESULT m_IDirect3DDevice9Ex::CreateTexture(THIS_ UINT Width, UINT Height, UINT 
         SAFE_RELEASE(pHDRDownsampleTex);
         SAFE_RELEASE(pHDRDownsampleTex2);
         SAFE_RELEASE(depthStenciltex);
+        SAFE_RELEASE(pShadowBlurTex1);
+        SAFE_RELEASE(pShadowBlurTex2);
 
         // create new texture to postfx
         HRESULT hr = ProxyInterface->CreateTexture(Width, Height, Levels, Usage, Format, Pool, &pHDRTex2, 0);
@@ -734,6 +752,15 @@ HRESULT m_IDirect3DDevice9Ex::CreateTexture(THIS_ UINT Width, UINT Height, UINT 
                 hr = CreateTexture(Width /2, Height/2 , Levels /*1*/, Usage, D3DFMT_A32B32G32R32F, Pool, &pHDRDownsampleTex2, 0);
                 if(hr == S_OK && pHDRDownsampleTex2) {
                     ((m_IDirect3DTexture9*) pHDRDownsampleTex2)->name = "MainPostfx";
+                }
+
+                hr = CreateTexture(Width, Height, Levels, Usage, D3DFMT_G16R16F, Pool, &pShadowBlurTex1, 0);
+                if(hr == S_OK && pShadowBlurTex1) {
+                    ((m_IDirect3DTexture9*) pShadowBlurTex1)->name = "MainPostfx";
+                }
+                hr = CreateTexture(Width, Height, Levels, Usage, D3DFMT_G16R16F, Pool, &pShadowBlurTex2, 0);
+                if(hr == S_OK && pShadowBlurTex2) {
+                    ((m_IDirect3DTexture9*) pShadowBlurTex2)->name = "MainPostfx";
                 }
 
                 hr = CreateTexture(Width /2, Height/2 , Levels /*1*/, 0, D3DFMT_D24S8, Pool, &depthStenciltex, 0);
@@ -888,6 +915,8 @@ HRESULT m_IDirect3DDevice9Ex::SetPixelShaderConstantF(THIS_ UINT StartRegister, 
         }
         return hr;
     }
+    hr = ProxyInterface->SetPixelShaderConstantF(StartRegister, pConstantData, Vector4fCount);
+    return hr;
 }
 
 HRESULT m_IDirect3DDevice9Ex::SetVertexShaderConstantF(THIS_ UINT StartRegister, CONST float* pConstantData, UINT Vector4fCount) {
@@ -1028,20 +1057,21 @@ HRESULT m_IDirect3DDevice9Ex::SetVertexShaderConstantF(THIS_ UINT StartRegister,
 }
 
 HRESULT m_IDirect3DDevice9Ex::SetTexture(DWORD Stage, IDirect3DBaseTexture9* pTexture) {
-    if(0 && Stage == 0 && pTexture) {
+    if(gFixRainDrops && Stage == 1 && pTexture == 0 && DWORD(pRainDropsRefractionHDRTex) > 0x4) {
         IDirect3DVertexShader9* pShader = nullptr;
         m_IDirect3DVertexShader9* pShader2 = nullptr;
         GetVertexShader(&pShader);
         if(pShader) {
             pShader2 = static_cast<m_IDirect3DVertexShader9*>(pShader);
-            if(pShader2) {
+            if(pShader2 && (pShader2->id == 553 || pShader2->id == 554)) {
+                pTexture = pRainDropsRefractionHDRTex;
             }
         }
     }
     // fix from AssaultKifle47
-    if(gFixRainDrops && Stage == 1 && pTexture == 0 && pRainDropsRefractionHDRTex) {
-        pTexture = pRainDropsRefractionHDRTex;
-    }
+    //if(gFixRainDrops && Stage == 1 && pTexture == 0 && DWORD(pRainDropsRefractionHDRTex)>0x4) {
+    //    pTexture = pRainDropsRefractionHDRTex;
+    //}
     if(pTexture) {
         m_IDirect3DTexture9* pTexture2 = static_cast<m_IDirect3DTexture9*>(pTexture);
         if(pTexture2)
@@ -1178,6 +1208,7 @@ int getBinShaderSize(CONST DWORD* pFunction) {
     }
     return sz+1;
 }
+
 
 
 HRESULT m_IDirect3DDevice9Ex::CreatePixelShader(THIS_ CONST DWORD* pFunction, IDirect3DPixelShader9** ppShader) {
@@ -1661,7 +1692,6 @@ HRESULT m_IDirect3DDevice9Ex::SetRenderState(D3DRENDERSTATETYPE State, DWORD Val
 }
 
 
-DWORD CoronaDepth = 0;
 #define PostfxTextureCount 15
 IDirect3DBaseTexture9* prePostFx[PostfxTextureCount] = { 0 };
 DWORD Samplers[PostfxTextureCount] = { D3DTEXF_LINEAR };
@@ -1670,18 +1700,26 @@ extern bool usePrimitiveUp;
  bool useDof = false;
  int UseSunShafts = 1;
  int SS_NumSamples[4] = { 20, 20, 20, 20 };
- int useDepthOfField = 0;
- bool useStippleFilter = false;
+ int useDepthOfField = 3;
+ bool useStippleFilter = true;
  bool useNewShadowAtlas = false;
 
 extern float PostFxFog[4];
 float NoiseSale[4] = { 1.f / 256, 0.3, -0.5, 0 };
 
+float BilateralDepthTreshold[4] = { 0.003, 0.002, 0.004, 0.005 };
+
 extern bool fixDistantOutlineUsingDXVK;
+extern bool useMotionBlur;
 int DofSamples[4] = { 20 };
 bool downsampleStencil = 0;
 int DrawCallsCount = 0;
 bool useLinear = 1;
+
+// 0 off, 1 horizontal, 2 vertical, 3 horizontal e vertical.
+int useDefferedShadows = 0;
+
+
 
 void swapbuffers() {
     auto temptex = renderTargetTex;
@@ -1779,9 +1817,15 @@ static HRESULT PostFx3(m_IDirect3DDevice9Ex* hk_device, LPDIRECT3DDEVICE9 pDevic
             textureRead->GetSurfaceLevel(0, &surfaceRead);
             aoTex->GetSurfaceLevel(0, &aoSurface);
             pHDRTex3->GetSurfaceLevel(0, &pHDRSurface3);
+            IDirect3DSurface9* pShadowBlurSurf1 = nullptr;
+            IDirect3DSurface9* pShadowBlurSurf2 = nullptr;
+
+            pShadowBlurTex1->GetSurfaceLevel(0, &pShadowBlurSurf1);
+            pShadowBlurTex2->GetSurfaceLevel(0, &pShadowBlurSurf2);
+
 
             // ready for new post processing?
-            if(backBuffer && renderTargetSurf && surfaceRead && aoSurface) {
+            if(backBuffer && renderTargetSurf && surfaceRead && pShadowBlurSurf1 && pShadowBlurSurf2) {
                 if(UseSSAO && SSAO_ps) {
                     if(UseSSAA) {
                         pDevice->SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
@@ -1807,14 +1851,31 @@ static HRESULT PostFx3(m_IDirect3DDevice9Ex* hk_device, LPDIRECT3DDEVICE9 pDevic
                     vec4[1] = AoDistance;
                     pDevice->SetPixelShaderConstantF(211, vec4, 1);
                     //pDevice->SetTexture(2, 0);
-                    hk_device->SetRenderTarget(0, aoSurface);
+                    hk_device->SetRenderTarget(0, pShadowBlurSurf1);
                     pDevice->SetTexture(2, ((m_IDirect3DTexture9*) textureRead)->GetProxyInterface());
                     pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
-                    //pDevice->SetTexture(2, 0);
+                    pDevice->SetTexture(3, 0);
+
+                    //hk_device->SetPixelShader(DeferredShadowBlur1_ps);
+                    pDevice->SetPixelShaderConstantF(140, BilateralDepthTreshold, 1);
+                    //hk_device->SetRenderTarget(0, pShadowBlurSurf2);
+                    //pDevice->SetTexture(11, static_cast<m_IDirect3DTexture9*>(pShadowBlurTex1)->GetProxyInterface());
+                    //pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+
+                    //hk_device->SetPixelShader(DeferredShadowBlur2_ps);
+                    //hk_device->SetRenderTarget(0, pShadowBlurSurf1);
+                    //pDevice->SetTexture(11, static_cast<m_IDirect3DTexture9*>(pShadowBlurTex2)->GetProxyInterface());
+                    //pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+
+                    hk_device->SetPixelShader(DeferredShadowBlur3_ps);
+                    hk_device->SetRenderTarget(0, pShadowBlurSurf2);
+                    pDevice->SetTexture(11, static_cast<m_IDirect3DTexture9*>(pShadowBlurTex1)->GetProxyInterface());
+                    pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+
+                    pDevice->SetTexture(11, 0);
+
                     hk_device->SetPixelShader(SSAO_ps2);
-
                     hk_device->SetRenderTarget(0, renderTargetSurf);
-
                     switch(UseDebugTextures) {
                         //"None", 
                         //"Difuse", 
@@ -1848,20 +1909,13 @@ static HRESULT PostFx3(m_IDirect3DDevice9Ex* hk_device, LPDIRECT3DDEVICE9 pDevic
                             pDevice->SetTexture(2, ((m_IDirect3DTexture9*) textureRead)->GetProxyInterface());
                             break;
                     }
-                    pDevice->SetTexture(1, ((m_IDirect3DTexture9*) aoTex)->GetProxyInterface());
+                    pDevice->SetTexture(3, ((m_IDirect3DTexture9*) pShadowBlurTex2)->GetProxyInterface());
                     pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
                     swapbuffers();
                     pDevice->SetTexture(1, prePostFx[1]);
+                    pDevice->SetTexture(3, prePostFx[3]);
+                    pDevice->SetTexture(11, prePostFx[11]);
                     //pDevice->SetTexture(2, 0);
-                    pDevice->SetPixelShader(pShader2->GetProxyInterface());
-                }
-
-                if(useStippleFilter && stipple_filter_ps) {
-                    hk_device->SetPixelShader(stipple_filter_ps);
-                    hk_device->SetRenderTarget(0, renderTargetSurf);
-                    pDevice->SetTexture(2, ((m_IDirect3DTexture9*) textureRead)->GetProxyInterface());
-                    pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
-                    swapbuffers();
                     pDevice->SetPixelShader(pShader2->GetProxyInterface());
                 }
 
@@ -1973,6 +2027,24 @@ static HRESULT PostFx3(m_IDirect3DDevice9Ex* hk_device, LPDIRECT3DDEVICE9 pDevic
                     pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
                     swapbuffers();
                     //pDevice->SetTexture(2, 0);
+                    pDevice->SetPixelShader(pShader2->GetProxyInterface());
+                }
+
+                if(useMotionBlur && motionblur_ps) {
+                    hk_device->SetPixelShader(motionblur_ps);
+                    hk_device->SetRenderTarget(0, renderTargetSurf);
+                    pDevice->SetTexture(2, ((m_IDirect3DTexture9*) textureRead)->GetProxyInterface());
+                    pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+                    swapbuffers();
+                    pDevice->SetPixelShader(pShader2->GetProxyInterface());
+                }
+
+                if(useStippleFilter && stipple_filter_ps) {
+                    hk_device->SetPixelShader(stipple_filter_ps);
+                    hk_device->SetRenderTarget(0, renderTargetSurf);
+                    pDevice->SetTexture(2, ((m_IDirect3DTexture9*) textureRead)->GetProxyInterface());
+                    pDevice->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+                    swapbuffers();
                     pDevice->SetPixelShader(pShader2->GetProxyInterface());
                 }
 
@@ -2473,6 +2545,8 @@ static HRESULT PostFx3(m_IDirect3DDevice9Ex* hk_device, LPDIRECT3DDEVICE9 pDevic
             SAFE_RELEASE(surfaceRead);
             SAFE_RELEASE(aoSurface);
             SAFE_RELEASE(mainTex);
+            SAFE_RELEASE(pShadowBlurSurf1);
+            SAFE_RELEASE(pShadowBlurSurf2);
 
             if(UseSSAA) {
                 pDevice->SetSamplerState(0, D3DSAMP_MAGFILTER, OldSampler);
@@ -2588,69 +2662,172 @@ HRESULT m_IDirect3DDevice9Ex::DrawPrimitive(D3DPRIMITIVETYPE PrimitiveType, UINT
                     return hr;
                 }
             }
-            // deferred 1
-            else if(useNewShadowAtlas == true && pShader2->id == 6 && NewShadowAtlas) {
-                SetTexture(15, NewShadowAtlas);
-                //To enable Fetch - 4 on a texture sampler(sampler 0 in this example) :
+            // deferred 1 e 2
+            else if(pShader2->id == 6 || pShader2->id == 7) {
+                IDirect3DSurface9* pShadowBlurSurf1 = nullptr;
+                IDirect3DSurface9* pShadowBlurSurf2 = nullptr;
+                IDirect3DSurface9* OldRenderTarget = nullptr;
+                IDirect3DTexture9* Oldtexture = nullptr;
+
+                if(useDefferedShadows > 0 && pShadowBlurTex1 && pShadowBlurTex2) {
+                    pShadowBlurTex1->GetSurfaceLevel(0, &pShadowBlurSurf1);
+                    pShadowBlurTex2->GetSurfaceLevel(0, &pShadowBlurSurf2);
+                    ProxyInterface->GetRenderTarget(0, &OldRenderTarget);
+                    if(pShadowBlurSurf1 && pShadowBlurSurf2 && OldRenderTarget) {
+                        SetRenderTarget(0, pShadowBlurSurf1);
+                        SetPixelShader(DeferredShadowGen_ps);
+                        ProxyInterface->SetPixelShaderConstantF(140, BilateralDepthTreshold, 1);
+                        DWORD old_SAMP_MAGFILTER = 0;
+                        ProxyInterface->GetSamplerState(11, D3DSAMP_MAGFILTER, &old_SAMP_MAGFILTER);
+                        ProxyInterface->GetTexture(11, (IDirect3DBaseTexture9**) & Oldtexture);
+                        ProxyInterface->SetSamplerState(11, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+
+                        if(useNewShadowAtlas == true && NewShadowAtlas) {
+                            ProxyInterface->SetTexture(15, static_cast<m_IDirect3DTexture9*>(NewShadowAtlas)->GetProxyInterface());
+                            //To enable Fetch - 4 on a texture sampler(sampler 0 in this example) :
+                        #define FETCH4_ENABLE ((DWORD)MAKEFOURCC('G', 'E', 'T', '4'))
+                        #define FETCH4_DISABLE ((DWORD)MAKEFOURCC('G', 'E', 'T', '1'))
+                            DWORD old_SAMP_MIPMAPLODBIAS = 0;
+                            DWORD old_SAMP_MAGFILTER = 0;
+                            DWORD old_SAMP_MINFILTER = 0;
+
+                            // Enable Fetch-4 on sampler 0 by overloading the MIPMAPLODBIAS render state
+                            ProxyInterface->GetSamplerState(15, D3DSAMP_MIPMAPLODBIAS, &old_SAMP_MIPMAPLODBIAS);
+                            ProxyInterface->GetSamplerState(15, D3DSAMP_MAGFILTER, &old_SAMP_MAGFILTER);
+                            ProxyInterface->GetSamplerState(15, D3DSAMP_MINFILTER, &old_SAMP_MINFILTER);
+
+                            ProxyInterface->SetSamplerState(15, D3DSAMP_MIPMAPLODBIAS, FETCH4_ENABLE);
+                            // Set point sampling filtering (required for Fetch-4 to work)
+                            ProxyInterface->SetSamplerState(15, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+                            ProxyInterface->SetSamplerState(15, D3DSAMP_MINFILTER, D3DTEXF_LINEAR);
+                            ProxyInterface->SetSamplerState(15, D3DSAMP_MIPFILTER, D3DTEXF_POINT);
+                            hr = ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+
+                            ProxyInterface->SetSamplerState(15, D3DSAMP_MIPMAPLODBIAS, old_SAMP_MIPMAPLODBIAS);
+                            ProxyInterface->SetSamplerState(15, D3DSAMP_MAGFILTER, old_SAMP_MAGFILTER);
+                            ProxyInterface->SetSamplerState(15, D3DSAMP_MINFILTER, old_SAMP_MINFILTER);
+
+                            ProxyInterface->SetTexture(15, static_cast<m_IDirect3DTexture9*>(OldShadowAtlas)->GetProxyInterface());
+                        }
+                        else
+                            ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+
+                        if(useDefferedShadows == 1) {
+                            ProxyInterface->SetRenderTarget(0, static_cast<m_IDirect3DSurface9*>(pShadowBlurSurf2)->GetProxyInterface());
+                            ProxyInterface->SetTexture(11, static_cast<m_IDirect3DTexture9*>(pShadowBlurTex1)->GetProxyInterface());
+                            SetPixelShader(DeferredShadowBlur1_ps);
+                            ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+                        }
+                        if(useDefferedShadows == 2) {
+                            SetRenderTarget(0, pShadowBlurSurf2);
+                            ProxyInterface->SetTexture(11, static_cast<m_IDirect3DTexture9*>(pShadowBlurTex1)->GetProxyInterface());
+                            SetPixelShader(DeferredShadowBlur2_ps);
+                            ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+                        }
+                        if(useDefferedShadows == 3) {
+                            SetPixelShader(DeferredShadowBlur1_ps);
+                            ProxyInterface->SetTexture(11, static_cast<m_IDirect3DTexture9*>(pShadowBlurTex1)->GetProxyInterface());
+                            SetRenderTarget(0, pShadowBlurSurf2);
+                            ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+
+                            SetPixelShader(DeferredShadowBlur2_ps);
+                            ProxyInterface->SetTexture(11, static_cast<m_IDirect3DTexture9*>(pShadowBlurTex2)->GetProxyInterface());
+                            SetRenderTarget(0, pShadowBlurSurf1);
+                            ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+                        }
+                        if(useDefferedShadows == 4) {
+                            SetRenderTarget(0, pShadowBlurSurf2);
+                            ProxyInterface->SetTexture(11, static_cast<m_IDirect3DTexture9*>(pShadowBlurTex1)->GetProxyInterface());
+                            SetPixelShader(DeferredShadowBlur3_ps);
+                            ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+                        }
+
+                        ProxyInterface->SetRenderTarget(0, OldRenderTarget);
+                        if(useDefferedShadows == 3)
+                            ProxyInterface->SetTexture(11, static_cast<m_IDirect3DTexture9*>(pShadowBlurTex1)->GetProxyInterface());
+
+                        else
+                            ProxyInterface->SetTexture(11, static_cast<m_IDirect3DTexture9*>(pShadowBlurTex2)->GetProxyInterface());
+
+                        if(pShader2->id == 6)
+                            SetPixelShader(DeferredShadowUse1_ps);
+                        else
+                            SetPixelShader(DeferredShadowUse2_ps);
+                        ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+                        ProxyInterface->SetTexture(11, Oldtexture);
+                        //ProxyInterface->SetTexture(11, 0);
+                        SetPixelShader(pShader);
+                        ProxyInterface->SetSamplerState(11, D3DSAMP_MAGFILTER, old_SAMP_MAGFILTER);
+                        SAFE_RELEASE(pShadowBlurSurf1);
+                        SAFE_RELEASE(pShadowBlurSurf2);
+                        SAFE_RELEASE(OldRenderTarget);
+                        SAFE_RELEASE(Oldtexture);
+                        return hr;
+                    }
+                    SAFE_RELEASE(pShadowBlurSurf1);
+                    SAFE_RELEASE(pShadowBlurSurf2);
+                    SAFE_RELEASE(OldRenderTarget);
+                    SAFE_RELEASE(Oldtexture);
+                    //SetPixelShader(pShader);
+                    ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+                    return hr;
+                }
+
+                if(useNewShadowAtlas == true && NewShadowAtlas) {
+                    ProxyInterface->SetTexture(15, static_cast<m_IDirect3DTexture9*>(NewShadowAtlas)->GetProxyInterface());
+                    //To enable Fetch - 4 on a texture sampler(sampler 0 in this example) :
                 #define FETCH4_ENABLE ((DWORD)MAKEFOURCC('G', 'E', 'T', '4'))
                 #define FETCH4_DISABLE ((DWORD)MAKEFOURCC('G', 'E', 'T', '1'))
-                DWORD old_SAMP_MIPMAPLODBIAS = 0;
-                DWORD old_SAMP_MAGFILTER = 0;
-                DWORD old_SAMP_MINFILTER = 0;
+                    DWORD old_SAMP_MIPMAPLODBIAS = 0;
+                    DWORD old_SAMP_MAGFILTER = 0;
+                    DWORD old_SAMP_MINFILTER = 0;
 
-                // Enable Fetch-4 on sampler 0 by overloading the MIPMAPLODBIAS render state
-                ProxyInterface->GetSamplerState(15, D3DSAMP_MIPMAPLODBIAS, &old_SAMP_MIPMAPLODBIAS );
-                ProxyInterface->GetSamplerState(15, D3DSAMP_MAGFILTER, &old_SAMP_MAGFILTER );
-                ProxyInterface->GetSamplerState(15, D3DSAMP_MINFILTER, &old_SAMP_MINFILTER );
+                    // Enable Fetch-4 on sampler 0 by overloading the MIPMAPLODBIAS render state
+                    ProxyInterface->GetSamplerState(15, D3DSAMP_MIPMAPLODBIAS, &old_SAMP_MIPMAPLODBIAS);
+                    ProxyInterface->GetSamplerState(15, D3DSAMP_MAGFILTER, &old_SAMP_MAGFILTER);
+                    ProxyInterface->GetSamplerState(15, D3DSAMP_MINFILTER, &old_SAMP_MINFILTER);
 
-                //ProxyInterface->SetSamplerState(15, D3DSAMP_MIPMAPLODBIAS, FETCH4_ENABLE);
-                // Set point sampling filtering (required for Fetch-4 to work)
-                ProxyInterface->SetSamplerState(15, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
-                ProxyInterface->SetSamplerState(15, D3DSAMP_MINFILTER, D3DTEXF_LINEAR);
-                ProxyInterface->SetSamplerState(15, D3DSAMP_MIPFILTER, D3DTEXF_POINT);
-                hr = ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+                    //ProxyInterface->SetSamplerState(15, D3DSAMP_MIPMAPLODBIAS, FETCH4_ENABLE);
+                    // Set point sampling filtering (required for Fetch-4 to work)
+                    ProxyInterface->SetSamplerState(15, D3DSAMP_MAGFILTER, D3DTEXF_LINEAR);
+                    ProxyInterface->SetSamplerState(15, D3DSAMP_MINFILTER, D3DTEXF_LINEAR);
+                    ProxyInterface->SetSamplerState(15, D3DSAMP_MIPFILTER, D3DTEXF_POINT);
+                    hr = ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
 
-                ProxyInterface->SetSamplerState(15, D3DSAMP_MIPMAPLODBIAS, old_SAMP_MIPMAPLODBIAS);
-                ProxyInterface->SetSamplerState(15, D3DSAMP_MAGFILTER, old_SAMP_MAGFILTER);
-                ProxyInterface->SetSamplerState(15, D3DSAMP_MINFILTER, old_SAMP_MINFILTER);
+                    ProxyInterface->SetSamplerState(15, D3DSAMP_MIPMAPLODBIAS, old_SAMP_MIPMAPLODBIAS);
+                    ProxyInterface->SetSamplerState(15, D3DSAMP_MAGFILTER, old_SAMP_MAGFILTER);
+                    ProxyInterface->SetSamplerState(15, D3DSAMP_MINFILTER, old_SAMP_MINFILTER);
 
-                SetTexture(15, OldShadowAtlas);
-                return hr;
-            }
-            else if(useNewShadowAtlas == false && pShader2->id == 6 && OldShadowAtlas) {
-                SetTexture(15, OldShadowAtlas);
-                hr = ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
-                return hr;
-            }
-            else if( pShader2->id == 6 ) {
-                SetTexture(15, OldShadowAtlas);
-                hr = ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+                    ProxyInterface->SetTexture(15, static_cast<m_IDirect3DTexture9*>(OldShadowAtlas)->GetProxyInterface());
+                    return hr;
+                }
+
+                // use new deferred
+                SetPixelShader(pShader);
+                ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
                 return hr;
             }
         }
     }
 
     if(fixDistantOutlineUsingDXVK) {
-        GetPixelShader(&pShader);
-        if(pShader) {
-            pShader2 = static_cast<m_IDirect3DPixelShader9*>(pShader);
-            if(pShader2 && pShader2->id == 822 || pShader2->id == 823) {
-                DWORD oldSampler = 0;
-                GetSamplerState(0, D3DSAMP_MAGFILTER, &oldSampler);
-                SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_POINT);
-                hr = ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
-                SetSamplerState(0, D3DSAMP_MAGFILTER, oldSampler);
-                return hr;
-            }
+        if(pShader2 && (pShader2->id == 822 || pShader2->id == 823)) {
+            DWORD oldSampler = 0;
+            GetSamplerState(0, D3DSAMP_MAGFILTER, &oldSampler);
+            SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_POINT);
+            hr = ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
+            SetSamplerState(0, D3DSAMP_MAGFILTER, oldSampler);
+            return hr;
         }
     }
 
     // Fixes coronas being rendered through objects in water reflections.
     if(fixCoronaDepth) {
-        GetRenderState(D3DRS_ZENABLE, &CoronaDepth);
         if(vshader2) {
-            vshader2->replaceConstants();
+            //vshader2->replaceConstants();
             if(vshader2->id == 15) {
+                DWORD CoronaDepth = 0;
+                GetRenderState(D3DRS_ZENABLE, &CoronaDepth);
                 SetRenderState(D3DRS_ZENABLE, 1);
                 hr = ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
                 SetRenderState(D3DRS_ZENABLE, CoronaDepth);
@@ -2661,21 +2838,6 @@ HRESULT m_IDirect3DDevice9Ex::DrawPrimitive(D3DPRIMITIVETYPE PrimitiveType, UINT
 
     hr = ProxyInterface->DrawPrimitive(PrimitiveType, StartVertex, PrimitiveCount);
     return hr;
-}
-
-HRESULT m_IDirect3DDevice9Ex::DrawPrimitiveUP(D3DPRIMITIVETYPE PrimitiveType, UINT PrimitiveCount, CONST void* pVertexStreamZeroData, UINT VertexStreamZeroStride) {
-    DrawCallsCount++;
-    return ProxyInterface->DrawPrimitiveUP(PrimitiveType, PrimitiveCount, pVertexStreamZeroData, VertexStreamZeroStride);
-}
-
-HRESULT m_IDirect3DDevice9Ex::DrawRectPatch(UINT Handle, CONST float* pNumSegs, CONST D3DRECTPATCH_INFO* pRectPatchInfo) {
-    DrawCallsCount++;
-    return ProxyInterface->DrawRectPatch(Handle, pNumSegs, pRectPatchInfo);
-}
-
-HRESULT m_IDirect3DDevice9Ex::DrawTriPatch(UINT Handle, CONST float* pNumSegs, CONST D3DTRIPATCH_INFO* pTriPatchInfo) {
-    DrawCallsCount++;
-    return ProxyInterface->DrawTriPatch(Handle, pNumSegs, pTriPatchInfo);
 }
 
 HRESULT m_IDirect3DDevice9Ex::DrawIndexedPrimitive(THIS_ D3DPRIMITIVETYPE Type, INT BaseVertexIndex, UINT MinVertexIndex, UINT NumVertices, UINT startIndex, UINT primCount) {
@@ -2701,6 +2863,21 @@ HRESULT m_IDirect3DDevice9Ex::DrawIndexedPrimitive(THIS_ D3DPRIMITIVETYPE Type, 
         }
     }
     return ProxyInterface->DrawIndexedPrimitive(Type, BaseVertexIndex, MinVertexIndex, NumVertices, startIndex, primCount);
+}
+
+HRESULT m_IDirect3DDevice9Ex::DrawPrimitiveUP(D3DPRIMITIVETYPE PrimitiveType, UINT PrimitiveCount, CONST void* pVertexStreamZeroData, UINT VertexStreamZeroStride) {
+    DrawCallsCount++;
+    return ProxyInterface->DrawPrimitiveUP(PrimitiveType, PrimitiveCount, pVertexStreamZeroData, VertexStreamZeroStride);
+}
+
+HRESULT m_IDirect3DDevice9Ex::DrawRectPatch(UINT Handle, CONST float* pNumSegs, CONST D3DRECTPATCH_INFO* pRectPatchInfo) {
+    DrawCallsCount++;
+    return ProxyInterface->DrawRectPatch(Handle, pNumSegs, pRectPatchInfo);
+}
+
+HRESULT m_IDirect3DDevice9Ex::DrawTriPatch(UINT Handle, CONST float* pNumSegs, CONST D3DTRIPATCH_INFO* pTriPatchInfo) {
+    DrawCallsCount++;
+    return ProxyInterface->DrawTriPatch(Handle, pNumSegs, pTriPatchInfo);
 }
 
 HRESULT m_IDirect3DDevice9Ex::DrawIndexedPrimitiveUP(D3DPRIMITIVETYPE PrimitiveType, UINT MinIndex, UINT NumVertices, UINT PrimitiveCount, CONST void* pIndexData, D3DFORMAT IndexDataFormat, CONST void* pVertexStreamZeroData, UINT VertexStreamZeroStride) {

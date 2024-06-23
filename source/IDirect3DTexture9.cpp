@@ -150,11 +150,16 @@ ULONG m_IDirect3DTexture9::AddRef(THIS) {
 }
 
 ULONG m_IDirect3DTexture9::Release(THIS) {
-    auto hr = ProxyInterface->Release();
-    if(hr == 0) {
+    if(ProxyInterface) {
+        auto hr = ProxyInterface->Release();
+        if(hr == 0) {
+            delete this;
+        }
+        return hr;
+    }
+    else {
         delete this;
     }
-    return hr;
 }
 
 HRESULT m_IDirect3DTexture9::GetDevice(THIS_ IDirect3DDevice9** ppDevice) {

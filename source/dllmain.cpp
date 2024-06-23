@@ -100,6 +100,9 @@ extern IDirect3DTexture9* OldShadowAtlas ; // game
 extern IDirect3DTexture9* NewShadowAtlas ; // gen
 extern IDirect3DSurface9* OldShadowAtlasSurf ; // gen
 
+extern IDirect3DTexture9* pShadowBlurTex1 ; // gen
+extern IDirect3DTexture9* pShadowBlurTex2 ; // gen
+
 bool gNearFarPlane = 1;
 float NearFarPlane[4] = { 1,1,1,1 };
 
@@ -458,6 +461,9 @@ ShowCursor_ptr    o_ShowCursor = nullptr;
 
 
 // SMAA vertex array
+// obsolete, causes bugs in gtaiv with dxvk,
+// the game has exactly the same implementation using DrawPrimitive()
+// so it is no longer necessary and I keep this here just as an example
 void CreateSmaaVertexArray() {
     //FLOAT Half = 1.0f;
     //FLOAT fWidth5 = (FLOAT) Half;
@@ -490,6 +496,7 @@ void CreateSmaaVertexArray() {
     SmaaVertexArray[3].tex1 = D3DXVECTOR2(1.0f, 1.0f);
 }
 
+// when the game finishes rendering
 HRESULT m_IDirect3DDevice9Ex::Present(CONST RECT* pSourceRect, CONST RECT* pDestRect, HWND hDestWindowOverride, CONST RGNDATA* pDirtyRegion) {
     afterpostfx = false;
     if(mFPSLimitMode == FrameLimiter::FPSLimitMode::FPS_REALTIME)
@@ -576,7 +583,7 @@ HRESULT m_IDirect3DDevice9Ex::Present(CONST RECT* pSourceRect, CONST RECT* pDest
     return hr;
 }
 
-
+// not used
 HRESULT m_IDirect3DDevice9Ex::PresentEx(THIS_ CONST RECT* pSourceRect, CONST RECT* pDestRect, HWND hDestWindowOverride, CONST RGNDATA* pDirtyRegion, DWORD dwFlags) {
     if(mFPSLimitMode == FrameLimiter::FPSLimitMode::FPS_REALTIME)
         while(!FrameLimiter::Sync_RT());
@@ -649,6 +656,7 @@ HRESULT m_IDirect3DDevice9Ex::BeginScene() {
     //return hr;
 }
 
+// when the game finishes rendering
 HRESULT m_IDirect3DDevice9Ex::EndScene() {
     if(!UsePresentToRenderUI) {
         if(bDisplayFPSCounter) {
@@ -829,6 +837,7 @@ HRESULT m_IDirect3D9Ex::CreateDevice(UINT Adapter, D3DDEVTYPE DeviceType, HWND h
     return hr;
 }
 
+// not used
 HRESULT m_IDirect3D9Ex::CreateDeviceEx(THIS_ UINT Adapter, D3DDEVTYPE DeviceType, HWND hFocusWindow, DWORD BehaviorFlags, D3DPRESENT_PARAMETERS* pPresentationParameters, D3DDISPLAYMODEEX* pFullscreenDisplayMode, IDirect3DDevice9Ex** ppReturnedDeviceInterface) {
     pRainDropsRefractionHDRTex = 0;
     if(bForceWindowedMode) {
@@ -893,6 +902,8 @@ HRESULT m_IDirect3DDevice9Ex::Reset(D3DPRESENT_PARAMETERS* pPresentationParamete
     textureList.remove((m_IDirect3DTexture9*) pHDRDownsampleTex2);
     textureList.remove((m_IDirect3DTexture9*) depthStenciltex);
     textureList.remove((m_IDirect3DTexture9*) NewShadowAtlas);
+    textureList.remove((m_IDirect3DTexture9*) pShadowBlurTex1);
+    textureList.remove((m_IDirect3DTexture9*) pShadowBlurTex2);
 
     pHalfHDRTex = nullptr;
     pQuarterHDRTex = nullptr;
@@ -914,9 +925,11 @@ HRESULT m_IDirect3DDevice9Ex::Reset(D3DPRESENT_PARAMETERS* pPresentationParamete
     SAFE_RELEASE(pHDRDownsampleTex2);
     SAFE_RELEASE(depthStenciltex);
 
-    SAFE_RELEASE(OldShadowAtlas);
+    //SAFE_RELEASE(OldShadowAtlas);
     SAFE_RELEASE(OldShadowAtlasSurf);
     SAFE_RELEASE(NewShadowAtlas);
+    SAFE_RELEASE(pShadowBlurTex1);
+    SAFE_RELEASE(pShadowBlurTex2);
 
     //SAFE_RELEASE(mainDepth);
     //SAFE_RELEASE(mainDepthTex);
@@ -947,6 +960,9 @@ HRESULT m_IDirect3DDevice9Ex::Reset(D3DPRESENT_PARAMETERS* pPresentationParamete
     //    hRet = ProxyInterface->Reset(pPresentationParameters);
     //}
 
+    if(hRet != S_OK)
+        printf("%i", textureList.size());
+
     if(hRet == S_OK)
      gShadowResFix->OnAfterD3D9DeviceReset();
 
@@ -965,11 +981,12 @@ HRESULT m_IDirect3DDevice9Ex::Reset(D3DPRESENT_PARAMETERS* pPresentationParamete
     }
     Log::Info("Device9Ex->Reset();");
 
-    CreateSmaaVertexArray();
+    //CreateSmaaVertexArray();
 
     return hRet;
 }
 
+// not used
 HRESULT m_IDirect3DDevice9Ex::ResetEx(THIS_ D3DPRESENT_PARAMETERS* pPresentationParameters, D3DDISPLAYMODEEX* pFullscreenDisplayMode) {
     pRainDropsRefractionHDRTex = 0;
 
@@ -1880,11 +1897,11 @@ bool WINAPI DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved) {
                 }
             }
                         
-            {
+            if(0) {
                 user32_dll = GetModuleHandleA("user32.dll");
                 if(user32_dll) {
-                    o_ClipCursor = (ClipCursor_Ptr) GetProcAddress(user32_dll, "ClipCursor" );
-                    Iat_hook::detour_iat_ptr("ClipCursor" ,  (void*) hk_ClipCursor);
+                    o_ClipCursor = (ClipCursor_Ptr) GetProcAddress(user32_dll, "ClipCursor");
+                    Iat_hook::detour_iat_ptr("ClipCursor", (void*) hk_ClipCursor);
                 }
             }
 

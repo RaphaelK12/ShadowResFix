@@ -394,6 +394,14 @@ extern IDirect3DPixelShader9* SSAdd_PS;
 extern IDirect3DPixelShader9* SSDownsampler_PS;
 extern IDirect3DPixelShader9* SSDownsampler2_PS;
 
+extern IDirect3DPixelShader9* DeferredShadowGen_ps;
+extern IDirect3DPixelShader9* DeferredShadowBlur1_ps;
+extern IDirect3DPixelShader9* DeferredShadowBlur2_ps;
+extern IDirect3DPixelShader9* DeferredShadowBlur3_ps;
+extern IDirect3DPixelShader9* DeferredShadowUse1_ps;
+extern IDirect3DPixelShader9* DeferredShadowUse2_ps;
+
+
 extern IDirect3DPixelShader9* SMAA_EdgeDetection;
 extern IDirect3DPixelShader9* SMAA_BlendingWeightsCalculation;
 extern IDirect3DPixelShader9* SMAA_NeighborhoodBlending;
@@ -412,6 +420,7 @@ extern IDirect3DPixelShader9* depth_of_field_tent_ps ;
 extern IDirect3DPixelShader9* depth_of_field_blur_ps ;
 extern IDirect3DPixelShader9* depth_of_field_coc_ps  ;
 extern IDirect3DPixelShader9* stipple_filter_ps;
+extern IDirect3DPixelShader9* motionblur_ps;
 
 extern IDirect3DPixelShader9* SSAO_ps;
 extern IDirect3DPixelShader9* SSAO_ps2;
@@ -577,62 +586,52 @@ m_IDirect3DPixelShader9::m_IDirect3DPixelShader9(LPDIRECT3DPIXELSHADER9 pShader9
             SAFE_RELEASE(bf2);
         }
 
-        if(!FxaaPS)
-            FxaaPS = CompilePixelShaderFromFile("FXAA.asm", 0, "FXAA.asm", m_pDeviceEx, true, true);
+        if(!FxaaPS) FxaaPS = CompilePixelShaderFromFile("FXAA.asm", 0, "FXAA.asm", m_pDeviceEx, true, true);
 
-        if(!downsampler_ps)
-            downsampler_ps = CompilePixelShaderFromFile("SSAO3_ps.hlsl", "mainDownsample", "SSAO3_Downsample.hlsl", m_pDeviceEx, false, true);
+        if(!downsampler_ps) downsampler_ps = CompilePixelShaderFromFile("SSAO3_ps.hlsl", "mainDownsample", "SSAO3_Downsample.hlsl", m_pDeviceEx, false, true);
         
-        if(!SunShafts_PS)
-            SunShafts_PS = CompilePixelShaderFromFile("SunShafts_PS.hlsl", "SunShafts1", "SunShafts1_PS.hlsl", m_pDeviceEx, false, true);
+        if(!SunShafts_PS) SunShafts_PS = CompilePixelShaderFromFile("SunShafts_PS.hlsl", "SunShafts1", "SunShafts1_PS.hlsl", m_pDeviceEx, false, true);
         
-        if(!SunShafts2_PS)
-            SunShafts2_PS = CompilePixelShaderFromFile("SunShafts_PS.hlsl", "SunShafts2", "SunShafts2_PS.hlsl", m_pDeviceEx, false, true);
+        if(!SunShafts2_PS) SunShafts2_PS = CompilePixelShaderFromFile("SunShafts_PS.hlsl", "SunShafts2", "SunShafts2_PS.hlsl", m_pDeviceEx, false, true);
         
-        if(!SunShafts3_PS)
-            SunShafts3_PS = CompilePixelShaderFromFile("SunShafts_PS.hlsl", "SunShafts3", "SunShafts3_PS.hlsl", m_pDeviceEx, false, true);
+        if(!SunShafts3_PS) SunShafts3_PS = CompilePixelShaderFromFile("SunShafts_PS.hlsl", "SunShafts3", "SunShafts3_PS.hlsl", m_pDeviceEx, false, true);
         
-        if(!SunShafts4_PS)
-            SunShafts4_PS = CompilePixelShaderFromFile("SunShafts_PS.hlsl", "SunShafts4", "SunShafts4_PS.hlsl", m_pDeviceEx, false, true);
+        if(!SunShafts4_PS) SunShafts4_PS = CompilePixelShaderFromFile("SunShafts_PS.hlsl", "SunShafts4", "SunShafts4_PS.hlsl", m_pDeviceEx, false, true);
         
-        if(!SSDownsampler_PS)
-            SSDownsampler_PS = CompilePixelShaderFromFile("SunShafts_PS.hlsl", "SSDownsampler", "SunShaftsDS_PS.hlsl", m_pDeviceEx, false, true);
+        if(!SSDownsampler_PS) SSDownsampler_PS = CompilePixelShaderFromFile("SunShafts_PS.hlsl", "SSDownsampler", "SunShaftsDS_PS.hlsl", m_pDeviceEx, false, true);
 
-        if(!SSDownsampler2_PS)
-            SSDownsampler2_PS = CompilePixelShaderFromFile("SunShafts_PS.hlsl", "SSDownsampler2", "SunShaftsDS2_PS.hlsl", m_pDeviceEx, false, true);
+        if(!SSDownsampler2_PS) SSDownsampler2_PS = CompilePixelShaderFromFile("SunShafts_PS.hlsl", "SSDownsampler2", "SunShaftsDS2_PS.hlsl", m_pDeviceEx, false, true);
 
-        if(!SSAdd_PS)
-            SSAdd_PS = CompilePixelShaderFromFile("SunShafts_PS.hlsl", "SSAdd", "SunShafts_PS.hlsl", m_pDeviceEx, false, true);
+        if(!SSAdd_PS) SSAdd_PS = CompilePixelShaderFromFile("SunShafts_PS.hlsl", "SSAdd", "SunShafts_PS.hlsl", m_pDeviceEx, false, true);
 
-        if(!SSAO_vs)
-            SSAO_vs = CompileVertexShaderFromFile("SSAO_vs.asm", 0, "SSAO_vs.asm", m_pDeviceEx, true, true);
+        if(!SSAO_vs) SSAO_vs = CompileVertexShaderFromFile("SSAO_vs.asm", 0, "SSAO_vs.asm", m_pDeviceEx, true, true);
 
-        if(!SSAO_ps)
-            SSAO_ps = CompilePixelShaderFromFile("SSAO_ps.asm", 0, "SSAO_ps.asm", m_pDeviceEx, true, true);
+        if(!SSAO_ps) SSAO_ps = CompilePixelShaderFromFile("SSAO_ps.asm", 0, "SSAO_ps.asm", m_pDeviceEx, true, true);
 
-        if(!SSAO_ps2)
-            SSAO_ps2 = CompilePixelShaderFromFile("SSAO_ps2.asm", 0, "SSAO_ps2.asm", m_pDeviceEx, true, true);
+        if(!SSAO_ps2) SSAO_ps2 = CompilePixelShaderFromFile("SSAO_ps2.asm", 0, "SSAO_ps2.asm", m_pDeviceEx, true, true);
 
-        if(!dof_blur_ps)
-            dof_blur_ps = CompilePixelShaderFromFile("dof_blur.asm", 0, "dof_blur.asm", m_pDeviceEx, true, true);
+        if(!dof_blur_ps) dof_blur_ps = CompilePixelShaderFromFile("dof_blur.asm", 0, "dof_blur.asm", m_pDeviceEx, true, true);
 
-        if(!dof_coc_ps)
-            dof_coc_ps = CompilePixelShaderFromFile("dof_coc.asm", 0, "dof_coc.asm", m_pDeviceEx, true, true);
+        if(!dof_coc_ps) dof_coc_ps = CompilePixelShaderFromFile("dof_coc.asm", 0, "dof_coc.asm", m_pDeviceEx, true, true);
 
-        if(!depth_of_field_ps)
-            depth_of_field_ps = CompilePixelShaderFromFile("depth_of_field_ps.asm", 0, "depth_of_field_ps.asm", m_pDeviceEx, true, true);
+        if(!depth_of_field_ps) depth_of_field_ps = CompilePixelShaderFromFile("depth_of_field_ps.asm", 0, "depth_of_field_ps.asm", m_pDeviceEx, true, true);
 
-        if(!depth_of_field_tent_ps)
-            depth_of_field_tent_ps = CompilePixelShaderFromFile("depth_of_field_tent_ps.asm", 0, "depth_of_field_tent_ps.asm", m_pDeviceEx, true, true);
+        if(!depth_of_field_tent_ps) depth_of_field_tent_ps = CompilePixelShaderFromFile("depth_of_field_tent_ps.asm", 0, "depth_of_field_tent_ps.asm", m_pDeviceEx, true, true);
 
-        if(!depth_of_field_blur_ps)
-            depth_of_field_blur_ps = CompilePixelShaderFromFile("depth_of_field_blur_ps.asm", 0, "depth_of_field_blur_ps.asm", m_pDeviceEx, true, true);
+        if(!depth_of_field_blur_ps) depth_of_field_blur_ps = CompilePixelShaderFromFile("depth_of_field_blur_ps.asm", 0, "depth_of_field_blur_ps.asm", m_pDeviceEx, true, true);
 
-        if(!depth_of_field_coc_ps)
-            depth_of_field_coc_ps = CompilePixelShaderFromFile("depth_of_field_coc_ps.asm", 0, "depth_of_field_coc_ps.asm", m_pDeviceEx, true, true);
+        if(!depth_of_field_coc_ps) depth_of_field_coc_ps = CompilePixelShaderFromFile("depth_of_field_coc_ps.asm", 0, "depth_of_field_coc_ps.asm", m_pDeviceEx, true, true);
 
-        if(!stipple_filter_ps)
-            stipple_filter_ps = CompilePixelShaderFromFile("stipple_filter_ps.asm", 0, "stipple_filter_ps.asm", m_pDeviceEx, true, true);
+        if(!stipple_filter_ps) stipple_filter_ps = CompilePixelShaderFromFile("stipple_filter_ps.asm", 0, "stipple_filter_ps.asm", m_pDeviceEx, true, true);
+        
+        if(!motionblur_ps) motionblur_ps = CompilePixelShaderFromFile("motionblur.asm", 0, "motionblur.asm", m_pDeviceEx, true, true);
+        
+        if(!DeferredShadowGen_ps  ) DeferredShadowGen_ps   = CompilePixelShaderFromFile("DeferredShadowGen.asm", 0, "DeferredShadowGen_ps.asm", m_pDeviceEx, true, true);
+        if(!DeferredShadowBlur1_ps) DeferredShadowBlur1_ps = CompilePixelShaderFromFile("DeferredShadowBlur.hlsl", "BlurHorizontal", "BlurHorizontal", m_pDeviceEx, false, true);
+        if(!DeferredShadowBlur2_ps) DeferredShadowBlur2_ps = CompilePixelShaderFromFile("DeferredShadowBlur.hlsl", "BlurVertical", "BlurVertical", m_pDeviceEx, false, true);
+        if(!DeferredShadowBlur3_ps) DeferredShadowBlur3_ps = CompilePixelShaderFromFile("DeferredShadowBlur.hlsl", "BlurOmini", "BlurOmini", m_pDeviceEx, false, true);
+        if(!DeferredShadowUse1_ps ) DeferredShadowUse1_ps  = CompilePixelShaderFromFile("DeferredShadow1.asm", 0, "Deferred1.asm", m_pDeviceEx, true, true);
+        if(!DeferredShadowUse2_ps ) DeferredShadowUse2_ps  = CompilePixelShaderFromFile("DeferredShadow2.asm", 0, "Deferred2.asm", m_pDeviceEx, true, true);
     }
 }
 

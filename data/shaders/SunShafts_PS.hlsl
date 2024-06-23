@@ -55,6 +55,11 @@ int NUM_SAMPLES : register(ps, i5);
 int NUM_SAMPLES2 : register(ps, i6);
 float4 NumSamples : register( c120);
 
+float InterleavedGradientNoise(float2 position_screen){
+  float3 magic = float3(0.06711056f, 0.00583715f, 52.9829189f);
+  return frac(magic.z * frac(dot(position_screen, magic.xy)));
+}
+
 // to use in downsampled texture
 float4 SunShafts1(PS_IN i) : COLOR {
 	float4 pos = mul( float3(SunDirection.x,-SunDirection.z,SunDirection.y), gWorldViewProj);
@@ -239,6 +244,70 @@ float4 SunShafts3(PS_IN i) : COLOR {
 }
 
 float4 SunShafts4(PS_IN i) : COLOR {
+	float4 pos = mul( float3(SunDirection.x,-SunDirection.z,SunDirection.y), gWorldViewProj);
+	float4 o = tex2D(HDRSampler, i.texcoord);
+	// float p = saturate((0.1-distance(float2(pos.x,pos.y), (i.texcoord.xy)*2-1))*10 * saturate(pos.z))*10;
+
+	pos.y = -pos.y;
+	pos.xy/=pos.w;
+	pos.xy=pos.xy*0.5+0.5;
+	float2 uv=i.texcoord;
+	float2 ScreenLightPos=pos.xy;
+
+	//float2 uv2 = (uv.xy) - ((ScreenLightPos)*((1/SS_params2.x)*(0.25)) - (((1/SS_params2.x))*(0.125)));
+	//float2 uv2 =   ((uv)/((SS_params2.x)*(0.25)) + (((SS_params2.x))*(0.125)))-(ScreenLightPos);
+	float2 uv2 =  uv;//1 + (uv - SS_params2.x * 0.125 - ScreenLightPos.xy) / (SS_params2.x * 0.25);
+	
+	
+	float Weight = SS_params.x; // 0.3;
+	float Density = SS_params.y; // 0.3;
+	float exposure = (SS_params.z *0.15) / Exposure; // 0.015;
+	float Decay = SS_params.w; // 0.998;
+	// Calculate vector from pixel to light source in screen space.
+	//float2 deltaTexCoord = (uv2 - float2(0.5, 0.5));//+0.001*(tex3D(bluenoisevolume, float3(uv*blueTimerVec4.xy, blueTimerVec4.z)));
+	float2 deltaTexCoord = (uv - ScreenLightPos.xy);
+	// Divide by number of samples and scale by control factor.
+	deltaTexCoord *= 1.0f / NumSamples.x * Density;
+	// Store initial sample.
+	// float3 color = tex2D(HDRSampler, uv2).xyz;
+	float3 color = float3(0.0, 0.0, 0.0);
+	// Set up illumination decay factor.
+	float illuminationDecay = 1.0f;
+	float3 SunCol= float3(1.0, 0.3, 0.2);
+	float2 ratio = float2(globalScreenSize.x / globalScreenSize.y, 1.0);
+	// Evaluate summation from Equation 3 NUM_SAMPLES iterations.
+	for (int i = 0; i < NUM_SAMPLES.x; i++) {
+		// Step sample location along ray.
+		//uv2-=deltaTexCoord;
+		uv2 = lerp(uv2-deltaTexCoord, uv2, -(NumSamples.y*0.005)+NumSamples.y*0.01*tex3D(bluenoisevolume, float3(uv*blueTimerVec4.xy, blueTimerVec4.z+i/NumSamples.x)));
+		//uv2 = lerp(uv2-deltaTexCoord, uv2, -(NumSamples.y*0.005)+NumSamples.y*0.01*InterleavedGradientNoise(uv*globalScreenSize.xy+blueTimerVec4.z*16+i));
+		// Retrieve sample at new location.
+		// HDRSampler, pHDRDownsampleTex, DiffuseTex, BloomSampler, HDRHalfTex
+		float3 sample = tex2D(HDRSampler, uv2)*
+		pow(saturate(SS_params2.x * 0.1 - distance(uv2 * ratio, ScreenLightPos * ratio)), SS_params2.y * 0.1)
+		;
+		// No sky check
+		//float3 sample = tex2D(DiffuseTex, uv) * float3(1.0, 0.3, 0.2);
+
+		// Apply sample attenuation scale/decay factors.
+		sample *= illuminationDecay * Weight;
+		// Accumulate combined color.
+		color += sample;
+		// Update exponential decay factor.
+		illuminationDecay *= Decay;
+	  }
+	// Output final color with a further scale control factor.
+	float4 ss = float4(clamp( color * exposure
+		* saturate(pos.z * 1.85 - 0.5)
+		* saturate(
+		  pow(SunDirection.z + 0.19, 2) * 40
+		* dot(float2(0.5, 0.5), pos.xy)
+	), 0, 20) * Exposure * 20
+	, 1);
+	return ss + o;
+}
+
+float4 SunShafts5(PS_IN i) : COLOR {
 	float4 pos = mul( float3(SunDirection.x,-SunDirection.z,SunDirection.y), gWorldViewProj);
 	float4 o = tex2D(HDRSampler, i.texcoord);
 	// float p = saturate((0.1-distance(float2(pos.x,pos.y), (i.texcoord.xy)*2-1))*10 * saturate(pos.z))*10;
